@@ -4406,6 +4406,26 @@ if (@($archivedAssess).Count -ne 1) { throw "Expected 1 assessment for archived 
 if ($archivedAssess[0].lifecycleState -ne 'archived') { throw "Archived precedence broken: expected 'archived', got '$($archivedAssess[0].lifecycleState)'" }
 Write-Host '  archived precedence correct' -ForegroundColor DarkGray
 
+Write-Step 'Portfolio assessment — smoke: lifecycle precedence (D-020: curation outranks the roadmap, below archived)'
+$curatedDirect = _ResolveLifecycleState -IsArchived $false -RoadmapState 'parse-error' -DispatchReadiness 'blocked' -MaturityLevel 'L0-Absent' -ExecutionState 'idle' -HasReadme $false -HasRoadmap $true -PendingItemCount 3 -CurationState 'archived-ignore'
+if ($curatedDirect.state -ne 'curated-out') { throw "D-020 precedence broken: archived-ignore + parse-error resolved '$($curatedDirect.state)', expected 'curated-out'" }
+if ($curatedDirect.recommendedAction -notmatch '^No action') { throw "curated-out must carry no next action, got '$($curatedDirect.recommendedAction)'" }
+$curatedBehindArchived = _ResolveLifecycleState -IsArchived $true -RoadmapState 'pending' -DispatchReadiness 'ready' -MaturityLevel 'L3-Contract-Ready' -ExecutionState 'idle' -HasReadme $true -HasRoadmap $true -PendingItemCount 1 -CurationState 'archived-ignore'
+if ($curatedBehindArchived.state -ne 'archived') { throw "archived must still outrank curation, got '$($curatedBehindArchived.state)'" }
+# The writer applies the same state to a cached assessment: curation is joined
+# at index build, and an unchanged repository's assessment is not re-run.
+$curatedRepo = [pscustomobject]@{ name = 'curated-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
+$curatedAssess = Invoke-PortfolioAssessment -LocalRepos @($curatedRepo) -StructureStandards $structStds
+if ($curatedAssess[0].lifecycleState -eq 'curated-out') { throw 'The assessment alone must not read curation it was never given' }
+$curatedSummary = [pscustomobject]@{ totalRepos = 1; readyForWorkCount = 0; byLifecycle = @{} }
+$uncuratedPayload = New-PortfolioIndexPayload -Assessments $curatedAssess -LocalRepos @($curatedRepo) -Summary $curatedSummary -SignalSources ([pscustomobject]@{}) -GeneratedAt ((Get-Date).ToUniversalTime().ToString('o'))
+$curatedRepoId = [string]$uncuratedPayload.repos[0].repoId
+$curatedPayload = New-PortfolioIndexPayload -Assessments $curatedAssess -LocalRepos @($curatedRepo) -Summary $curatedSummary -SignalSources ([pscustomobject]@{}) -CurationByRepoId @{ $curatedRepoId = [pscustomobject]@{ curationState = 'archived-ignore'; updatedAt = '2026-09-14T00:00:00Z' } } -GeneratedAt ((Get-Date).ToUniversalTime().ToString('o'))
+if ([string]$curatedPayload.repos[0].lifecycleState -ne 'curated-out') { throw "The index writer did not apply curated-out to a cached assessment (got '$($curatedPayload.repos[0].lifecycleState)')" }
+if ([string]$curatedPayload.repos[0].recommendedAction -ne $curatedDirect.recommendedAction) { throw 'The writer and the resolver disagree on the curated-out action text' }
+if ([string]$uncuratedPayload.repos[0].lifecycleState -eq 'curated-out') { throw 'Without curation the writer must leave the lifecycle alone' }
+Write-Host '  D-020 precedence correct: curated-out outranks parse-error, sits below archived, and the writer applies it to a cached assessment' -ForegroundColor DarkGray
+
 Write-Step 'Portfolio assessment — smoke: lifecycle precedence (parse-error)'
 $parseErrRepo = [pscustomobject]@{ name = 'parse-err-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
 $parseErrRoadmap = @([pscustomobject]@{ repoName = 'parse-err-repo'; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md'); roadmapState = 'parse-error'; pendingCount = 0 })

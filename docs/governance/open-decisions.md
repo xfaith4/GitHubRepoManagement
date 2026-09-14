@@ -77,30 +77,6 @@ against that mistaken test and had to be withdrawn; see
 - **Blocks.** The enforcement half of packet H38-05 and the Codex sandbox
   mapping in H38-16. The envelope still travels; it just does not yet bind.
 
-### D-020 — Should curation state gate the lifecycle model as it gates conclusions?
-
-- **Asked** 2026-09-14, from the lifecycle/conclusion consistency contract
-  (#298). Its one explained disagreement is Genesys-Telecom-Powershell:
-  `lifecycleState = needs-roadmap-repair`, `conclusion = appropriate-as-is`,
-  evidence `kind rule: curationState=archived-ignore`. The conclusion model
-  reads curation; `_ResolveLifecycleState` never does.
-- **Question.** The pair is *explained*, but the lifecycle's next action still
-  sends an operator to Roadmap Repair on a repository Ben curated
-  `archived-ignore`. Is that an accepted asymmetry or a wrong next action?
-- **Why it is not an agent's call.** Curation is the owner's declared intent
-  (contract 7); whether it silences the lifecycle model's action is a product
-  stance on what "archived-ignore" means, not something the code can settle.
-- **Ruling (Ben, 2026-09-14).** **A wrong next action, not an accepted
-  asymmetry.** Default **yes**: `archived-ignore` resolves to a distinct
-  curated-out lifecycle state with no next action, so the two models agree by
-  construction and the operator is never sent to repair a repository they
-  chose to leave alone.
-- **What it changes.** `_ResolveLifecycleState` gains a curation gate ahead of
-  its roadmap checks; the assessment vocabulary, the consistency table, the
-  reference doc and the byLifecycle counters carry the new state. Implemented
-  stacked on 3.7 M4b, not in #298.
-- **Blocks.** Nothing.
-
 ### D-021 — Which foundations do not apply to which kinds?
 
 - **Asked** 2026-09-14, building 3.7 M4b. Applicability is per kind
@@ -591,4 +567,31 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   handoff. #294 (Release 3.6 closure) and PR 0 (this decision, the steering
   document, the re-sequenced Current focus and the M4b/M4c property checks)
   are reviewed together.
+- **Blocks.** Nothing.
+
+### D-020 — Should curation state gate the lifecycle model as it gates conclusions?
+
+- **Asked** 2026-09-14, from the lifecycle/conclusion consistency contract
+  (#298). Its one explained disagreement is Genesys-Telecom-Powershell:
+  `lifecycleState = needs-roadmap-repair`, `conclusion = appropriate-as-is`,
+  evidence `kind rule: curationState=archived-ignore`. The conclusion model
+  reads curation; `_ResolveLifecycleState` never does.
+- **Question.** The pair is *explained*, but the lifecycle's next action still
+  sends an operator to Roadmap Repair on a repository Ben curated
+  `archived-ignore`. Is that an accepted asymmetry or a wrong next action?
+- **Why it is not an agent's call.** Curation is the owner's declared intent
+  (contract 7); whether it silences the lifecycle model's action is a product
+  stance on what "archived-ignore" means, not something the code can settle.
+- **Decision (Ben, 2026-09-14).** **A wrong next action, not an accepted
+  asymmetry.** Default **yes**: `archived-ignore` resolves to a distinct
+  curated-out lifecycle state with no next action, so the two models agree by
+  construction and the operator is never sent to repair a repository they
+  chose to leave alone.
+- **What it changes.** `_ResolveLifecycleState` gains a curation gate right
+  after `archived`; the index writer applies the same state through the
+  resolver's own helper because curation is joined at index build and the
+  host reuses cached assessments for unchanged repositories. The assessment
+  vocabulary, the consistency table (`curated-out` agrees with
+  appropriate-as-is), the report module, the console's lifecycle styles, and
+  the reference doc carry the new state. Implemented stacked on 3.7 M4b.
 - **Blocks.** Nothing.

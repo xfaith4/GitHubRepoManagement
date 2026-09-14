@@ -277,6 +277,22 @@ function Invoke-RepoStructureAudit {
 # to make every state self-explanatory.
 # ---------------------------------------------------------------------------
 
+function _CuratedOutLifecycle {
+    <#
+        D-020 (2026-09-14): a repository the owner curated archived-ignore is
+        curated out. One place says what that state is, so the lifecycle
+        resolver (precedence) and the index writer (freshness - curation is
+        joined at index build and cached assessments are reused) cannot drift.
+        No next action: the operator is never sent to repair a repository they
+        chose to leave alone.
+    #>
+    return @{
+        state             = 'curated-out'
+        recommendedAction = 'No action - curated archived-ignore by the owner. Change the curation state if work resumes.'
+        blockingReasons   = @('Curated archived-ignore by the owner.')
+    }
+}
+
 function _ResolveLifecycleState {
     param(
         [bool]$IsArchived,
@@ -288,7 +304,8 @@ function _ResolveLifecycleState {
         [bool]$HasRoadmap,
         [int]$PendingItemCount,
         [object]$ExecutionContract = $null,
-        [object[]]$StructureFindings = @()
+        [object[]]$StructureFindings = @(),
+        [string]$CurationState = 'none'
     )
 
     $blocking = [System.Collections.Generic.List[string]]::new()
@@ -315,6 +332,10 @@ function _ResolveLifecycleState {
         $action = 'No action — repo is archived. Restore via settings if work resumes.'
         $blocking.Add('Repository is marked archived.') | Out-Null
         return @{ state = $state; recommendedAction = $action; blockingReasons = @($blocking) }
+    }
+    # D-020: the owner's curation outranks everything the roadmap says.
+    if ($CurationState -eq 'archived-ignore') {
+        return _CuratedOutLifecycle
     }
     if ($RoadmapState -eq 'no-checklist') {
         # The file is readable and the plan is real; this console just cannot
@@ -1054,7 +1075,7 @@ function Get-PortfolioAssessmentSummary {
     foreach ($state in @(
         'discovered','needs-readme','needs-roadmap','needs-roadmap-repair',
         'needs-structure','ready-for-work','running','completed','monitored',
-        'archived','no-checklist','parse-error'
+        'archived','no-checklist','parse-error','curated-out'
     )) { $byLifecycle[$state] = 0 }
 
     $byCoverage = @{ 'local' = 0; 'github' = 0; 'local+github' = 0 }
@@ -1169,6 +1190,7 @@ function _Get-EffectiveDispatchReadiness {
         'needs-roadmap-repair' { return 'blocked' }
         'running' { return 'blocked' }
         'archived' { return 'blocked' }
+        'curated-out' { return 'blocked' }
         'no-checklist' { return 'no-checklist' }
         'parse-error' { return 'parse-error' }
         'needs-roadmap' { return 'missing-roadmap' }
@@ -1514,6 +1536,13 @@ function New-PortfolioIndexPayload {
         $curation = if ($CurationByRepoId.ContainsKey($repoId)) { $CurationByRepoId[$repoId] } else { $null }
         $curationState = if ($null -ne $curation -and -not [string]::IsNullOrWhiteSpace([string]$curation.curationState)) { [string]$curation.curationState } else { 'none' }
         $curationUpdatedAt = if ($null -ne $curation -and -not [string]::IsNullOrWhiteSpace([string]$curation.updatedAt)) { [string]$curation.updatedAt } else { $null }
+
+        # D-020: curation gates the lifecycle model as it gates conclusions.
+        # Applied here because curation is joined at index build and the host
+        # reuses cached assessments for unchanged repositories; the state text
+        # is the resolver's own (_CuratedOutLifecycle), so the two agree.
+        $lifecycleOverlay = $null
+        if ($curationState -eq 'archived-ignore') { $lifecycleOverlay = _CuratedOutLifecycle }
         $scanDecisionReason = [string](_GetField -Obj $assessment -Name 'scanDecisionReason' -Default 'cache-miss')
         $changeState = [string](_GetField -Obj $assessment -Name 'changeState' -Default 'needs-rescan')
         $lastIndexedBranch = if ([string]::IsNullOrWhiteSpace($currentBranch)) { $null } else { $currentBranch }
@@ -1574,9 +1603,9 @@ function New-PortfolioIndexPayload {
             # README purpose line). foundation-domains.json's kind rules read
             # the hint ids here; a request never re-derives them.
             kindSignals         = Get-RepoKindSignalProfile -LocalPath $localPath
-            lifecycleState      = [string](_GetField -Obj $assessment -Name 'lifecycleState' -Default 'discovered')
-            recommendedAction   = [string](_GetField -Obj $assessment -Name 'recommendedAction' -Default '')
-            blockingReasons     = @(_GetField -Obj $assessment -Name 'blockingReasons' -Default @())
+            lifecycleState      = if ($null -ne $lifecycleOverlay) { [string]$lifecycleOverlay.state } else { [string](_GetField -Obj $assessment -Name 'lifecycleState' -Default 'discovered') }
+            recommendedAction   = if ($null -ne $lifecycleOverlay) { [string]$lifecycleOverlay.recommendedAction } else { [string](_GetField -Obj $assessment -Name 'recommendedAction' -Default '') }
+            blockingReasons     = if ($null -ne $lifecycleOverlay) { @($lifecycleOverlay.blockingReasons) } else { @(_GetField -Obj $assessment -Name 'blockingReasons' -Default @()) }
             roadmapState        = [string](_GetField -Obj $assessment -Name 'roadmapState' -Default 'missing')
             roadmapPath         = [string](_GetField -Obj $assessment -Name 'roadmapPath' -Default '')
             hasRoadmap          = [bool](_GetField -Obj $assessment -Name 'hasRoadmap' -Default $false)

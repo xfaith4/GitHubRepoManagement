@@ -1242,7 +1242,8 @@ export type RepoLifecycleState =
   | 'monitored'
   | 'archived'
   | 'no-checklist'
-  | 'parse-error';
+  | 'parse-error'
+  | 'curated-out';
 
 export type SourceCoverage = 'local' | 'github' | 'local+github';
 

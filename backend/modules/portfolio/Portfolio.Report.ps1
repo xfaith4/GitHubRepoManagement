@@ -94,6 +94,7 @@ function _GetPortfolioLifecyclePriority {
         'monitored'            { return 9 }
         'completed'            { return 10 }
         'archived'             { return 11 }
+        'curated-out'          { return 12 }
         default                { return 50 }
     }
 }
@@ -114,6 +115,7 @@ function _GetPortfolioLifecycleLabel {
         'monitored'            { return 'Monitored' }
         'completed'            { return 'Completed' }
         'archived'             { return 'Archived' }
+        'curated-out'          { return 'Curated Out' }
         default                { return $LifecycleState }
     }
 }
@@ -131,6 +133,7 @@ function _GetPortfolioLifecycleBadgeClass {
         'no-checklist'         { return 'warn' }
         'parse-error'          { return 'danger' }
         'archived'             { return 'muted' }
+        'curated-out'          { return 'muted' }
         'completed'            { return 'ok' }
         'monitored'            { return 'ok' }
         default                { return 'muted' }
@@ -261,6 +264,7 @@ function New-PortfolioCollectionStatusHtmlContent {
         'no-checklist',
         'parse-error',
         'archived',
+        'curated-out',
         'discovered'
     )
 
