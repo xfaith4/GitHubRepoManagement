@@ -788,7 +788,8 @@ function _Pack_ReadJsonl {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $records.ToArray() }
     foreach ($line in @(Get-Content -LiteralPath $Path -Encoding UTF8)) {
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        try { $records.Add((ConvertFrom-Json -InputObject $line)) | Out-Null } catch { }
+        # Best-effort: a malformed JSONL line is skipped rather than failing the whole read.
+        try { $records.Add((ConvertFrom-Json -InputObject $line)) | Out-Null } catch { $null = $_ }
     }
     return $records.ToArray()
 }

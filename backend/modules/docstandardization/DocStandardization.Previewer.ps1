@@ -296,6 +296,7 @@ function Invoke-ApplyReadmeStandardization {
             $backupSuccess = $true
         } catch {
             # Non-fatal — caller is informed via backupSuccess = $false in the return value
+            $null = $_
         }
     }
 
@@ -324,6 +325,7 @@ function Invoke-ApplyReadmeStandardization {
         Add-Content -LiteralPath $historyPath -Value $json -Encoding UTF8
     } catch {
         # Non-fatal — history logging failure should not fail the apply
+        $null = $_
     }
 
     return [pscustomobject]@{

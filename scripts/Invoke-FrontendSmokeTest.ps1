@@ -44,6 +44,8 @@ function Wait-HttpReady {
                 return
             }
         } catch {
+            # Best-effort: the probe asserts reachability only; a refused or reset connection means "not yet", and the caller retries until its deadline.
+            $null = $_
         }
 
         Start-Sleep -Milliseconds 500

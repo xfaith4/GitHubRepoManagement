@@ -908,6 +908,7 @@ function Write-AiDocImprovementHistory {
     }
     catch {
         # Non-fatal — preview must succeed even when history cannot be written.
+        $null = $_
     }
 
     return [pscustomobject]$record
@@ -1105,6 +1106,7 @@ function Invoke-AiDocImproveApply {
     }
     catch {
         # Non-fatal — the apply itself succeeded; history must not undo that fact.
+        $null = $_
     }
 
     return [pscustomobject]@{

@@ -257,7 +257,8 @@ function Get-AutomationRunHistory {
     $records = [System.Collections.Generic.List[object]]::new()
     foreach ($l in @(Get-Content -LiteralPath $path -Encoding UTF8)) {
         if ([string]::IsNullOrWhiteSpace($l)) { continue }
-        try { $records.Add((ConvertFrom-Json -InputObject $l)) | Out-Null } catch { }
+        # Best-effort: a malformed JSONL line is skipped rather than failing the whole read.
+        try { $records.Add((ConvertFrom-Json -InputObject $l)) | Out-Null } catch { $null = $_ }
     }
 
     $ordered = @($records.ToArray())

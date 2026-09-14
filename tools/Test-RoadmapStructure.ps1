@@ -226,7 +226,8 @@ function Resolve-RoadmapRulePackPath {
         try {
             $rp = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($RoadmapPath))
             if (-not [string]::IsNullOrWhiteSpace($rp)) { [void]$roots.Add($rp) }
-        } catch { }
+        # Best-effort: a RoadmapPath that cannot be resolved contributes no extra search root; the default roots still apply.
+        } catch { $null = $_ }
     }
     if ($PSScriptRoot) {
         # tools/ -> repo root is the parent of the script directory.

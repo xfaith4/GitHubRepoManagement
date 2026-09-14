@@ -514,7 +514,8 @@ $rootWorklogNames = @('findings.md', 'progress.md', 'task_plan.md')
 $trackedRootWorklogs = @()
 foreach ($worklogName in $rootWorklogNames) {
     $tracked = ''
-    try { $tracked = (& git -C $WorkspaceRoot ls-files --error-unmatch $worklogName 2>$null) | Out-String } catch { }
+    # Best-effort: git may be unavailable or the file untracked; either way it is treated as not tracked.
+    try { $tracked = (& git -C $WorkspaceRoot ls-files --error-unmatch $worklogName 2>$null) | Out-String } catch { $null = $_ }
     if (-not [string]::IsNullOrWhiteSpace($tracked)) { $trackedRootWorklogs += $worklogName }
 }
 if (@($trackedRootWorklogs).Count -gt 0) {
@@ -693,7 +694,8 @@ if (Test-Path -LiteralPath $trackedSettingsPath) {
     # working copy. Checking only what is on disk cannot see pollution that is
     # already in history.
     $committedSettings = $null
-    try { $committedSettings = (& git -C $WorkspaceRoot show HEAD:backend/config/settings.json 2>$null) | Out-String } catch { }
+    # Best-effort: git may be unavailable or HEAD may lack the file (a fresh or shallow clone); the committed copy is then treated as absent.
+    try { $committedSettings = (& git -C $WorkspaceRoot show HEAD:backend/config/settings.json 2>$null) | Out-String } catch { $null = $_ }
     if (-not [string]::IsNullOrWhiteSpace($committedSettings)) {
         $committedRoots = @()
         try {
@@ -702,7 +704,8 @@ if (Test-Path -LiteralPath $trackedSettingsPath) {
                 $committedJson.inventory.PSObject.Properties.Name -contains 'localRoots') {
                 $committedRoots = @($committedJson.inventory.localRoots | ForEach-Object { [string]$_ })
             }
-        } catch { }
+        # Best-effort: a malformed committed settings.json yields no roots, and the tripwire then has nothing to flag.
+        } catch { $null = $_ }
         $committedOffending = @($committedRoots | Where-Object { $_ -match '(^|[/\\])output([/\\]|$)' })
         if (@($committedOffending).Count -gt 0) {
             throw (("COMMITTED settings.json inventory.localRoots names a path under output/: {0}. " +

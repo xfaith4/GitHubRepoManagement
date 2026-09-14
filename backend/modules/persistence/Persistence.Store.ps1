@@ -1057,7 +1057,8 @@ function Invoke-AppDbTransaction {
             & $Body $session
             $null = [RepoMgmt.Persistence.SqliteBridge]::SessionNonQuery($session, 'COMMIT', $null, $null)
         } catch {
-            try { $null = [RepoMgmt.Persistence.SqliteBridge]::SessionNonQuery($session, 'ROLLBACK', $null, $null) } catch { }
+            # Best-effort: a ROLLBACK that fails must not mask the original error, which is rethrown on the next line.
+            try { $null = [RepoMgmt.Persistence.SqliteBridge]::SessionNonQuery($session, 'ROLLBACK', $null, $null) } catch { $null = $_ }
             throw
         }
     } finally {

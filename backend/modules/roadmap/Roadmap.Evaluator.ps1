@@ -830,7 +830,8 @@ function Invoke-RepoEvaluation {
             $histFile = Join-Path $HistoryRoot "$safeRepo-$ts-$evaluationId.json"
             $result | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $histFile -Encoding UTF8
         }
-        catch { }
+        # Best-effort: the history file is a convenience copy; the evaluation result is returned regardless.
+        catch { $null = $_ }
     }
 
     return $result
@@ -878,7 +879,8 @@ function Get-RepoEvaluationHistory {
             if (-not [string]::IsNullOrWhiteSpace($RepoName) -and [string]$obj.repoName -ne $RepoName) { continue }
             $null = $items.Add($obj)
         }
-        catch { }
+        # Best-effort: a malformed history file is skipped rather than failing the whole listing.
+        catch { $null = $_ }
     }
 
     return @($items)

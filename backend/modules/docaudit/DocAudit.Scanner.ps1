@@ -232,7 +232,8 @@ function Invoke-AuditRepoDocumentation {
                     }
                 }
             }
-            catch { }
+            # Best-effort: this legacy recommendedSections check must never fail the audit; an unreadable README or an odd heading simply skips these findings.
+            catch { $null = $_ }
         }
     }
 

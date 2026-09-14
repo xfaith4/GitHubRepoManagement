@@ -121,7 +121,8 @@ function Restore-Settings {
             [System.IO.File]::WriteAllText($trackedSettingsPath, $trackedSettingsAtStart)
         }
     }
-    catch { }
+    # Best-effort: restoring tracked settings.json is best-effort teardown; the config tripwire in the module smoke catches anything left behind.
+    catch { $null = $_ }
 }
 
 function Clear-ListenerPort {
@@ -131,7 +132,8 @@ function Clear-ListenerPort {
             Select-Object -ExpandProperty OwningProcess -Unique
         foreach ($procId in @($pids)) {
             if ($procId -and $procId -ne 0 -and $procId -ne $PID) {
-                try { Stop-Process -Id $procId -Force -ErrorAction Stop } catch { }
+                # Best-effort: a listener that exited between the query and the kill is already gone, which is the outcome wanted.
+                try { Stop-Process -Id $procId -Force -ErrorAction Stop } catch { $null = $_ }
             }
         }
         $deadline = (Get-Date).AddSeconds(10)
@@ -140,7 +142,8 @@ function Clear-ListenerPort {
             Start-Sleep -Milliseconds 300
         }
     }
-    catch { }
+    # Best-effort: port cleanup is best-effort teardown; a port still busy is reported by the next run, not hidden here.
+    catch { $null = $_ }
 }
 
 function Invoke-Req {
@@ -176,7 +179,8 @@ function Get-GitContext {
         $git.dirtyFiles = $porcelain.Count
         $git.dirty = ($porcelain.Count -gt 0)
     }
-    catch { }
+    # Best-effort: git may be absent or this may not be a checkout; the git facts then stay at their defaults.
+    catch { $null = $_ }
     return [pscustomobject]$git
 }
 
@@ -538,7 +542,8 @@ try {
         }
         finally {
             # Graceful shutdown via signal file, then force-kill the port, then Stop-Job.
-            try { Set-Content -LiteralPath $shutdownSignal -Value 'shutdown' -Encoding ascii -Force; $null = Wait-Job -Job $job -Timeout 5 } catch { }
+            # Best-effort: graceful shutdown is the polite first attempt; the port kill on the next line is the guarantee.
+            try { Set-Content -LiteralPath $shutdownSignal -Value 'shutdown' -Encoding ascii -Force; $null = Wait-Job -Job $job -Timeout 5 } catch { $null = $_ }
             Clear-ListenerPort -PortNumber $Port
             Stop-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
             Remove-Job -Job $job -Force -ErrorAction SilentlyContinue | Out-Null
@@ -558,7 +563,8 @@ try {
     if (Test-Path -LiteralPath $verifyLogPath) {
         foreach ($l in (Get-Content -LiteralPath $verifyLogPath -Encoding UTF8)) {
             if ([string]::IsNullOrWhiteSpace($l)) { continue }
-            try { $rec = $l | ConvertFrom-Json; if ($rec.surfaceId) { $verifiedIds[$rec.surfaceId] = $true } } catch { }
+            # Best-effort: a malformed verification-log line is skipped rather than failing the whole read.
+            try { $rec = $l | ConvertFrom-Json; if ($rec.surfaceId) { $verifiedIds[$rec.surfaceId] = $true } } catch { $null = $_ }
         }
     }
     $pendingVerify = @($states.verifyNext.ToArray() |

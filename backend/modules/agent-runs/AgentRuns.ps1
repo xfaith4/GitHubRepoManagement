@@ -234,7 +234,7 @@ function New-AgentRunRecord {
     # file above remains authoritative; a mirror failure must never break
     # the dispatch it describes.
     if (Get-Command -Name 'Write-AppDbAgentRun' -ErrorAction SilentlyContinue) {
-        try { $null = Write-AppDbAgentRun -RunRecord $record } catch { }
+        try { $null = Write-AppDbAgentRun -RunRecord $record } catch { $null = $_ }
     }
 
     $null = Write-AgentRunEvent -WorkspaceRoot $WorkspaceRoot -EventType 'run.dispatched' -RunId $runId -RepoName $RepoName `
@@ -399,7 +399,7 @@ function Update-AgentRunRecord {
     # current after every ledger patch so timing/token/cost metrics are
     # queryable over time. Best-effort — the JSON file stays authoritative.
     if (Get-Command -Name 'Write-AppDbAgentRun' -ErrorAction SilentlyContinue) {
-        try { $null = Write-AppDbAgentRun -RunRecord $run } catch { }
+        try { $null = Write-AppDbAgentRun -RunRecord $run } catch { $null = $_ }
     }
 
     $newStatusValue = [string](_AgentRunsField -Obj $run -Name 'status' -Default '')

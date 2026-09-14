@@ -65,6 +65,7 @@ function Get-PortfolioCurationEntries {
         }
     } catch {
         # Fall back to file mirror.
+        $null = $_
     }
 
     $path = Get-PortfolioCurationFilePath -WorkspaceRoot $WorkspaceRoot

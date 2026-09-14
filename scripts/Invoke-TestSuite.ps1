@@ -59,7 +59,8 @@ function Clear-ListenerPort {
             try {
                 Stop-Process -Id $procId -Force -ErrorAction Stop
                 Write-Host ("  freed port {0} (terminated stale PID {1})" -f $PortNumber, $procId) -ForegroundColor DarkGray
-            } catch { }
+            # Best-effort: a stale listener that exited between the query and the kill is already gone, which is the outcome wanted.
+            } catch { $null = $_ }
         }
         # Wait for the port to actually release before the next gate binds it —
         # a lingering stale listener causes a "connection forcibly closed" flake.
@@ -68,7 +69,8 @@ function Clear-ListenerPort {
             if (-not (Get-NetTCPConnection -LocalPort $PortNumber -State Listen -ErrorAction SilentlyContinue)) { break }
             Start-Sleep -Milliseconds 300
         }
-    } catch { }
+    # Best-effort: port cleanup is best-effort; a port still busy surfaces as the host failing to bind, with its own message.
+    } catch { $null = $_ }
 }
 
 function Invoke-ScriptGate {

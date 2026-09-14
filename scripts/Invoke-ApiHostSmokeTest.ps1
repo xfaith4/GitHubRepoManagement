@@ -4813,6 +4813,7 @@ finally {
     }
     catch {
         # Best-effort graceful shutdown only.
+        $null = $_
     }
 
     try {
@@ -4826,6 +4827,7 @@ finally {
     }
     catch {
         # Best-effort cleanup only; never let teardown mask the smoke result.
+        $null = $_
     }
 
     Stop-Job -Job $job -ErrorAction SilentlyContinue | Out-Null

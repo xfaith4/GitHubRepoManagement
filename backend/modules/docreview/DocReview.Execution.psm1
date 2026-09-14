@@ -602,6 +602,7 @@ function Start-DocReviewQueueItem {
             }
             catch {
                 # Non-fatal: operator can open manually.
+                $null = $_
             }
         }
     }
