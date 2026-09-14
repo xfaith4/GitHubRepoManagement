@@ -94,7 +94,8 @@ function Get-RepoKindSignalProfile {
         if (Test-Path -LiteralPath (Join-Path $LocalPath $fw) -PathType Leaf) { & $hint 'firmware-target' "$fw at the repo root"; $manifest = 'firmware'; break }
     }
     if (-not $hints.Contains('firmware-target')) {
-        $sketches = @(Get-ChildItem -LiteralPath $LocalPath -Include '*.ino' -Recurse -Depth 2 -File -ErrorAction SilentlyContinue | Select-Object -First 3)
+        # -Filter, not -Include: the filter runs in the provider, so a node_modules tree two levels down is not enumerated file by file.
+        $sketches = @(Get-ChildItem -LiteralPath $LocalPath -Filter '*.ino' -Recurse -Depth 2 -File -ErrorAction SilentlyContinue | Select-Object -First 3)
         if ($sketches.Count -gt 0) {
             & $hint 'firmware-target' ('{0} Arduino sketch within two directory levels' -f $sketches[0].Name)
             if ($manifest -eq 'none') { $manifest = 'firmware' }
@@ -161,7 +162,7 @@ function Get-RepoKindSignalProfile {
     }
 
     # --- .NET: OutputType decides; the Web SDK is an app --------------------
-    $csproj = @(Get-ChildItem -LiteralPath $LocalPath -Include '*.csproj', '*.fsproj' -Recurse -Depth 2 -File -ErrorAction SilentlyContinue | Select-Object -First 8)
+    $csproj = @(foreach ($projGlob in @('*.csproj', '*.fsproj')) { Get-ChildItem -LiteralPath $LocalPath -Filter $projGlob -Recurse -Depth 2 -File -ErrorAction SilentlyContinue | Select-Object -First 8 })
     foreach ($proj in $csproj) {
         $text = ''
         try { $text = Get-Content -LiteralPath $proj.FullName -Raw -Encoding UTF8 -ErrorAction Stop } catch { continue }

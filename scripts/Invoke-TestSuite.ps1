@@ -263,7 +263,11 @@ Invoke-InProcessGate -Name 'foundation-domains.json integrity (Release 3.6)' -Ac
     }
     foreach ($r in @($parsed.kindDetection.rules)) {
         if ([string]$r.kind -notin @($parsed.kinds | ForEach-Object { [string]$_.id })) { throw "kindDetection rule names unknown kind '$($r.kind)'" }
-        if ($null -eq $r.when) { throw "kindDetection rule for '$($r.kind)' has no 'when'" }
+        # foundation-conclusions v2 (3.7 M4a): a rule matches on `when` (field
+        # equality), `whenAny` (a dotted path holds one of the listed values), or both.
+        $hasWhen = $null -ne $r.PSObject.Properties['when'] -and $null -ne $r.when
+        $hasWhenAny = $null -ne $r.PSObject.Properties['whenAny'] -and $null -ne $r.whenAny
+        if (-not $hasWhen -and -not $hasWhenAny) { throw "kindDetection rule for '$($r.kind)' has neither 'when' nor 'whenAny'" }
     }
     Write-Host ("  foundation-domains.json valid: {0} domains ({1} scored), {2} kinds, {3} detection rule(s)" -f @($parsed.domains).Count, @($parsed.domains | Where-Object { $null -eq $_.PSObject.Properties['scored'] -or $_.scored }).Count, @($parsed.kinds).Count, @($parsed.kindDetection.rules).Count) -ForegroundColor DarkGray
 }
