@@ -1,7 +1,7 @@
 {
   "schemaVersion": "v1",
   "model": "foundation-domains",
-  "modelVersion": "foundation-conclusions v2.2",
+  "modelVersion": "foundation-conclusions v2.3",
   "principle": "The product does not prescribe what a repository should become; it identifies and strengthens the foundations that allow each repository to succeed at what it is intended to be.",
   "refinementRule": "Domains and kinds are data, not a taxonomy. Add, split, merge or re-weight one here; every change stays covered by the foundation-domains.json integrity gate and the module-smoke fixture set. Never add a domain the product cannot evidence from visible repository state, and never let a conclusion cite the absence of findings as evidence.",
   "conclusions": {
@@ -58,6 +58,14 @@
         "method": "POST",
         "route": "/api/roadmap/repair/preview",
         "bodyKeys": ["repoName"]
+      },
+      "actionsByCase": {
+        "note": "3.7 M4c: one action per kind of planning gap. The case is the branch the planning evaluator took (Portfolio.Conclusion.ps1 _PC_EvaluateDomain); every case it can emit must be mapped here or the conclusion contract fails. Routes must be flows the console can run (frontend/lib/foundationConclusion.ts RUNNABLE_NEXT_ACTION_ROUTES). The repair flow refuses missing, prose, empty and complete roadmaps, so only below-contract-ready is sent there.",
+        "no-roadmap": { "kind": "roadmap-draft-preview", "label": "Draft a roadmap from the code and docs", "method": "POST", "route": "/api/repo/evaluate", "bodyKeys": ["repoName", "localPath"], "observedOn": ["AI_PromptRefiner_GUI"] },
+        "prose-roadmap": { "kind": "roadmap-checklist-rewrite-preview", "label": "Preview the plan rewritten as checklist milestones", "method": "POST", "route": "/api/ai/docs/improve/preview", "bodyKeys": ["repoName"], "bodyValues": { "docType": "roadmap", "templateId": "roadmap-contract" }, "observedOn": ["genesys-contract-client"] },
+        "parse-error": { "kind": "roadmap-reconstruct-preview", "label": "Preview a plan reconstructed from the repository", "method": "POST", "route": "/api/ai/docs/improve/preview", "bodyKeys": ["repoName"], "bodyValues": { "docType": "roadmap", "templateId": "roadmap-recovery" }, "observedOn": [], "observedNote": "Fixture only. The parser reads parse-error as an empty ROADMAP.md; no cohort repository carries one." },
+        "below-contract-ready": { "kind": "roadmap-repair-preview", "label": "Preview the smallest credible plan", "method": "POST", "route": "/api/roadmap/repair/preview", "bodyKeys": ["repoName"], "observedOn": ["ActiveFamilyArchive", "FowlingScorecard", "2026-06-13_Orchestration", "300PixelLED_2812B", "Genesys.Core"] },
+        "complete-below-contract-ready": { "kind": "next-release-candidates-preview", "label": "Preview candidate items for a next release", "method": "POST", "route": "/api/repo/evaluate", "bodyKeys": ["repoName", "localPath"], "observedOn": ["DevPortConsole"] }
       },
       "pendingWorkAction": {
         "kind": "dispatch-readiness-check",

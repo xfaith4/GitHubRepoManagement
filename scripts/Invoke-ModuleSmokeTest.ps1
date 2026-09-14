@@ -5097,15 +5097,16 @@ Write-Step 'Foundation conclusions — Release 3.6 M1: every repository leaves w
         $actual = [string]$fdByName[$name].conclusion
         if ($actual -ne $fdExpect[$name]) { throw "Fixture '$name' expected conclusion '$($fdExpect[$name])', got '$actual' ($($fdByName[$name].reason))" }
     }
-    $fdKnownRoutes = @('/api/readme/standardize/preview', '/api/roadmap/repair/preview', '/api/repository-improvement/preview')
+    $fdKnownRoutes = @('/api/readme/standardize/preview', '/api/roadmap/repair/preview', '/api/repository-improvement/preview', '/api/repo/evaluate', '/api/ai/docs/improve/preview')
     foreach ($item in $fdPayload.items) {
         if ([string]::IsNullOrWhiteSpace([string]$item.reason)) { throw "Fixture '$($item.repoName)' has no reason" }
         if ([string]$item.conclusion -eq 'strengthen' -and [string]$item.nextAction.route -notin $fdKnownRoutes) { throw "Fixture '$($item.repoName)' strengthen names an unknown route '$($item.nextAction.route)'" }
         foreach ($d in @($item.domains)) { if (@($d.evidence).Count -eq 0) { throw "Fixture '$($item.repoName)' domain '$($d.domain)' carries no evidence" } }
     }
-    if ([string]$fdByName['no-roadmap'].nextAction.route -ne '/api/roadmap/repair/preview') { throw 'A missing roadmap must offer the smallest credible plan (roadmap repair preview)' }
+    # 3.7 M4c: the repair preview refuses a missing or empty roadmap, so each routes to a flow that can act on it.
+    if ([string]$fdByName['no-roadmap'].nextAction.route -ne '/api/repo/evaluate') { throw 'A missing roadmap must offer a drafted roadmap (repo evaluation); the repair preview refuses a missing roadmap' }
     if ([string]$fdByName['struct-gap'].nextAction.route -ne '/api/repository-improvement/preview') { throw 'A critical structure gap must offer the structure repair preview' }
-    if ([string]$fdByName['parse-error'].nextAction.route -ne '/api/roadmap/repair/preview') { throw 'An unparseable roadmap must still offer the repair preview' }
+    if ([string]$fdByName['parse-error'].nextAction.route -ne '/api/ai/docs/improve/preview' -or [string]$fdByName['parse-error'].nextAction.body.templateId -ne 'roadmap-recovery') { throw 'An empty roadmap must offer a reconstructed plan (roadmap-recovery rewrite preview); the repair preview refuses it' }
     if ([string]$fdByName['archived'].kind -ne 'archived' -or [string]$fdByName['curated-archive'].kind -ne 'archived') { throw 'lifecycleState=archived and curationState=archived-ignore must both resolve kind=archived' }
     $fdArchivedPlanning = @($fdByName['archived'].domains | Where-Object { $_.domain -eq 'planning' })[0]
     if ([string]$fdArchivedPlanning.status -ne 'not-applicable') { throw "Archived planning must be not-applicable, got '$($fdArchivedPlanning.status)'" }

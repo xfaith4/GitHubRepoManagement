@@ -317,7 +317,46 @@ export const RUNNABLE_NEXT_ACTION_ROUTES: readonly string[] = [
   '/api/readme/standardize/preview',
   '/api/repository-improvement/preview',
   '/api/roadmap/dispatch/check',
+  // 3.7 M4c: a repository with no roadmap, or a complete one, is evaluated
+  // (a drafted roadmap or candidate items; only history is written), and a
+  // prose or empty roadmap gets a rewrite preview. Both preview; neither
+  // applies. The AI preview calls the configured provider when one is set.
+  '/api/repo/evaluate',
+  '/api/ai/docs/improve/preview',
 ];
+
+/**
+ * What a preview flow returned, in one sentence. A flow that declined must
+ * read as declined: the repair preview answers a roadmap it cannot repair
+ * with previewState "repair-blocked" and no actions, and reporting that as
+ * "Preview ready — 0 proposed change(s)" told the operator it worked.
+ */
+export function summarizeNextActionResult(data: Record<string, unknown> | null | undefined): string {
+  const d = data ?? {};
+  const state = typeof d.previewState === 'string' ? d.previewState : '';
+  if (/blocked|not-recommended/.test(state)) {
+    const reason = typeof d.blockReason === 'string' && d.blockReason.trim() ? d.blockReason.trim() : state;
+    return `Not previewable: ${reason}`;
+  }
+  if (typeof d.suggestedRoadmapContent === 'string' && d.suggestedRoadmapContent.trim()) {
+    return 'Draft roadmap ready. Nothing has been applied.';
+  }
+  if (Array.isArray(d.suggestedAdditions)) {
+    return `Preview ready — ${d.suggestedAdditions.length} candidate item(s). Nothing has been applied.`;
+  }
+  const verdict = typeof d.verdict === 'string' ? d.verdict : null;
+  if (verdict) return `Ready: ${verdict}`;
+  const changeCount = ['changes', 'actions', 'proposedChanges', 'items']
+    .map(key => (Array.isArray(d[key]) ? (d[key] as unknown[]).length : null))
+    .find(n => n !== null);
+  if (changeCount !== null && changeCount !== undefined) {
+    return `Preview ready — ${changeCount} proposed change(s). Nothing has been applied.`;
+  }
+  if (typeof d.proposedContent === 'string' && d.proposedContent.trim()) {
+    return 'Rewrite preview ready. Nothing has been applied.';
+  }
+  return 'Preview ready. Nothing has been applied.';
+}
 
 export function isRunnableNextAction(action: FoundationNextAction | null | undefined): boolean {
   if (!action) return false;

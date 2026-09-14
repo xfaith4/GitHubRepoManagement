@@ -9,6 +9,8 @@ import {
   normalizeRepositoryConclusion,
   normalizeRepositoryOutcomeSummary,
   summarizeRepositoryConclusion,
+  isRunnableNextAction,
+  summarizeNextActionResult,
 } from './foundationConclusion';
 
 // The wire shape GET /api/portfolio/conclusions/{repoId} serves (data.conclusion),
@@ -148,5 +150,46 @@ describe('portfolio conclusions result + contract', () => {
     expect(describeDomainStatus('missing')).toEqual({ label: 'Missing', counts: true });
     expect(describeDomainStatus('not-applicable').counts).toBe(false);
     expect(describeDomainStatus('not-scored').label).toBe('Observed, not scored');
+  });
+});
+
+// 3.7 M4c - each kind of planning gap reaches its own preview, and a preview
+// that declines must read as declined, never as "ready".
+describe('summarizeNextActionResult', () => {
+  it('reports a declined repair preview as not previewable, with the reason', () => {
+    const summary = summarizeNextActionResult({ previewState: 'repair-blocked', blockReason: 'No roadmap file found.', actions: [] });
+    expect(summary).toBe('Not previewable: No roadmap file found.');
+  });
+
+  it('reports a complete roadmap the repair flow will not rewrite as not previewable', () => {
+    expect(summarizeNextActionResult({ previewState: 'rewrite-not-recommended', actions: [] })).toBe('Not previewable: rewrite-not-recommended');
+  });
+
+  it('reports an evaluation that drafted a roadmap', () => {
+    expect(summarizeNextActionResult({ suggestedRoadmapContent: '# Roadmap', findings: [{}, {}] })).toBe('Draft roadmap ready. Nothing has been applied.');
+  });
+
+  it('counts candidate items when the repository already has a roadmap', () => {
+    expect(summarizeNextActionResult({ suggestedRoadmapContent: null, suggestedAdditions: [{}, {}, {}], findings: [{}] })).toBe('Preview ready — 3 candidate item(s). Nothing has been applied.');
+  });
+
+  it('reports a rewrite preview', () => {
+    expect(summarizeNextActionResult({ proposedContent: '- [ ] one', changeSummary: 'x' })).toBe('Rewrite preview ready. Nothing has been applied.');
+  });
+
+  it('still counts proposed changes for the flows that return them', () => {
+    expect(summarizeNextActionResult({ previewState: 'repair-preview-ready', actions: [{}, {}] })).toBe('Preview ready — 2 proposed change(s). Nothing has been applied.');
+  });
+});
+
+describe('isRunnableNextAction - M4c routes', () => {
+  const base = { domain: 'planning', kind: 'k', label: 'l', method: 'POST' as const, previewFirst: true };
+  it('runs the evaluation and the roadmap rewrite preview', () => {
+    expect(isRunnableNextAction({ ...base, route: '/api/repo/evaluate', body: { repoName: 'r', localPath: 'p' } })).toBe(true);
+    expect(isRunnableNextAction({ ...base, route: '/api/ai/docs/improve/preview', body: { repoName: 'r', docType: 'roadmap', templateId: 'roadmap-contract' } })).toBe(true);
+  });
+
+  it('still refuses a route outside the preview-first flows', () => {
+    expect(isRunnableNextAction({ ...base, route: '/api/roadmap/repair/apply', body: { repoName: 'r' } })).toBe(false);
   });
 });

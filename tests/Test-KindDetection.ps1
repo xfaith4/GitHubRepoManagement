@@ -57,7 +57,7 @@ $config = Get-FoundationDomainsConfig -ConfigPath $configPath
 if ($null -eq $config) { throw "foundation-domains.json did not load from $configPath" }
 $signalConfigPath = Join-Path $WorkspaceRoot 'backend\config\kind-signals.json'
 $signalConfig = Get-KindSignalConfig -ConfigPath $signalConfigPath
-$expectedModel = 'foundation-conclusions v2.2'
+$expectedModel = 'foundation-conclusions v2.3'
 $expectedSignalModel = 'kind-signals v1'
 
 $fixtureRoot = Join-Path $WorkspaceRoot 'output\kind-detection'

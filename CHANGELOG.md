@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — Each kind of planning gap reaches its own preview (3.7 M4c)
+
+`planning` limits 57 of 59 repositories, and every one was told `POST
+/api/roadmap/repair/preview`. That flow refuses a missing, prose, empty or
+complete roadmap — and the console reported its refusal as "Preview ready — 0
+proposed change(s)". On the local index 29 of the 58 actionable repositories
+were being sent to a preview that always declined.
+
+The planning evaluator now names its case on the domain record, and
+`foundation-domains.json` (`foundation-conclusions v2.3`) routes each case in
+`actionsByCase`: no roadmap → `/api/repo/evaluate` (drafts one from the code
+and docs); prose roadmap → `/api/ai/docs/improve/preview` with the
+`roadmap-contract` template; parse error (an empty ROADMAP.md) → the same
+preview with `roadmap-recovery`; below contract-ready → the repair preview;
+complete below contract-ready → `/api/repo/evaluate` for next-release
+candidates. Every entry says where it was observed. `Test-FoundationConclusion`
+fails a gap whose case the config does not route and a record carrying any
+other action; the payload carries `byNextAction`. The console may now run the
+two new routes, and a declined preview reads "Not previewable: <reason>".
+The repair flow stops calling a prose roadmap "cannot be parsed".
+
+Check: `pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort
+evidence/trials/release-3.7/cohort.json -Assert action-routing -FailOnError`.
+The cohort is replayed in CI from `evidence/trials/release-3.7/cohort-entries.json`
+— the nine rows as index `9c4349e9…` recorded them, restricted to the fields the
+model reads, no free text — and routes to four actions over three routes.
+
 ## 2026-09-14 — Curation gates the lifecycle model (D-020)
 
 A repository curated `archived-ignore` now resolves to the lifecycle state

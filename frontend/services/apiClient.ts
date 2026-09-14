@@ -12,6 +12,7 @@ import {
   type PortfolioConclusionsResult,
   type RepositoryConclusion,
   explainUnrunnableAction,
+  summarizeNextActionResult,
   isRunnableNextAction,
   normalizeConclusionBasis,
   normalizeConclusionContract,
@@ -2519,19 +2520,11 @@ export async function runConclusionNextAction(action: FoundationNextAction): Pro
     action.route.replace(/^\/api/, ''),
     action.body
   );
-  const d = data?.data ?? {};
   // Each preview flow names its result differently; report what came back
-  // rather than inventing a uniform shape none of them actually has.
-  const changeCount = ['changes', 'actions', 'findings', 'proposedChanges', 'items']
-    .map(key => (Array.isArray((d as Record<string, unknown>)[key]) ? ((d as Record<string, unknown>)[key] as unknown[]).length : null))
-    .find(n => n !== null);
-  const verdict = typeof (d as Record<string, unknown>).verdict === 'string' ? String((d as Record<string, unknown>).verdict) : null;
-  const summary = verdict
-    ? `Ready: ${verdict}`
-    : changeCount !== null && changeCount !== undefined
-      ? `Preview ready — ${changeCount} proposed change(s). Nothing has been applied.`
-      : 'Preview ready. Nothing has been applied.';
-  return { ok: data?.success !== false, summary };
+  // rather than inventing a uniform shape none of them actually has, and
+  // report a flow that declined as declined.
+  const summary = summarizeNextActionResult((data?.data ?? {}) as Record<string, unknown>);
+  return { ok: data?.success !== false && !summary.startsWith('Not previewable'), summary };
 }
 
 export async function getOperationsRepos(): Promise<OperationsReposResult> {

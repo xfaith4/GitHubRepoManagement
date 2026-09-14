@@ -33,12 +33,26 @@
         applicability rows says where they were observed. The local index and
         cohort hold where present.
 
-      action-routing         (3.7 M4c - not implemented yet; exits 1)
+      action-routing         (3.7 M4c)
+        Each kind of gap reaches its own previewable action. Asserts: every
+        configured action names a kind, label, method and a route the console
+        can run (read from frontend/lib/foundationConclusion.ts); every
+        actionsByCase entry says where it was observed; the planning cases
+        the evaluator emits over fixtures are exactly the cases the config
+        maps, each record carries its case and that case's action, and the
+        cases do not collapse onto one route; a config-only change reroutes a
+        case with no code change; the validator goes red on a record carrying
+        the wrong action and on a case the config does not map. The trial
+        cohort, replayed from evidence/trials/release-3.7/cohort-entries.json
+        (keyed by index SHA, so CI runs it too), routes to more than one
+        action - and the snapshot carries every field the model reads.
 
 .EXAMPLE
     pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert lifecycle-consistency -FailOnError
 .EXAMPLE
     pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert applicability -FailOnError
+.EXAMPLE
+    pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert action-routing -FailOnError
 #>
 [CmdletBinding()]
 param(
@@ -51,11 +65,6 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
-if ($Assert -eq 'action-routing') {
-    Write-Host "  FAIL: -Assert $Assert is not implemented yet (3.7 M4c); nothing is proved" -ForegroundColor Red
-    exit 1
-}
 
 $portfolioRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 . (Join-Path $portfolioRoot 'Portfolio.Conclusion.ps1')
@@ -299,6 +308,144 @@ if ($Assert -eq 'applicability') {
 
     $headline = 'Limiting foundation by kind applicability (3.7 M4b):'
     $okLine = "ok: {0} kinds each forced against the all-gaps fixture; not-applicable never limits and renders its reason; missing-first order; strengthen answers the lead; a data-only row moved a domain out; validator red on a tampered record" -f $kinds.Count
+}
+
+# ============================================================================
+if ($Assert -eq 'action-routing') {
+    # --- Every configured action is one the console can run -----------------
+    $frontendSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'frontend\lib\foundationConclusion.ts') -Raw -Encoding UTF8
+    $routesMatch = [regex]::Match($frontendSource, '(?s)RUNNABLE_NEXT_ACTION_ROUTES:\s*readonly string\[\]\s*=\s*\[(.*?)\];')
+    if (-not $routesMatch.Success) { throw 'could not read RUNNABLE_NEXT_ACTION_ROUTES from frontend/lib/foundationConclusion.ts' }
+    $runnable = @([regex]::Matches($routesMatch.Groups[1].Value, "'(/api/[^']+)'") | ForEach-Object { $_.Groups[1].Value })
+    $planningDef = @($config.domains | Where-Object { [string]$_.id -eq 'planning' })[0]
+    if ($null -eq $planningDef.PSObject.Properties['actionsByCase']) { throw 'the planning domain carries no actionsByCase map' }
+    $caseNames = @($planningDef.actionsByCase.PSObject.Properties | Where-Object { $_.Name -ne 'note' } | ForEach-Object { [string]$_.Name })
+    foreach ($domain in @($config.domains)) {
+        $defs = [System.Collections.Generic.List[object]]::new()
+        foreach ($slot in @('nextAction', 'pendingWorkAction')) {
+            if ($null -ne $domain.PSObject.Properties[$slot]) { $defs.Add([pscustomobject]@{ name = "$($domain.id).$slot"; def = $domain.$slot; byCase = $false }) | Out-Null }
+        }
+        if ($null -ne $domain.PSObject.Properties['actionsByCase']) {
+            foreach ($p in @($domain.actionsByCase.PSObject.Properties | Where-Object { $_.Name -ne 'note' })) { $defs.Add([pscustomobject]@{ name = "$($domain.id).actionsByCase.$($p.Name)"; def = $p.Value; byCase = $true }) | Out-Null }
+        }
+        foreach ($d in $defs) {
+            foreach ($field in @('kind', 'label', 'method', 'route')) {
+                if ($null -eq $d.def.PSObject.Properties[$field] -or [string]::IsNullOrWhiteSpace([string]$d.def.$field)) { $failures.Add("$($d.name) names no $field") }
+            }
+            if ($null -ne $d.def.PSObject.Properties['route'] -and [string]$d.def.route -notin $runnable) { $failures.Add("$($d.name) routes to '$($d.def.route)', which the console cannot run (RUNNABLE_NEXT_ACTION_ROUTES)") }
+            if ($d.byCase) {
+                if ($null -eq $d.def.PSObject.Properties['observedOn']) { $failures.Add("$($d.name) carries no observedOn") }
+                elseif (@($d.def.observedOn).Count -eq 0 -and ($null -eq $d.def.PSObject.Properties['observedNote'] -or [string]::IsNullOrWhiteSpace([string]$d.def.observedNote))) { $failures.Add("$($d.name) was observed on nothing and says nothing about why") }
+            }
+        }
+    }
+    $caseKinds = @($caseNames | ForEach-Object { [string]$planningDef.actionsByCase.$_.kind })
+    if (@($caseKinds | Select-Object -Unique).Count -ne $caseKinds.Count) { $failures.Add("planning cases share an action kind ($($caseKinds -join ', ')); each kind of gap needs its own action") }
+
+    # --- Fixtures: every planning case the evaluator can emit ----------------
+    $planningFixtures = [ordered]@{
+        'no-roadmap'                    = @{ repoName = 'no-roadmap'; hasRoadmap = $false; roadmapState = 'missing'; maturityLevel = 'L0-Absent'; pendingCount = 0 }
+        'prose-roadmap'                 = @{ repoName = 'prose-roadmap'; roadmapState = 'no-checklist'; maturityLevel = 'L0-Absent'; pendingCount = 0 }
+        'parse-error'                   = @{ repoName = 'empty-roadmap'; roadmapState = 'parse-error'; maturityLevel = 'L0-Absent'; pendingCount = 0 }
+        'below-contract-ready'          = @{ repoName = 'informal-roadmap'; roadmapState = 'pending'; maturityLevel = 'L1-Informal'; pendingCount = 3 }
+        'below-contract-ready:L0'       = @{ repoName = 'absent-contract'; roadmapState = 'pending'; maturityLevel = 'L0-Absent'; pendingCount = 3 }
+        'complete-below-contract-ready' = @{ repoName = 'finished-informal'; roadmapState = 'complete'; maturityLevel = 'L0-Absent'; pendingCount = 0 }
+    }
+    $emitted = [System.Collections.Generic.HashSet[string]]::new()
+    $routedTo = [System.Collections.Generic.HashSet[string]]::new()
+    $fixtureRows = [System.Collections.Generic.List[string]]::new()
+    foreach ($label in $planningFixtures.Keys) {
+        $expectedCase = ($label -split ':')[0]
+        $c = Get-RepositoryFoundationConclusion -Entry (ConvertTo-Entry $planningFixtures[$label]) -Config $config
+        $rec = @($c.domains | Where-Object { [string]$_.domain -eq 'planning' })[0]
+        $null = $emitted.Add([string]$rec.case)
+        if ([string]$rec.case -ne $expectedCase) { $failures.Add("fixture '$label': planning case is '$($rec.case)', expected '$expectedCase'"); continue }
+        $want = $planningDef.actionsByCase.$expectedCase
+        if ($null -eq $rec.nextAction) { $failures.Add("fixture '$label': planning gap carries no action"); continue }
+        if ([string]$rec.nextAction.kind -ne [string]$want.kind -or [string]$rec.nextAction.route -ne [string]$want.route -or [string]$rec.nextAction.case -ne $expectedCase) { $failures.Add("fixture '$label': carries $($rec.nextAction.kind) -> $($rec.nextAction.route) (case '$($rec.nextAction.case)'), configured $($want.kind) -> $($want.route)") }
+        if ([string]$rec.nextAction.body.repoName -ne [string]$planningFixtures[$label].repoName) { $failures.Add("fixture '$label': action body does not name the repository") }
+        if ($null -ne $want.PSObject.Properties['bodyValues']) {
+            foreach ($bv in $want.bodyValues.PSObject.Properties) { if ([string]$rec.nextAction.body.($bv.Name) -ne [string]$bv.Value) { $failures.Add("fixture '$label': body $($bv.Name) is '$($rec.nextAction.body.($bv.Name))', configured '$($bv.Value)'") } }
+        }
+        if ($null -eq $c.nextAction -or [string]$c.nextAction.kind -ne [string]$want.kind) { $failures.Add("fixture '$label': the conclusion ($($c.conclusion)) offers '$(if ($null -ne $c.nextAction) { $c.nextAction.kind })', not the planning case's action") }
+        $v = @(Test-FoundationConclusion -Conclusion $c -Config $config)
+        if ($v.Count -gt 0) { $failures.Add("fixture '$label': contract violated: $($v -join '; ')") }
+        $null = $routedTo.Add([string]$rec.nextAction.route)
+        $fixtureRows.Add(('  {0,-32} {1,-26} -> {2,-34} {3}' -f $label, $c.conclusion, $rec.nextAction.kind, $rec.nextAction.route)) | Out-Null
+    }
+    foreach ($row in $fixtureRows) { Write-Host $row }
+    foreach ($cn in $caseNames) { if (-not $emitted.Contains($cn)) { $failures.Add("actionsByCase maps '$cn', which no planning fixture emits - a dead route or a missing fixture") } }
+    foreach ($e in $emitted) { if ($e -notin $caseNames) { $failures.Add("the evaluator emits planning case '$e', which actionsByCase does not map") } }
+    if ($routedTo.Count -lt 2) { $failures.Add("the planning cases collapse onto one route ($($routedTo -join ', '))") }
+
+    # --- A data-only change reroutes a case -----------------------------------
+    $rerouted = ConvertFrom-Json -InputObject (ConvertTo-Json -InputObject $config -Depth 16)
+    $rrPlanning = @($rerouted.domains | Where-Object { [string]$_.id -eq 'planning' })[0]
+    $rrPlanning.actionsByCase.'below-contract-ready'.kind = 'fixture-rerouted-preview'
+    $rrPlanning.actionsByCase.'below-contract-ready'.route = '/api/repo/evaluate'
+    $rr = Get-RepositoryFoundationConclusion -Entry (ConvertTo-Entry $planningFixtures['below-contract-ready']) -Config $rerouted
+    if ([string]$rr.nextAction.kind -ne 'fixture-rerouted-preview' -or [string]$rr.nextAction.route -ne '/api/repo/evaluate') { $failures.Add("a config-only reroute did not change the action (got $($rr.nextAction.kind) -> $($rr.nextAction.route))") }
+    if (@(Test-FoundationConclusion -Conclusion $rr -Config $rerouted).Count -ne 0) { $failures.Add('the rerouted conclusion broke the contract') }
+
+    # --- Red first: the wrong action, and a case nothing routes ----------------
+    $wrong = Get-RepositoryFoundationConclusion -Entry (ConvertTo-Entry $planningFixtures['prose-roadmap']) -Config $config
+    $wrongPlanning = @($wrong.domains | Where-Object { [string]$_.domain -eq 'planning' })[0]
+    $wrongPlanning.nextAction.kind = 'roadmap-repair-preview'
+    if (@(Test-FoundationConclusion -Conclusion $wrong -Config $config | Where-Object { $_ -match "carries action 'roadmap-repair-preview'" }).Count -eq 0) { $failures.Add('validator did not go red on a prose roadmap carrying the repair action') }
+    $unmappedConfig = ConvertFrom-Json -InputObject (ConvertTo-Json -InputObject $config -Depth 16)
+    $umPlanning = @($unmappedConfig.domains | Where-Object { [string]$_.id -eq 'planning' })[0]
+    $umPlanning.actionsByCase.PSObject.Properties.Remove('prose-roadmap')
+    $unmapped = Get-RepositoryFoundationConclusion -Entry (ConvertTo-Entry $planningFixtures['prose-roadmap']) -Config $unmappedConfig
+    if (@(Test-FoundationConclusion -Conclusion $unmapped -Config $unmappedConfig | Where-Object { $_ -match "case 'prose-roadmap', which actionsByCase does not route" }).Count -eq 0) { $failures.Add('validator did not go red on a planning case the config does not route') }
+
+    # --- The trial cohort, replayed from its snapshot (runs in CI) -------------
+    $snapshotPath = Join-Path $WorkspaceRoot 'evidence\trials\release-3.7\cohort-entries.json'
+    if (-not (Test-Path -LiteralPath $snapshotPath)) { $failures.Add("cohort snapshot not found at $snapshotPath") }
+    else {
+        $snapshot = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $snapshotPath -Raw -Encoding UTF8)
+        if ([string]$snapshot.sourceIndexSha256 -notmatch '^[0-9a-f]{64}$') { $failures.Add('cohort snapshot does not record the SHA-256 of the index it came from') }
+        # The snapshot must carry every field the model reads, or the replay
+        # silently defaults one and proves nothing about the real cohort.
+        $moduleSource = Get-Content -LiteralPath (Join-Path $portfolioRoot 'Portfolio.Conclusion.ps1') -Raw -Encoding UTF8
+        $readFields = [System.Collections.Generic.HashSet[string]]::new()
+        foreach ($m in [regex]::Matches($moduleSource, "-Obj \`$Entry -Name '([A-Za-z]+)'")) { $null = $readFields.Add($m.Groups[1].Value) }
+        foreach ($rule in @($config.kindDetection.rules)) {
+            if ($null -ne $rule.PSObject.Properties['when']) { foreach ($p in $rule.when.PSObject.Properties) { $null = $readFields.Add($p.Name) } }
+            if ($null -ne $rule.PSObject.Properties['whenAny']) { foreach ($p in $rule.whenAny.PSObject.Properties) { $null = $readFields.Add(($p.Name -split '\.')[0]) } }
+        }
+        $snapRecords = @($snapshot.records)
+        foreach ($f in $readFields) {
+            foreach ($r in $snapRecords) { if ($null -eq $r.PSObject.Properties[$f]) { $failures.Add("cohort snapshot record $($r.repoName) lacks '$f', which the model reads"); break } }
+        }
+        if ($cohortNames.Count -gt 0) {
+            $snapNames = @($snapRecords | ForEach-Object { [string]$_.repoName })
+            foreach ($n in $cohortNames) { if ($n -notin $snapNames) { $failures.Add("cohort repository $n is not in the snapshot") } }
+        }
+        $replay = Get-PortfolioConclusionsPayload -Entries $snapRecords -Config $config
+        if (-not $replay.contract.holds) { $failures.Add("cohort replay violates the contract: $($replay.contract.violations -join '; ')") }
+        $cohortRoutes = [System.Collections.Generic.HashSet[string]]::new()
+        $cohortKinds = [System.Collections.Generic.HashSet[string]]::new()
+        foreach ($item in @($replay.items)) {
+            $na = $item.nextAction
+            if ($null -ne $na) { $null = $cohortRoutes.Add([string]$na.route); $null = $cohortKinds.Add([string]$na.kind) }
+            $leadCase = if (@($item.limitingFoundation).Count -gt 0) { '{0}:{1}' -f $item.limitingFoundation[0].domain, $item.limitingFoundation[0].case } else { '-' }
+            Write-Host ('  cohort {0,-27} {1,-26} {2,-38} -> {3}' -f $item.repoName, $item.conclusion, $leadCase, $(if ($null -ne $na) { "$($na.kind) $($na.route)" } else { 'no action' }))
+        }
+        if ($cohortRoutes.Count -le 1) { $failures.Add("the cohort routes to $($cohortRoutes.Count) route(s) ($($cohortRoutes -join ', ')); it must route to more than one") }
+        $snapGenerated = $snapshot.sourceIndexGeneratedAt
+        if ($snapGenerated -is [datetime]) { $snapGenerated = $snapGenerated.ToUniversalTime().ToString('o') }
+        $notes.Add(('cohort snapshot (index {0}, generated {1}): {2} repositories -> {3} distinct actions over {4} distinct routes' -f ([string]$snapshot.sourceIndexSha256).Substring(0, 12), [string]$snapGenerated, $snapRecords.Count, $cohortKinds.Count, $cohortRoutes.Count))
+    }
+
+    # --- The local index, where present ----------------------------------------
+    if ($null -ne $live) {
+        $routed = @($live.byNextAction.PSObject.Properties | ForEach-Object { '{0}={1}' -f $_.Name, $_.Value }) -join ' '
+        $notes.Add(('local index {0}: {1} repositories routed {2} (a count, not a target)' -f [string]$liveGenerated, @($live.items).Count, $routed))
+        foreach ($violation in @($live.contract.violations | Where-Object { $_ -match 'actionsByCase|configured action' })) { $failures.Add("index: $violation") }
+    }
+
+    $headline = 'Next-action routing by the kind of gap (3.7 M4c):'
+    $okLine = "ok: {0} planning cases each routed to their own runnable action; evaluator and config agree both ways; a data-only reroute took effect; validator red on a wrong action and an unrouted case; the cohort routes to more than one action" -f $caseNames.Count
 }
 
 # ============================================================================

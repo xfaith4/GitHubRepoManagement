@@ -64,8 +64,21 @@ function Invoke-PlanRoadmapRepair {
         }
     }
 
+    # Cannot repair a prose plan item by item: it was read in full and records
+    # no "- [ ]" items. Saying "cannot be parsed" here was the lie the parser's
+    # no-checklist state exists to stop (Roadmap.Parser.ps1).
+    if ($Contract.roadmapState -eq 'no-checklist') {
+        return [pscustomobject]@{
+            previewState = 'repair-blocked'
+            blockReason  = 'Roadmap plans in prose and records no "- [ ]" items, so there is nothing to repair item by item. Preview it rewritten as checklist milestones instead (AI docs preview, roadmap-contract template).'
+            actions      = @()
+            canAddHistory = $false
+            targetLevel  = 'L2-Structured'
+        }
+    }
+
     # Cannot repair a file that cannot be parsed
-    if ($Contract.roadmapState -in @('no-checklist', 'parse-error')) {
+    if ($Contract.roadmapState -eq 'parse-error') {
         return [pscustomobject]@{
             previewState = 'repair-blocked'
             blockReason  = "Roadmap cannot be parsed. Parse error: $($Contract.parseError)"
