@@ -1,6 +1,7 @@
 {
   "schemaVersion": "v1",
   "model": "foundation-domains",
+  "modelVersion": "foundation-conclusions v2",
   "principle": "The product does not prescribe what a repository should become; it identifies and strengthens the foundations that allow each repository to succeed at what it is intended to be.",
   "refinementRule": "Domains and kinds are data, not a taxonomy. Add, split, merge or re-weight one here; every change stays covered by the foundation-domains.json integrity gate and the module-smoke fixture set. Never add a domain the product cannot evidence from visible repository state, and never let a conclusion cite the absence of findings as evidence.",
   "conclusions": {
@@ -104,8 +105,12 @@
   "kinds": [
     { "id": "unknown", "title": "Not yet classified", "applicability": {}, "note": "No kind signal; every scored domain applies. A curation or classifier signal refines this." },
     { "id": "service", "title": "Service or application", "applicability": {} },
-    { "id": "library", "title": "Library", "applicability": {} },
     { "id": "script-collection", "title": "Script collection", "applicability": {} },
+    { "id": "application", "title": "Application", "applicability": {}, "note": "Release 3.7 M4a: a served page, an app-framework manifest, an executable project, or a README that says so. M4b decides what this kind is not judged on." },
+    { "id": "library", "title": "Library", "applicability": {} },
+    { "id": "firmware", "title": "Firmware", "applicability": {}, "note": "Release 3.7 M4a: a firmware target (platformio.ini, Arduino sketch, ESP sdkconfig) or a README that says so." },
+    { "id": "experiment", "title": "Experiment", "applicability": {}, "note": "Release 3.7 M4a: the README purpose line calls it an experiment, prototype, spike or bootstrap. Provisional by nature; D-006 owner intent may overrule it." },
+    { "id": "tooling", "title": "Tooling", "applicability": {}, "note": "Release 3.7 M4a: a CLI entry, loose root scripts with no module manifest, or a README that calls it a tool or utility." },
     {
       "id": "minimal",
       "title": "Minimal utility",
@@ -134,10 +139,19 @@
     }
   ],
   "kindDetection": {
-    "note": "Only signals the index already carries. Anything undetected is 'unknown' - honest, and every scored domain applies.",
+    "note": "Only signals the index already carries. First matching rule wins; `when` is field equality, `whenAny` is 'this dotted path holds one of these values' (kindSignals.hints comes from Portfolio.KindSignals.ps1 at scan time). Anything undetected is 'unknown' - honest, and every scored domain applies.",
     "rules": [
       { "kind": "archived", "when": { "lifecycleState": "archived" }, "basis": "lifecycleState=archived" },
-      { "kind": "archived", "when": { "curationState": "archived-ignore" }, "basis": "curationState=archived-ignore" }
+      { "kind": "archived", "when": { "curationState": "archived-ignore" }, "basis": "curationState=archived-ignore" },
+      { "kind": "firmware", "whenAny": { "kindSignals.hints": ["firmware-target"] }, "basis": "a firmware target is checked in (platformio.ini, Arduino sketch or ESP sdkconfig)" },
+      { "kind": "experiment", "whenAny": { "kindSignals.hints": ["experiment-wording"] }, "basis": "the README purpose line calls it an experiment, prototype, spike or bootstrap" },
+      { "kind": "application", "whenAny": { "kindSignals.hints": ["web-app", "executable-manifest"] }, "basis": "a served page or app framework outranks a helper module in the same repository: a served page, an app-framework dependency or an executable project" },
+      { "kind": "library", "whenAny": { "kindSignals.hints": ["module-manifest", "library-manifest"] }, "basis": "the manifest declares a module or publishable package" },
+      { "kind": "firmware", "whenAny": { "kindSignals.hints": ["firmware-wording"] }, "basis": "the README purpose line names a firmware target" },
+      { "kind": "tooling", "whenAny": { "kindSignals.hints": ["cli-entry"] }, "basis": "the manifest declares a command-line entry" },
+      { "kind": "library", "whenAny": { "kindSignals.hints": ["library-wording"] }, "basis": "the README purpose line calls it a library, module, client or wrapper" },
+      { "kind": "application", "whenAny": { "kindSignals.hints": ["application-wording"] }, "basis": "the README purpose line calls it an application, site, dashboard or engine" },
+      { "kind": "tooling", "whenAny": { "kindSignals.hints": ["tooling-wording", "script-entry"] }, "basis": "the README purpose line calls it a tool or utility, or loose scripts sit at the root with no module manifest" }
     ]
   }
 }

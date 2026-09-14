@@ -314,6 +314,10 @@ Invoke-InProcessGate -Name 'roadmap-audit-action package (Release 2.3 Phase 3)' 
     Write-Host '  roadmap-audit-action: composite action audits ROADMAP.md and passes' -ForegroundColor DarkGray
 }
 
+# Release 3.7 M4a — the milestone's own check line, run where the roadmap says
+# it runs: kind resolves from manifests, entry points and the README purpose line.
+Invoke-ScriptGate -Name 'Kind detection' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-KindDetection.ps1') -ScriptArgs @('-FailOnError')
+
 Invoke-ScriptGate -Name 'Roadmap structure lint' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapStructure.ps1') -ScriptArgs @('-Path', (Join-Path $WorkspaceRoot 'ROADMAP.md'), '-FailOnError')
 
 # Release 3.4, recorded 2026-08-15. PR #134 shipped a tested 306-line module and

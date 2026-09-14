@@ -65,10 +65,40 @@ function Get-FoundationDomainsConfig {
     return $parsed
 }
 
+function _PC_ResolvePath {
+    <#
+        Walk a dotted path over an entry. An array along the way maps the rest
+        of the path over its elements, so 'technologies.id' yields the id list
+        and 'kindSignals.hints' the hint list. Missing -> @().
+    #>
+    param([object]$Obj, [string]$Path)
+    $current = @($Obj)
+    foreach ($segment in ($Path -split '\.')) {
+        $next = [System.Collections.Generic.List[object]]::new()
+        foreach ($node in $current) {
+            if ($null -eq $node) { continue }
+            $value = _PC_GetField -Obj $node -Name $segment -Default $null
+            if ($null -eq $value) { continue }
+            if ($value -is [string] -or $value -isnot [System.Collections.IEnumerable]) { $next.Add($value) | Out-Null }
+            else { foreach ($v in @($value)) { if ($null -ne $v) { $next.Add($v) | Out-Null } } }
+        }
+        $current = @($next)
+        if ($current.Count -eq 0) { return @() }
+    }
+    return @($current)
+}
+
 function Resolve-RepositoryKind {
     <#
     .SYNOPSIS
         Pick the repository kind from the config's detection rules; 'unknown' when nothing matches.
+    .DESCRIPTION
+        Rules are tried in file order; the first match wins. A rule carries
+        `when` (every named field equals its value) and/or `whenAny` (every
+        named path holds at least one of the listed values). Paths are dotted
+        and array-aware, so `kindSignals.hints` and `technologies.id` work.
+        foundation-conclusions v2 (Release 3.7 M4a) added whenAny; v1 rules
+        with only `when` are unchanged.
     #>
     [CmdletBinding()]
     param(
@@ -80,19 +110,31 @@ function Resolve-RepositoryKind {
     $rules = @(_PC_GetField -Obj $detection -Name 'rules' -Default @())
     foreach ($rule in $rules) {
         $when = _PC_GetField -Obj $rule -Name 'when' -Default $null
-        if ($null -eq $when) { continue }
-        $names = @()
-        $names = @(_PC_PropertyNames -Obj $when)
-        $allMatch = $names.Count -gt 0
-        foreach ($name in $names) {
+        $whenAny = _PC_GetField -Obj $rule -Name 'whenAny' -Default $null
+        if ($null -eq $when -and $null -eq $whenAny) { continue }
+        $matched = $true
+        $matchedOn = [System.Collections.Generic.List[string]]::new()
+        foreach ($name in @(_PC_PropertyNames -Obj $when)) {
             $expected = [string](_PC_GetField -Obj $when -Name $name -Default '')
             $actual = [string](_PC_GetField -Obj $Entry -Name $name -Default '')
-            if ($actual -ne $expected) { $allMatch = $false; break }
+            if ($actual -ne $expected) { $matched = $false; break }
+            $matchedOn.Add("$name=$expected") | Out-Null
         }
-        if ($allMatch) {
+        if ($matched) {
+            foreach ($path in @(_PC_PropertyNames -Obj $whenAny)) {
+                $accepted = @(_PC_Strings -Values @(_PC_GetField -Obj $whenAny -Name $path -Default @()))
+                $present = @(_PC_Strings -Values @(_PC_ResolvePath -Obj $Entry -Path $path))
+                $hit = @($present | Where-Object { $_ -in $accepted } | Select-Object -First 1)
+                if ($hit.Count -eq 0) { $matched = $false; break }
+                $matchedOn.Add("$path=$($hit[0])") | Out-Null
+            }
+        }
+        if ($matched -and $matchedOn.Count -gt 0) {
+            $basis = [string](_PC_GetField -Obj $rule -Name 'basis' -Default '')
+            if ([string]::IsNullOrWhiteSpace($basis)) { $basis = $matchedOn -join ', ' }
             return [pscustomobject]@{
                 kind  = [string](_PC_GetField -Obj $rule -Name 'kind' -Default 'unknown')
-                basis = [string](_PC_GetField -Obj $rule -Name 'basis' -Default 'detection rule')
+                basis = $basis
             }
         }
     }
@@ -373,6 +415,10 @@ function Get-RepositoryFoundationConclusion {
         model         = 'foundation-conclusion'
         repoId        = $repoId
         repoName      = $repoName
+        # Release 3.7 M4a: the trial records the index SHA a conclusion was
+        # drawn from; modelVersion beside it keeps that comparable across
+        # kind-model changes. Read from config so a data-only refinement bumps it.
+        modelVersion  = [string](_PC_GetField -Obj $Config -Name 'modelVersion' -Default 'foundation-conclusions v1')
         kind          = $kindVerdict.kind
         kindBasis     = $kindVerdict.basis
         conclusion    = $conclusion
@@ -556,6 +602,7 @@ function Get-PortfolioConclusionsPayload {
     return [pscustomobject]@{
         schemaVersion = 'v1'
         model         = 'foundation-conclusions'
+        modelVersion  = [string](_PC_GetField -Obj $Config -Name 'modelVersion' -Default 'foundation-conclusions v1')
         generatedAt   = $GeneratedAt
         count         = $items.Count
         byConclusion  = [pscustomobject]$byConclusion
