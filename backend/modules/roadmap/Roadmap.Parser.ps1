@@ -57,6 +57,7 @@ function _RoadmapParserNormalizeTaskKey {
         $normalized = $normalized.Normalize([Text.NormalizationForm]::FormKC)
     } catch {
         # Fall back to the original value when Unicode normalization is unavailable.
+        $null = $_
     }
 
     $normalized = $normalized `

@@ -216,7 +216,8 @@ function Get-QueueEntries {
     if (-not (Test-Path -LiteralPath $QueuePath)) { return $entries.ToArray() }
     foreach ($line in (Get-Content -LiteralPath $QueuePath -Encoding UTF8)) {
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        try { $entries.Add(($line | ConvertFrom-Json)) } catch { }
+        # Best-effort: a malformed queue line is skipped rather than failing the whole read.
+        try { $entries.Add(($line | ConvertFrom-Json)) } catch { $null = $_ }
     }
     return $entries.ToArray()
 }
@@ -241,7 +242,8 @@ function Resolve-VerifyCommand {
                 return [pscustomobject]@{ Display = 'npm test'; Exe = 'npm'; Arguments = @('test') }
             }
         }
-        catch { }
+        # Best-effort: an unreadable or malformed package.json means no npm test is detected; the caller falls back to its next verify command.
+        catch { $null = $_ }
     }
     if (Test-Path -LiteralPath (Join-Path $RepoPath 'scripts\Invoke-TestSuite.ps1')) {
         return [pscustomobject]@{ Display = 'pwsh -NoProfile -File scripts/Invoke-TestSuite.ps1'; Exe = 'pwsh'; Arguments = @('-NoProfile', '-File', 'scripts/Invoke-TestSuite.ps1') }

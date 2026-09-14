@@ -282,7 +282,8 @@ function Send-WatchdogAlert {
         $body = ($Payload | ConvertTo-Json -Depth 6)
         $null = Invoke-WebRequest -Uri $WebhookUrl -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 10 -UseBasicParsing
     }
-    catch { }
+    # Best-effort: the webhook is a courtesy notification; a failed post must not stop the watchdog from acting.
+    catch { $null = $_ }
 }
 
 if ($LoadFunctionsOnly) { return }

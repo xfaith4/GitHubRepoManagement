@@ -536,7 +536,8 @@ function Get-RepoWarnings {
                 if ($daysSince -gt 365) {
                     $warnings.Add("Last commit was $daysSince days ago - verify repo is still active before investing in doc review")
                 }
-            } catch { }
+            # Best-effort: an unparseable commit date just omits the staleness warning.
+            } catch { $null = $_ }
         }
     }
 

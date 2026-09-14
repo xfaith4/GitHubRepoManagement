@@ -350,7 +350,8 @@ function Clear-SettingsSecretsOnDisk {
     if ($after -ne $before) {
         ($obj | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $SettingsPath -Encoding UTF8
         Write-Ok 'Stripped secrets from settings.json (auth.apiKey / network.tls.*) — now secret-free and git-safe.'
-        try { & icacls $SettingsPath /reset *> $null } catch { }
+        # Best-effort: resetting the ACL is a courtesy after stripping secrets; the stripped file is already written.
+        try { & icacls $SettingsPath /reset *> $null } catch { $null = $_ }
     }
 }
 

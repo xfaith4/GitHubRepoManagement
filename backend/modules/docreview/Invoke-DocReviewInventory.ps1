@@ -109,21 +109,24 @@ function Get-GitFreshness {
         if ($LASTEXITCODE -eq 0 -and $raw) {
             $result.LastCommitDate = $raw.Trim()
         }
-    } catch { }
+    # Best-effort: git may be absent or the path may not be a repository; LastCommitDate then stays at its default.
+    } catch { $null = $_ }
 
     try {
         $branch = & git -C $RepoPath branch --show-current 2>$null
         if ($LASTEXITCODE -eq 0) {
             $result.CurrentBranch = $branch.Trim()
         }
-    } catch { }
+    # Best-effort: git may be absent or the path may not be a repository; CurrentBranch then stays at its default.
+    } catch { $null = $_ }
 
     try {
         $statusLines = @(& git -C $RepoPath status --porcelain 2>$null)
         if ($LASTEXITCODE -eq 0) {
             $result.UncommittedChanges = $statusLines.Count
         }
-    } catch { }
+    # Best-effort: git may be absent or the path may not be a repository; UncommittedChanges then stays at its default.
+    } catch { $null = $_ }
 
     return $result
 }

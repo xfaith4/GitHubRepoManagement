@@ -418,7 +418,8 @@ finally {
     foreach ($p in @($Port, $BindGuardPort, $CorsRatePort, $TlsPort)) {
         Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty OwningProcess -Unique |
-            ForEach-Object { try { Stop-Process -Id $_ -Force -ErrorAction Stop } catch { } }
+            # Best-effort: a listener that exited between the query and the kill is already gone, which is the outcome wanted.
+            ForEach-Object { try { Stop-Process -Id $_ -Force -ErrorAction Stop } catch { $null = $_ } }
     }
     # Restore settings.json exactly as it was before the run.
     $env:REPO_MGMT_SETTINGS_PATH = $null

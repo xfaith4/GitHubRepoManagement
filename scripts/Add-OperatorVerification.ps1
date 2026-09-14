@@ -152,7 +152,8 @@ $logPath = Join-Path $WorkspaceRoot 'evidence\operator-verification-log.jsonl'
 $null = New-Item -ItemType Directory -Path (Split-Path -Parent $logPath) -Force
 
 $sha = $null
-try { $sha = (& git -C $WorkspaceRoot rev-parse --short HEAD 2>$null).Trim() } catch { }
+# Best-effort: git may be absent or this may not be a checkout; the record then carries no commit sha.
+try { $sha = (& git -C $WorkspaceRoot rev-parse --short HEAD 2>$null).Trim() } catch { $null = $_ }
 
 $record = [ordered]@{
     timestamp = (Get-Date).ToString('o')

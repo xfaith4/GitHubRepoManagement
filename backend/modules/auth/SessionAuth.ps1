@@ -110,7 +110,8 @@ function Get-SessionSigningKey {
             $b64 = (Get-Content -LiteralPath $path -Raw).Trim()
             if (-not [string]::IsNullOrWhiteSpace($b64)) { return [Convert]::FromBase64String($b64) }
         }
-        catch { }
+        # Best-effort: an unreadable or malformed key file is treated as absent, so the caller proceeds exactly as if nothing had been stored.
+        catch { $null = $_ }
     }
     $key = New-Object byte[] 32
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()

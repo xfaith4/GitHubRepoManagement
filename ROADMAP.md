@@ -1462,8 +1462,10 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       probes that may be absent or refused — and each now states its reason
       beside a real statement (`$null = $_`). None warranted surfacing: every
       one degrades to the honest answer (blank, null, skipped line) that its
-      caller already handles. Ratchet locked at 461 (was 484). 56 remain across
-      `backend/modules` and `scripts`.
+      caller already handles. **Batches 2 and 3, `backend/modules` (20) and
+      `scripts`/`tools` (21), done the same day** on the same finding: every
+      site best-effort, each now stating its reason. Ratchet locked at 420 (was
+      484; empty-catch 79 → 15). The 15 left sit outside the module tree.
 - [ ] **E2 — type the API client (`no-explicit-any`, 123, bulk in
       `apiClient.ts`).** Per endpoint-group batches; the value is contract
       drift caught at typecheck, not style. Lower the ratchet after each.
