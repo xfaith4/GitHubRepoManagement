@@ -1453,10 +1453,17 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
   workspace reset keyed on the repository that must not fire when a background
   refresh changes the entry's item text, or it would wipe the operator's
   in-progress prompt. `--max-warnings` ratcheted 161 → 153.
-- [ ] **P2 — empty catch blocks (79), classify then fix.** Guardrail-aligned
+- [ ] **P2 — empty catch blocks (79 → 56), classify then fix.** Guardrail-aligned
       ("never swallow silently"): each site becomes either an annotated
       deliberate best-effort (narrowed catch + comment) or a surfaced
-      failure. Batch by module; multiple PRs.
+      failure. Batch by module; multiple PRs. **Batch 1, the api host, done
+      2026-09-13:** all 23 sites were genuine best-effort — log mirrors and
+      trims, optional prompt context, per-line JSONL parsing, socket cleanup,
+      probes that may be absent or refused — and each now states its reason
+      beside a real statement (`$null = $_`). None warranted surfacing: every
+      one degrades to the honest answer (blank, null, skipped line) that its
+      caller already handles. Ratchet locked at 461 (was 484). 56 remain across
+      `backend/modules` and `scripts`.
 - [ ] **E2 — type the API client (`no-explicit-any`, 123, bulk in
       `apiClient.ts`).** Per endpoint-group batches; the value is contract
       drift caught at typecheck, not style. Lower the ratchet after each.

@@ -1,12 +1,11 @@
 {
   "PSAvoidDefaultValueSwitchParameter": 5,
-  "PSAvoidUsingEmptyCatchBlock": 79,
+  "PSAvoidUsingEmptyCatchBlock": 56,
   "PSAvoidUsingPlainTextForPassword": 9,
   "PSAvoidUsingPositionalParameters": 34,
   "PSProvideCommentHelp": 18,
   "PSReviewUnusedParameter": 26,
   "PSUseApprovedVerbs": 18,
-  "PSUseBOMForUnicodeEncodedFile": 0,
   "PSUseOutputTypeCorrectly": 126,
   "PSUseShouldProcessForStateChangingFunctions": 67,
   "PSUseSingularNouns": 90,
