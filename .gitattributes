@@ -1,0 +1,26 @@
+# Line endings are LF in the repository and in every checkout, on every OS.
+#
+# Lane 0.8 (found 2026-08-13): with no .gitattributes and core.autocrlf=true,
+# a Windows checkout held CRLF while the index and CI's checkout held LF, so
+# byte-level comparisons drifted locally (245 CRLF vs 245 LF read as a change)
+# while passing in CI, and 26 files had been committed with CRLF or mixed
+# endings by whichever editor touched them last. Declaring eol=lf here makes
+# the working copy match the index, so a diff is only ever content.
+#
+# `text=auto` lets git detect binaries it does not know; the explicit entries
+# below cover the ones it must never touch.
+* text=auto eol=lf
+
+# Binary assets: never normalized, never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pfx binary
+*.woff binary
+*.woff2 binary
+
+# Windows batch files are the one text format that genuinely needs CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf

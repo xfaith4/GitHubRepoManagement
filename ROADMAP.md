@@ -1414,11 +1414,16 @@ Takes effect on the next service restart.
 
 **Still open:**
 
-- [ ] **[non-blocker]** **No `.gitattributes`, with `core.autocrlf=true`.**
-      Byte-level comparisons are non-deterministic locally while passing in
-      CI's fresh checkout (2026-08-13: 245 CRLF vs 245 LF read as drift); the
-      sync gate normalises, but it was the only gate audited. Fix: a
-      `.gitattributes` declaring `text eol=lf`. _(state: planned)_
+_`.gitattributes` — closed 2026-09-13._ The repository now declares
+`* text=auto eol=lf`, PNG and other assets `binary`, and `.bat`/`.cmd` CRLF.
+Before it, 386 of 414 tracked files were LF in the index while 22 were CRLF and
+4 mixed — whichever editor touched them last decided — and a Windows checkout
+under `core.autocrlf=true` held CRLF for all of them, so any byte comparison
+drifted locally while passing on CI's LF checkout. The 26 were renormalized in
+the same commit: 8,852 lines changed, and a CR-stripped comparison of every
+file before and after found zero content differences. The index is now 412 LF
+files plus the two PNGs.
+
 - [ ] **[non-blocker]** The scheduled and operator dispatch paths reach the
       queue through different writers with only one end-to-end test; the
       behavioural divergence closed in 3.1, the coverage asymmetry remains.
