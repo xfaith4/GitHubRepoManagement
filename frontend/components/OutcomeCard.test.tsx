@@ -149,6 +149,35 @@ describe('OutcomeCard — the next action', () => {
     expect(screen.getByRole('button', { name: 'Preview the plan' })).toBeDisabled();
     expect(screen.getByText(/names no repository/)).toBeInTheDocument();
   });
+
+  // 3.7 M4c — no one-click egress.
+  const aiAction = {
+    domain: 'planning', kind: 'roadmap-checklist-rewrite-preview', label: 'Preview the plan rewritten as checklist milestones', method: 'POST',
+    route: '/api/ai/docs/improve/preview', body: { repoName: 'demo', docType: 'roadmap', templateId: 'roadmap-contract' }, previewFirst: true,
+  };
+
+  it('tells the operator an AI action asks before anything is sent', () => {
+    render(<OutcomeCard conclusion={conclusion({ nextAction: aiAction })} onRunNextAction={vi.fn()} />);
+    expect(screen.getByRole('button', { name: aiAction.label })).toBeEnabled();
+    expect(screen.getByText(/which provider and which file before anything is sent/)).toBeInTheDocument();
+  });
+
+  it('disables the AI action for a private-scope repository and says why', () => {
+    const onRun = vi.fn();
+    render(
+      <OutcomeCard
+        conclusion={conclusion({ nextAction: aiAction })}
+        onRunNextAction={onRun}
+        actionDisabledReason="demo is marked private scope in Settings, so its files are never sent to an AI provider."
+      />
+    );
+    const button = screen.getByRole('button', { name: aiAction.label });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onRun).not.toHaveBeenCalled();
+    expect(screen.getByText(/marked private scope in Settings/)).toBeInTheDocument();
+    expect(screen.queryByText(/which provider and which file/)).not.toBeInTheDocument();
+  });
 });
 
 describe('OutcomeCard — the contract', () => {

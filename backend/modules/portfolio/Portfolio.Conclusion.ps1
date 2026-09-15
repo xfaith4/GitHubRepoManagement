@@ -211,8 +211,11 @@ function _PC_KindDefinition {
 
 function _PC_EvaluateDomain {
     <#
-        Returns @{ status; evidence[] } for one scored domain against one entry.
+        Returns @{ status; evidence[]; case } for one scored domain against one entry.
         Every evidence string is a positive observation, never "no findings".
+        `case` names which branch fired when the domain is a gap, so the
+        config can route each kind of gap to its own action (3.7 M4c); ''
+        when the domain has one gap shape or is not a gap.
     #>
     param([object]$Domain, [object]$Entry)
 
@@ -220,6 +223,7 @@ function _PC_EvaluateDomain {
     $thresholds = _PC_GetField -Obj $Domain -Name 'thresholds' -Default $null
     $evidence = [System.Collections.Generic.List[string]]::new()
     $status = 'missing'
+    $case = ''
 
     $hasReadme = [bool](_PC_GetField -Obj $Entry -Name 'hasReadme' -Default $false)
     $readmeScore = [int](_PC_GetField -Obj $Entry -Name 'readmeScore' -Default 0)
@@ -259,19 +263,23 @@ function _PC_EvaluateDomain {
             $weakLevels = @(_PC_GetField -Obj $thresholds -Name 'weakMaturity' -Default @('L1-Informal', 'L2-Structured'))
             $absentReadsAs = [string](_PC_GetField -Obj $Domain -Name 'absentReadsAs' -Default 'no plan recorded')
             if (-not $hasRoadmap -or $roadmapState -eq 'missing') {
-                $status = 'missing'; $evidence.Add("$absentReadsAs (no ROADMAP.md)")
+                $status = 'missing'; $case = 'no-roadmap'; $evidence.Add("$absentReadsAs (no ROADMAP.md)")
             } elseif ($roadmapState -eq 'no-checklist') {
                 # Not a gap in the repository — a gap in what this console can
                 # read. Say which it is, or the operator repairs the wrong thing.
-                $status = 'weak'; $evidence.Add('ROADMAP.md was read in full and plans in prose rather than "- [ ]" items, so no unit of work can be tracked from it')
+                $status = 'weak'; $case = 'prose-roadmap'; $evidence.Add('ROADMAP.md was read in full and plans in prose rather than "- [ ]" items, so no unit of work can be tracked from it')
             } elseif ($roadmapState -eq 'parse-error') {
-                $status = 'weak'; $evidence.Add('ROADMAP.md exists but could not be parsed')
+                $status = 'weak'; $case = 'parse-error'; $evidence.Add('ROADMAP.md exists but could not be parsed')
             } elseif ($maturity -in $presentLevels) {
                 $status = 'present'; $evidence.Add("roadmap at $maturity with $pending pending item(s)")
-            } elseif ($maturity -in $weakLevels) {
-                $status = 'weak'; $evidence.Add("roadmap at $maturity - below the contract-ready bar - with $pending pending item(s)")
             } else {
-                $status = 'weak'; $evidence.Add("ROADMAP.md exists but audits as '$maturity' ($absentReadsAs in contract terms)")
+                # Below the contract-ready bar. A complete roadmap is its own
+                # case: the repair flow refuses complete roadmaps, so sending
+                # one there offers a preview that always declines.
+                $status = 'weak'
+                $case = if ($roadmapState -eq 'complete') { 'complete-below-contract-ready' } else { 'below-contract-ready' }
+                if ($maturity -in $weakLevels) { $evidence.Add("roadmap at $maturity - below the contract-ready bar - with $pending pending item(s)") }
+                else { $evidence.Add("ROADMAP.md exists but audits as '$maturity' ($absentReadsAs in contract terms)") }
             }
             if ($roadmapState -eq 'complete') { $evidence.Add('every recorded item is complete') }
         }
@@ -298,7 +306,7 @@ function _PC_EvaluateDomain {
             $evidence.Add("domain '$id' has no evaluator in this version")
         }
     }
-    return @{ status = $status; evidence = @($evidence) }
+    return @{ status = $status; evidence = @($evidence); case = $case }
 }
 
 function _PC_ObserveUnscored {
@@ -315,16 +323,37 @@ function _PC_ObserveUnscored {
     return @{ status = 'not-scored'; evidence = @($evidence) }
 }
 
+function _PC_ActionDefinitionFor {
+    <#
+        3.7 M4c: the configured action for one gap. A domain that routes by
+        case (`actionsByCase`) must name an action for the case that fired;
+        a domain without that map uses its single `nextAction`. Returns
+        @{ definition; source } where source is 'case' | 'domain' | 'unmapped-case'.
+    #>
+    param([object]$Domain, [string]$Case)
+    $byCase = _PC_GetField -Obj $Domain -Name 'actionsByCase' -Default $null
+    if ($null -ne $byCase -and -not [string]::IsNullOrWhiteSpace($Case)) {
+        $definition = _PC_GetField -Obj $byCase -Name $Case -Default $null
+        if ($null -ne $definition) { return @{ definition = $definition; source = 'case' } }
+        return @{ definition = $null; source = 'unmapped-case' }
+    }
+    return @{ definition = (_PC_GetField -Obj $Domain -Name 'nextAction' -Default $null); source = 'domain' }
+}
+
 function _PC_NextActionFor {
-    param([object]$Domain, [object]$Entry)
-    $action = _PC_GetField -Obj $Domain -Name 'nextAction' -Default $null
-    if ($null -eq $action) { return $null }
-    return _PC_ActionFromDefinition -Definition $action -DomainId ([string](_PC_GetField -Obj $Domain -Name 'id' -Default '')) -Entry $Entry
+    param([object]$Domain, [object]$Entry, [string]$Case = '')
+    $resolved = _PC_ActionDefinitionFor -Domain $Domain -Case $Case
+    if ($null -eq $resolved.definition) { return $null }
+    return _PC_ActionFromDefinition -Definition $resolved.definition -DomainId ([string](_PC_GetField -Obj $Domain -Name 'id' -Default '')) -Entry $Entry -Case $Case
 }
 
 function _PC_ActionFromDefinition {
-    <# One action object from a config definition ({kind,label,method,route,bodyKeys}) and the entry it targets. #>
-    param([object]$Definition, [string]$DomainId, [object]$Entry)
+    <#
+        One action object from a config definition ({kind,label,method,route,bodyKeys,bodyValues})
+        and the entry it targets. bodyKeys are read from the entry; bodyValues
+        are fixed strings the flow needs (a document type, a template id).
+    #>
+    param([object]$Definition, [string]$DomainId, [object]$Entry, [string]$Case = '')
     $action = $Definition
     $body = [ordered]@{}
     foreach ($key in @(_PC_GetField -Obj $action -Name 'bodyKeys' -Default @())) {
@@ -335,8 +364,11 @@ function _PC_ActionFromDefinition {
         }
         $body[[string]$key] = $value
     }
+    $fixed = _PC_GetField -Obj $action -Name 'bodyValues' -Default $null
+    foreach ($name in @(_PC_PropertyNames -Obj $fixed)) { $body[$name] = [string](_PC_GetField -Obj $fixed -Name $name -Default '') }
     return [pscustomobject]@{
         domain = $DomainId
+        case   = $Case
         kind   = [string](_PC_GetField -Obj $action -Name 'kind' -Default '')
         label  = [string](_PC_GetField -Obj $action -Name 'label' -Default '')
         method = [string](_PC_GetField -Obj $action -Name 'method' -Default 'POST')
@@ -443,7 +475,7 @@ function Get-RepositoryFoundationConclusion {
         $title = [string](_PC_GetField -Obj $domain -Name 'title' -Default $id)
         $scored = [bool](_PC_GetField -Obj $domain -Name 'scored' -Default $true)
         $naReason = [string](_PC_GetField -Obj $applicability -Name $id -Default '')
-        $record = [ordered]@{ domain = $id; title = $title; status = ''; evidence = @(); nextAction = $null }
+        $record = [ordered]@{ domain = $id; title = $title; status = ''; evidence = @(); case = ''; nextAction = $null }
         if (-not [string]::IsNullOrWhiteSpace($naReason)) {
             $record.status = 'not-applicable'
             $record.evidence = @($naReason)
@@ -458,8 +490,9 @@ function Get-RepositoryFoundationConclusion {
             $evaluated = _PC_EvaluateDomain -Domain $domain -Entry $Entry
             $record.status = $evaluated.status
             $record.evidence = @($evaluated.evidence)
+            $record.case = [string]$evaluated.case
             if ($record.status -in @('missing', 'weak')) {
-                $record.nextAction = _PC_NextActionFor -Domain $domain -Entry $Entry
+                $record.nextAction = _PC_NextActionFor -Domain $domain -Entry $Entry -Case $record.case
             }
         }
         $domains.Add([pscustomobject]$record) | Out-Null
@@ -472,7 +505,7 @@ function Get-RepositoryFoundationConclusion {
     # next action answers, so the two cannot drift.
     $limitingFoundation = @(
         @($domains | Where-Object { $_.status -eq 'missing' }) + @($domains | Where-Object { $_.status -eq 'weak' }) |
-        ForEach-Object { [pscustomobject]@{ domain = $_.domain; title = $_.title; status = $_.status; evidence = @($_.evidence) } }
+        ForEach-Object { [pscustomobject]@{ domain = $_.domain; title = $_.title; status = $_.status; case = $_.case; evidence = @($_.evidence) } }
     )
 
     $conclusion = ''
@@ -588,7 +621,9 @@ function Test-FoundationConclusion {
         - lifecycleState and conclusion agree, or an explained exception applies
           (steering extension 3; the table is foundation-domains.json lifecycleConsistency);
         - no not-applicable domain is named as limiting, and a strengthen's next
-          action answers the lead of the limiting foundation (3.7 M4b).
+          action answers the lead of the limiting foundation (3.7 M4b);
+        - every gap in a domain that routes by case has a configured action for
+          that case, and the action the record carries is that one (3.7 M4c).
     #>
     [CmdletBinding()]
     [OutputType([System.Object[]])]
@@ -632,6 +667,25 @@ function Test-FoundationConclusion {
         $ld = [string](_PC_GetField -Obj $l -Name 'domain' -Default '')
         if ($ld -in $notApplicable) { $violations.Add("$name names not-applicable domain '$ld' as a limiting foundation") }
         if ([string](_PC_GetField -Obj $l -Name 'status' -Default '') -notin @('missing', 'weak')) { $violations.Add("$name lists '$ld' as limiting with status '$(_PC_GetField -Obj $l -Name 'status' -Default '')'") }
+    }
+
+    # 3.7 M4c: every gap in a domain that routes by case has a configured
+    # action for that case, and the action a record carries is that one.
+    $configDomainsById = @{}
+    foreach ($cd in @(_PC_GetField -Obj $Config -Name 'domains' -Default @())) { $configDomainsById[[string](_PC_GetField -Obj $cd -Name 'id' -Default '')] = $cd }
+    foreach ($d in $domains) {
+        $dId = [string](_PC_GetField -Obj $d -Name 'domain' -Default '')
+        if ([string](_PC_GetField -Obj $d -Name 'status' -Default '') -notin @('missing', 'weak')) { continue }
+        if (-not $configDomainsById.ContainsKey($dId)) { continue }
+        $dCase = [string](_PC_GetField -Obj $d -Name 'case' -Default '')
+        $resolved = _PC_ActionDefinitionFor -Domain $configDomainsById[$dId] -Case $dCase
+        if ($resolved.source -eq 'unmapped-case') { $violations.Add("$name domain '$dId' is a gap of case '$dCase', which actionsByCase does not route"); continue }
+        $carried = _PC_GetField -Obj $d -Name 'nextAction' -Default $null
+        if ($null -ne $resolved.definition -and $null -ne $carried) {
+            $wantKind = [string](_PC_GetField -Obj $resolved.definition -Name 'kind' -Default '')
+            $gotKind = [string](_PC_GetField -Obj $carried -Name 'kind' -Default '')
+            if ($gotKind -ne $wantKind) { $violations.Add("$name domain '$dId' case '$dCase' carries action '$gotKind', but the configured action is '$wantKind'") }
+        }
     }
 
     switch ($verdict) {
@@ -760,6 +814,16 @@ function Get-PortfolioConclusionsPayload {
         $byLimitingFoundation[$lead]++
     }
 
+    # 3.7 M4c: which action each repository is sent to, by kind of action. A
+    # count, never a target (steering section 6).
+    $byNextAction = [ordered]@{ none = 0 }
+    foreach ($i in $items) {
+        $na = _PC_GetField -Obj $i -Name 'nextAction' -Default $null
+        $k = if ($null -eq $na) { 'none' } else { [string](_PC_GetField -Obj $na -Name 'kind' -Default 'none') }
+        if (-not $byNextAction.Contains($k)) { $byNextAction[$k] = 0 }
+        $byNextAction[$k]++
+    }
+
     # Steering extension 3: how the two verdict models relate across the set.
     $byConsistency = [ordered]@{ allowed = 0; explained = 0; contradiction = 0; 'unknown-lifecycle' = 0; 'not-assessed' = 0 }
     foreach ($i in $items) {
@@ -794,6 +858,7 @@ function Get-PortfolioConclusionsPayload {
         count         = $items.Count
         byConsistency = [pscustomobject]$byConsistency
         byLimitingFoundation = [pscustomobject]$byLimitingFoundation
+        byNextAction  = [pscustomobject]$byNextAction
         byConclusion  = [pscustomobject]$byConclusion
         byKind        = [pscustomobject]$byKind
         coverage      = [pscustomobject]$coverage

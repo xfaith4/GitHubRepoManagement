@@ -130,5 +130,14 @@ trial. Each line is a limit of the product, not a finding about the repository.
   the leverage panel reports that figure as not captured. Every approval or
   rejection in this trial is recorded by hand in `cohort.json` until the
   ledger ships (steering extension 1).
+- **Whether the next action worked.** Every planning gap was sent to the
+  roadmap repair preview, which refuses a missing, prose, empty or complete
+  roadmap: it returns `repair-blocked` or `rewrite-not-recommended` with no
+  proposed changes. The console counted the empty list and reported the refusal
+  as "Preview ready — 0 proposed change(s)". Three of the eight cohort
+  repositories with an action (AI_PromptRefiner_GUI, genesys-contract-client,
+  DevPortConsole) were sent to that refusal, and 29 of 58 on the local index.
+  M4c routes each planning case to a flow that can answer it, and a declined
+  preview now says "Not previewable" and gives its reason.
 - **Whether the live surfaces show what the payload says.** Engine output is
   what is recorded here; the entry gate's eyes-on check is OQ-1.

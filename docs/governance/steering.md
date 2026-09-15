@@ -312,6 +312,9 @@ serves. Prefer the lowest rung that is not yet passed.
   pattern, record the repository it was observed on, and bump
   `modelVersion`.
 - You may not edit `.github/workflows/**` (D-012 default, provisional).
+- At most two unmerged review PRs in the stack at once. Beyond that, build
+  the next item on its branch and wait for the owner rather than stacking a
+  third (2026-09-14).
 
 ---
 

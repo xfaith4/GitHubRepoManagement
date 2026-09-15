@@ -60,13 +60,17 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       panel's "not captured" figure becomes a computed one and the scorer's
       weights (D-013) have evidence to be revisited against. _(state: planned)_
       `check: pwsh ./tests/Test-DecisionLedger.ps1 -FailOnError`
-- [ ] **3.7 / M4c — next-action routing by limiting foundation.** Every
-      actionable repository is told `POST /api/roadmap/repair/preview`. A
-      configured map routes each limiting foundation to its own previewable
-      action, so `structure` and `documentation` gaps reach their own previews.
-      The check asserts that each limiting foundation routes to a distinct
-      configured action with a route — never a ratio of repositories.
-      _(state: planned)_
+- [ ] **3.7 / M4c — next-action routing by the kind of gap.** `planning` limits
+      57 of 59 repositories, so routing on the domain alone gives the portfolio one
+      action — and that action, the repair preview, refuses missing, prose, empty and
+      complete roadmaps. Route on the planning domain's case (no roadmap, prose
+      roadmap, parse error, below contract-ready, complete below contract-ready),
+      each to its own runnable preview, configured in `foundation-domains.json`
+      `actionsByCase`. No one-click egress: an action that reaches an AI provider
+      sends nothing until the operator confirms the provider and the file, and
+      nothing for a repository marked private scope in Settings. The check asserts
+      properties and that the cohort routes to more than one action — never a
+      ratio of repositories. _(state: built)_
       `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert action-routing -FailOnError`
 - [ ] **3.7 / M5 prep — previews staged, not applied.** For each of the eight
       `strengthen` repositories, generate the preview the product recommends and

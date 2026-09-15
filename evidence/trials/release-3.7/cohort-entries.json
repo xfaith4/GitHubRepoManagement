@@ -1,0 +1,536 @@
+{
+  "schemaVersion": "v1",
+  "model": "cohort-entries",
+  "capturedAt": "2026-09-14T07:54:34.2660332Z",
+  "sourceIndexSha256": "9c4349e99606b69c4355605bb253e2a8988102812d830234c571ed7bcc020c2b",
+  "sourceIndexGeneratedAt": "2026-09-14T05:41:22.7261607Z",
+  "fields": [
+    "curationState",
+    "docFindingCount",
+    "hasCiSignal",
+    "hasReadme",
+    "hasRoadmap",
+    "hasTestSignal",
+    "kindSignals",
+    "lastScanStatus",
+    "latestWorkflowRunConclusion",
+    "lifecycleState",
+    "localCommitsLastMonth",
+    "localPath",
+    "maturityLevel",
+    "pendingCount",
+    "readmeScore",
+    "repoId",
+    "repoName",
+    "repoType",
+    "roadmapState",
+    "sourceCoverage",
+    "structureFindings"
+  ],
+  "purpose": "The nine Release 3.7 cohort repositories as the index recorded them, restricted to the fields the conclusion model reads, so tests/Test-FoundationConclusions.ps1 replays the cohort in CI where no index exists. Structural fields only; no README or roadmap text. Re-captured when the index changes shape (OQ-12 adds kindSignals).",
+  "records": [
+    {
+      "curationState": "none",
+      "docFindingCount": 2,
+      "hasCiSignal": false,
+      "hasReadme": true,
+      "hasRoadmap": true,
+      "hasTestSignal": false,
+      "kindSignals": null,
+      "lastScanStatus": "ok",
+      "latestWorkflowRunConclusion": null,
+      "lifecycleState": "needs-roadmap-repair",
+      "localCommitsLastMonth": 0,
+      "localPath": "F:\\Development\\20_Staging\\Family Tree Projects\\ActiveFamilyArchive",
+      "maturityLevel": "L0-Absent",
+      "pendingCount": 45,
+      "readmeScore": 90,
+      "repoId": "path:f:\\development\\20_staging\\family tree projects\\activefamilyarchive",
+      "repoName": "ActiveFamilyArchive",
+      "repoType": "node",
+      "roadmapState": "pending",
+      "sourceCoverage": "local+github",
+      "structureFindings": [
+        {
+          "kind": "missing-root-file",
+          "target": "LICENSE",
+          "category": "compliance",
+          "severity": "warning",
+          "recommendedAction": "Add a LICENSE file to make terms of use explicit."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "SECURITY.md",
+          "category": "security",
+          "severity": "info",
+          "recommendedAction": "Add SECURITY.md (at the root, under .github/, or under docs/) so vulnerability reports have a documented destination."
+        },
+        {
+          "kind": "missing-ci-signal",
+          "target": ".github/workflows",
+          "category": "ci",
+          "severity": "warning",
+          "recommendedAction": "Add a GitHub Actions workflow under .github/workflows/ to provide a CI signal."
+        },
+        {
+          "kind": "missing-test-signal",
+          "target": "tests",
+          "category": "testing",
+          "severity": "warning",
+          "recommendedAction": "Add tests appropriate to the repo type so changes can be validated automatically."
+        }
+      ]
+    },
+    {
+      "curationState": "none",
+      "docFindingCount": 3,
+      "hasCiSignal": true,
+      "hasReadme": true,
+      "hasRoadmap": true,
+      "hasTestSignal": true,
+      "kindSignals": null,
+      "lastScanStatus": "ok",
+      "latestWorkflowRunConclusion": "success",
+      "lifecycleState": "needs-roadmap-repair",
+      "localCommitsLastMonth": 30,
+      "localPath": "F:\\Development\\20_Staging\\FowlingScorecard",
+      "maturityLevel": "L0-Absent",
+      "pendingCount": 18,
+      "readmeScore": 85,
+      "repoId": "path:f:\\development\\20_staging\\fowlingscorecard",
+      "repoName": "FowlingScorecard",
+      "repoType": "node",
+      "roadmapState": "pending",
+      "sourceCoverage": "local+github",
+      "structureFindings": [
+        {
+          "kind": "missing-root-file",
+          "target": "LICENSE",
+          "category": "compliance",
+          "severity": "warning",
+          "recommendedAction": "Add a LICENSE file to make terms of use explicit."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "SECURITY.md",
+          "category": "security",
+          "severity": "info",
+          "recommendedAction": "Add SECURITY.md (at the root, under .github/, or under docs/) so vulnerability reports have a documented destination."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "CONTRIBUTING.md",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add CONTRIBUTING.md (at the root, under .github/, or under docs/) describing how outside contributors should submit changes."
+        },
+        {
+          "kind": "missing-root-folder",
+          "target": "docs",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add a docs/ directory to host architecture, ADRs, and reference content."
+        }
+      ]
+    },
+    {
+      "curationState": "none",
+      "docFindingCount": 3,
+      "hasCiSignal": false,
+      "hasReadme": true,
+      "hasRoadmap": true,
+      "hasTestSignal": true,
+      "kindSignals": null,
+      "lastScanStatus": "ok",
+      "latestWorkflowRunConclusion": null,
+      "lifecycleState": "needs-structure",
+      "localCommitsLastMonth": 0,
+      "localPath": "F:\\Development\\20_Staging\\DevPortConsole",
+      "maturityLevel": "L0-Absent",
+      "pendingCount": 0,
+      "readmeScore": 85,
+      "repoId": "path:f:\\development\\20_staging\\devportconsole",
+      "repoName": "DevPortConsole",
+      "repoType": "powershell",
+      "roadmapState": "complete",
+      "sourceCoverage": "local",
+      "structureFindings": [
+        {
+          "kind": "missing-root-file",
+          "target": "LICENSE",
+          "category": "compliance",
+          "severity": "warning",
+          "recommendedAction": "Add a LICENSE file to make terms of use explicit."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "SECURITY.md",
+          "category": "security",
+          "severity": "info",
+          "recommendedAction": "Add SECURITY.md (at the root, under .github/, or under docs/) so vulnerability reports have a documented destination."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "CONTRIBUTING.md",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add CONTRIBUTING.md (at the root, under .github/, or under docs/) describing how outside contributors should submit changes."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": ".gitignore",
+          "category": "hygiene",
+          "severity": "info",
+          "recommendedAction": "Add a .gitignore to prevent local artifacts from leaking into commits."
+        },
+        {
+          "kind": "missing-root-folder",
+          "target": "docs",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add a docs/ directory to host architecture, ADRs, and reference content."
+        },
+        {
+          "kind": "missing-ci-signal",
+          "target": ".github/workflows",
+          "category": "ci",
+          "severity": "warning",
+          "recommendedAction": "Add a GitHub Actions workflow under .github/workflows/ to provide a CI signal."
+        }
+      ]
+    },
+    {
+      "curationState": "none",
+      "docFindingCount": 3,
+      "hasCiSignal": true,
+      "hasReadme": true,
+      "hasRoadmap": true,
+      "hasTestSignal": true,
+      "kindSignals": null,
+      "lastScanStatus": "ok",
+      "latestWorkflowRunConclusion": "success",
+      "lifecycleState": "needs-roadmap-repair",
+      "localCommitsLastMonth": 0,
+      "localPath": "F:\\Development\\20_Staging\\AI Projects\\2026-06-13_Orchestration",
+      "maturityLevel": "L0-Absent",
+      "pendingCount": 672,
+      "readmeScore": 85,
+      "repoId": "path:f:\\development\\20_staging\\ai projects\\2026-06-13_orchestration",
+      "repoName": "2026-06-13_Orchestration",
+      "repoType": "node",
+      "roadmapState": "pending",
+      "sourceCoverage": "local+github",
+      "structureFindings": [
+        {
+          "kind": "missing-root-file",
+          "target": "LICENSE",
+          "category": "compliance",
+          "severity": "warning",
+          "recommendedAction": "Add a LICENSE file to make terms of use explicit."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "SECURITY.md",
+          "category": "security",
+          "severity": "info",
+          "recommendedAction": "Add SECURITY.md (at the root, under .github/, or under docs/) so vulnerability reports have a documented destination."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "CONTRIBUTING.md",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add CONTRIBUTING.md (at the root, under .github/, or under docs/) describing how outside contributors should submit changes."
+        }
+      ]
+    },
+    {
+      "curationState": "archived-ignore",
+      "docFindingCount": 4,
+      "hasCiSignal": false,
+      "hasReadme": true,
+      "hasRoadmap": true,
+      "hasTestSignal": false,
+      "kindSignals": null,
+      "lastScanStatus": "ok",
+      "latestWorkflowRunConclusion": null,
+      "lifecycleState": "needs-roadmap-repair",
+      "localCommitsLastMonth": 0,
+      "localPath": "F:\\Development\\20_Staging\\GenesysCloud\\Genesys-Telecom-Powershell",
+      "maturityLevel": "L2-Structured",
+      "pendingCount": 4,
+      "readmeScore": 80,
+      "repoId": "path:f:\\development\\20_staging\\genesyscloud\\genesys-telecom-powershell",
+      "repoName": "Genesys-Telecom-Powershell",
+      "repoType": "powershell",
+      "roadmapState": "pending",
+      "sourceCoverage": "local",
+      "structureFindings": [
+        {
+          "kind": "missing-root-file",
+          "target": "LICENSE",
+          "category": "compliance",
+          "severity": "warning",
+          "recommendedAction": "Add a LICENSE file to make terms of use explicit."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "SECURITY.md",
+          "category": "security",
+          "severity": "info",
+          "recommendedAction": "Add SECURITY.md (at the root, under .github/, or under docs/) so vulnerability reports have a documented destination."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "CONTRIBUTING.md",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add CONTRIBUTING.md (at the root, under .github/, or under docs/) describing how outside contributors should submit changes."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": ".gitignore",
+          "category": "hygiene",
+          "severity": "info",
+          "recommendedAction": "Add a .gitignore to prevent local artifacts from leaking into commits."
+        },
+        {
+          "kind": "missing-root-folder",
+          "target": "docs",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add a docs/ directory to host architecture, ADRs, and reference content."
+        },
+        {
+          "kind": "missing-ci-signal",
+          "target": ".github/workflows",
+          "category": "ci",
+          "severity": "warning",
+          "recommendedAction": "Add a GitHub Actions workflow under .github/workflows/ to provide a CI signal."
+        },
+        {
+          "kind": "missing-test-signal",
+          "target": "tests",
+          "category": "testing",
+          "severity": "warning",
+          "recommendedAction": "Add tests appropriate to the repo type so changes can be validated automatically."
+        }
+      ]
+    },
+    {
+      "curationState": "none",
+      "docFindingCount": 1,
+      "hasCiSignal": false,
+      "hasReadme": true,
+      "hasRoadmap": false,
+      "hasTestSignal": false,
+      "kindSignals": null,
+      "lastScanStatus": "ok",
+      "latestWorkflowRunConclusion": "success",
+      "lifecycleState": "needs-roadmap",
+      "localCommitsLastMonth": 0,
+      "localPath": "F:\\Development\\20_Staging\\AI Projects\\AI_PromptRefiner_GUI",
+      "maturityLevel": "L0-Absent",
+      "pendingCount": 0,
+      "readmeScore": 95,
+      "repoId": "path:f:\\development\\20_staging\\ai projects\\ai_promptrefiner_gui",
+      "repoName": "AI_PromptRefiner_GUI",
+      "repoType": "powershell",
+      "roadmapState": "missing",
+      "sourceCoverage": "local+github",
+      "structureFindings": [
+        {
+          "kind": "missing-root-file",
+          "target": "ROADMAP.md",
+          "category": "roadmap",
+          "severity": "warning",
+          "recommendedAction": "Add ROADMAP.md (at the root or under docs/) so the repo can participate in portfolio work selection."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "SECURITY.md",
+          "category": "security",
+          "severity": "info",
+          "recommendedAction": "Add SECURITY.md (at the root, under .github/, or under docs/) so vulnerability reports have a documented destination."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "CONTRIBUTING.md",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add CONTRIBUTING.md (at the root, under .github/, or under docs/) describing how outside contributors should submit changes."
+        },
+        {
+          "kind": "missing-root-folder",
+          "target": "docs",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add a docs/ directory to host architecture, ADRs, and reference content."
+        },
+        {
+          "kind": "missing-ci-signal",
+          "target": ".github/workflows",
+          "category": "ci",
+          "severity": "warning",
+          "recommendedAction": "Add a GitHub Actions workflow under .github/workflows/ to provide a CI signal."
+        },
+        {
+          "kind": "missing-test-signal",
+          "target": "tests",
+          "category": "testing",
+          "severity": "warning",
+          "recommendedAction": "Add tests appropriate to the repo type so changes can be validated automatically."
+        }
+      ]
+    },
+    {
+      "curationState": "none",
+      "docFindingCount": 3,
+      "hasCiSignal": true,
+      "hasReadme": true,
+      "hasRoadmap": true,
+      "hasTestSignal": true,
+      "kindSignals": null,
+      "lastScanStatus": "ok",
+      "latestWorkflowRunConclusion": "success",
+      "lifecycleState": "no-checklist",
+      "localCommitsLastMonth": 0,
+      "localPath": "F:\\Development\\20_Staging\\GenesysCloud\\genesys-contract-client",
+      "maturityLevel": "L0-Absent",
+      "pendingCount": 0,
+      "readmeScore": 85,
+      "repoId": "path:f:\\development\\20_staging\\genesyscloud\\genesys-contract-client",
+      "repoName": "genesys-contract-client",
+      "repoType": "powershell",
+      "roadmapState": "no-checklist",
+      "sourceCoverage": "local+github",
+      "structureFindings": [
+        {
+          "kind": "missing-root-file",
+          "target": "LICENSE",
+          "category": "compliance",
+          "severity": "warning",
+          "recommendedAction": "Add a LICENSE file to make terms of use explicit."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "SECURITY.md",
+          "category": "security",
+          "severity": "info",
+          "recommendedAction": "Add SECURITY.md (at the root, under .github/, or under docs/) so vulnerability reports have a documented destination."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "CONTRIBUTING.md",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add CONTRIBUTING.md (at the root, under .github/, or under docs/) describing how outside contributors should submit changes."
+        }
+      ]
+    },
+    {
+      "curationState": "none",
+      "docFindingCount": 2,
+      "hasCiSignal": false,
+      "hasReadme": true,
+      "hasRoadmap": true,
+      "hasTestSignal": false,
+      "kindSignals": null,
+      "lastScanStatus": "ok",
+      "latestWorkflowRunConclusion": null,
+      "lifecycleState": "needs-roadmap-repair",
+      "localCommitsLastMonth": 0,
+      "localPath": "F:\\Development\\20_Staging\\300PixelLED_2812B",
+      "maturityLevel": "L2-Structured",
+      "pendingCount": 7,
+      "readmeScore": 90,
+      "repoId": "path:f:\\development\\20_staging\\300pixelled_2812b",
+      "repoName": "300PixelLED_2812B",
+      "repoType": "powershell",
+      "roadmapState": "pending",
+      "sourceCoverage": "local",
+      "structureFindings": [
+        {
+          "kind": "missing-root-file",
+          "target": "LICENSE",
+          "category": "compliance",
+          "severity": "warning",
+          "recommendedAction": "Add a LICENSE file to make terms of use explicit."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "SECURITY.md",
+          "category": "security",
+          "severity": "info",
+          "recommendedAction": "Add SECURITY.md (at the root, under .github/, or under docs/) so vulnerability reports have a documented destination."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "CONTRIBUTING.md",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add CONTRIBUTING.md (at the root, under .github/, or under docs/) describing how outside contributors should submit changes."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": ".gitignore",
+          "category": "hygiene",
+          "severity": "info",
+          "recommendedAction": "Add a .gitignore to prevent local artifacts from leaking into commits."
+        },
+        {
+          "kind": "missing-ci-signal",
+          "target": ".github/workflows",
+          "category": "ci",
+          "severity": "warning",
+          "recommendedAction": "Add a GitHub Actions workflow under .github/workflows/ to provide a CI signal."
+        },
+        {
+          "kind": "missing-test-signal",
+          "target": "tests",
+          "category": "testing",
+          "severity": "warning",
+          "recommendedAction": "Add tests appropriate to the repo type so changes can be validated automatically."
+        }
+      ]
+    },
+    {
+      "curationState": "none",
+      "docFindingCount": 2,
+      "hasCiSignal": true,
+      "hasReadme": true,
+      "hasRoadmap": true,
+      "hasTestSignal": true,
+      "kindSignals": null,
+      "lastScanStatus": "ok",
+      "latestWorkflowRunConclusion": "success",
+      "lifecycleState": "needs-roadmap-repair",
+      "localCommitsLastMonth": 3,
+      "localPath": "F:\\Development\\20_Staging\\GenesysCloud\\Genesys.Core",
+      "maturityLevel": "L0-Absent",
+      "pendingCount": 22,
+      "readmeScore": 90,
+      "repoId": "path:f:\\development\\20_staging\\genesyscloud\\genesys.core",
+      "repoName": "Genesys.Core",
+      "repoType": "dotnet",
+      "roadmapState": "pending",
+      "sourceCoverage": "local+github",
+      "structureFindings": [
+        {
+          "kind": "missing-root-file",
+          "target": "SECURITY.md",
+          "category": "security",
+          "severity": "info",
+          "recommendedAction": "Add SECURITY.md (at the root, under .github/, or under docs/) so vulnerability reports have a documented destination."
+        },
+        {
+          "kind": "missing-root-file",
+          "target": "CONTRIBUTING.md",
+          "category": "documentation",
+          "severity": "info",
+          "recommendedAction": "Add CONTRIBUTING.md (at the root, under .github/, or under docs/) describing how outside contributors should submit changes."
+        }
+      ]
+    }
+  ]
+}

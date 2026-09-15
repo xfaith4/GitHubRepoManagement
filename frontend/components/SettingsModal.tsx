@@ -405,6 +405,34 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
                 })}
               </div>
 
+              {/* ── AI providers: private scope (3.7 M4c) ─────────────────── */}
+              <div className="md:col-span-2 pt-2 border-t border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-200">Private Scope</h3>
+              </div>
+
+              <div className="md:col-span-2">
+                <label htmlFor="aiPrivateScopeRepos" className="block text-sm font-medium text-gray-300">
+                  Repositories whose files never go to an AI provider
+                </label>
+                <textarea
+                  name="aiPrivateScopeRepos"
+                  id="aiPrivateScopeRepos"
+                  rows={3}
+                  value={(settings.aiPrivateScopeRepos ?? []).join('\n')}
+                  onChange={e => {
+                    const names = e.target.value.split(/\r?\n/);
+                    setSettings(prev => ({ ...prev, aiPrivateScopeRepos: names }));
+                  }}
+                  spellCheck={false}
+                  placeholder="One repository name per line"
+                  aria-describedby="aiPrivateScopeReposHelp"
+                  className="mt-1 block w-full bg-gray-900 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white font-mono focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+                <p id="aiPrivateScopeReposHelp" className="mt-1 text-sm text-gray-500">
+                  AI previews are disabled for these repositories, and the host refuses to send their files to an AI provider. Other AI previews always ask before sending, naming the provider and the file. Only names are stored, in settings.json.
+                </p>
+              </div>
+
               {/* ── Archiving and output ───────────────────────────────────── */}
               <div className="md:col-span-2 pt-2 border-t border-gray-700">
                 <h3 className="text-sm font-semibold text-gray-200">Archiving and Output</h3>
