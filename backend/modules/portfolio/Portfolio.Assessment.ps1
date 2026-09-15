@@ -883,11 +883,7 @@ function Invoke-PortfolioAssessment {
         $githubRepo = if ($githubMap.ContainsKey($key)) { $githubMap[$key] } else { $null }
 
         # Source coverage
-        $sourceCoverage = if ($githubMap.ContainsKey($key) -or -not [string]::IsNullOrWhiteSpace($htmlUrl)) {
-            'local+github'
-        } else {
-            'local'
-        }
+        $sourceCoverage = Get-PortfolioSourceCoverage -LocalRepo $repo -GitHubRepo $githubRepo
 
         $lifecycle = _ResolveLifecycleState `
             -IsArchived $isArchived `
@@ -1340,6 +1336,37 @@ function _Get-PortfolioStableHash {
         $sha.Dispose()
     }
     return ([BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant()
+}
+
+<#
+.SYNOPSIS
+    Whether a repository is known locally, to GitHub, or both - one rule.
+.DESCRIPTION
+    The assessment and the host's differential scan decision must agree,
+    because sourceCoverage is a token of the scan fingerprint. They did not:
+    the assessment counted a local repository whose status carries a GitHub
+    htmlUrl as local+github, while the differential decision counted only a
+    record in the route's own GitHub API list. Every repository with a GitHub
+    remote but no API record then hashed `local` on the way in and
+    `local+github` in the index, never matched, and was re-scanned on the
+    request thread on every page load - 40 of 59 on the operator's portfolio,
+    60-72 s per load (measured 2026-09-15).
+#>
+function Get-PortfolioSourceCoverage {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()][object]$LocalRepo,
+        [Parameter()][object]$GitHubRepo
+    )
+
+    $knownToGitHub = ($null -ne $GitHubRepo) -or -not [string]::IsNullOrWhiteSpace([string](_GetField -Obj $LocalRepo -Name 'htmlUrl' -Default ''))
+    if ($null -ne $LocalRepo) {
+        if ($knownToGitHub) { return 'local+github' }
+        return 'local'
+    }
+    if ($null -ne $GitHubRepo) { return 'github' }
+    return 'none'
 }
 
 function Get-PortfolioScanFingerprintFromSignals {

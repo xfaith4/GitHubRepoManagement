@@ -4426,6 +4426,36 @@ if ([string]$curatedPayload.repos[0].recommendedAction -ne $curatedDirect.recomm
 if ([string]$uncuratedPayload.repos[0].lifecycleState -eq 'curated-out') { throw 'Without curation the writer must leave the lifecycle alone' }
 Write-Host '  D-020 precedence correct: curated-out outranks parse-error, sits below archived, and the writer applies it to a cached assessment' -ForegroundColor DarkGray
 
+Write-Step 'Portfolio index — smoke: an unchanged repository reuses its assessment on the next differential load'
+# 2026-09-15: every repository with a GitHub remote but no record in the
+# route's GitHub API list hashed sourceCoverage=local in the host's
+# differential decision and local+github in the index, so it never matched and
+# was re-scanned on the request thread on every page load (40 of 59, 60-72 s).
+# The fingerprint the host computes for an unchanged repository must be the one
+# the index stored, for every coverage shape.
+$fpGitHubRemoteOnly = [pscustomobject]@{ name = 'fp-remote-only'; path = $WorkspaceRoot; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = 'https://github.com/x/fp-remote-only'; branch = 'main'; status = 'clean'; headCommitSha = 'abc123' }
+$fpLocalOnly = [pscustomobject]@{ name = 'fp-local-only'; path = $WorkspaceRoot; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean'; headCommitSha = 'def456' }
+$fpWithApi = [pscustomobject]@{ name = 'fp-with-api'; path = $WorkspaceRoot; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = 'https://github.com/x/fp-with-api'; branch = 'main'; status = 'clean'; headCommitSha = '789abc' }
+$fpApiRecord = [pscustomobject]@{ name = 'fp-with-api'; htmlUrl = 'https://github.com/x/fp-with-api'; updatedAt = '2026-09-14T00:00:00Z'; openPrCount = 2; latestWorkflowRunConclusion = 'success' }
+$fpLocals = @($fpGitHubRemoteOnly, $fpLocalOnly, $fpWithApi)
+$fpAssess = Invoke-PortfolioAssessment -LocalRepos $fpLocals -GitHubRepos @($fpApiRecord) -StructureStandards $structStds
+$fpPayload = New-PortfolioIndexPayload -Assessments $fpAssess -LocalRepos $fpLocals -GitHubRepos @($fpApiRecord) -Summary ([pscustomobject]@{ totalRepos = 3; readyForWorkCount = 0; byLifecycle = @{} }) -SignalSources ([pscustomobject]@{}) -GeneratedAt ((Get-Date).ToUniversalTime().ToString('o'))
+$fpExpectedCoverage = @{ 'fp-remote-only' = 'local+github'; 'fp-local-only' = 'local'; 'fp-with-api' = 'local+github' }
+foreach ($fpLocal in $fpLocals) {
+    $fpIndexed = @($fpPayload.repos | Where-Object { [string]$_.repoName -eq $fpLocal.name })[0]
+    if ($null -eq $fpIndexed) { throw "Index payload is missing $($fpLocal.name)" }
+    if ([string]$fpIndexed.sourceCoverage -ne $fpExpectedCoverage[$fpLocal.name]) { throw "$($fpLocal.name): index sourceCoverage '$($fpIndexed.sourceCoverage)', expected '$($fpExpectedCoverage[$fpLocal.name])'" }
+    $fpApi = if ($fpLocal.name -eq 'fp-with-api') { $fpApiRecord } else { $null }
+    # Exactly as the host's differential decision computes the current fingerprint.
+    $fpCurrent = Get-PortfolioScanFingerprintFromSignals -LocalRepo $fpLocal -GitHubRepo $fpApi -LocalPath ([string]$fpLocal.path) -SourceCoverage (Get-PortfolioSourceCoverage -LocalRepo $fpLocal -GitHubRepo $fpApi)
+    $fpStored = Get-PortfolioScanFingerprintFromIndexedRepo -IndexedRepo $fpIndexed
+    if ($fpCurrent -ne $fpStored) { throw "$($fpLocal.name) ($($fpIndexed.sourceCoverage)): the differential fingerprint does not match the stored one, so an unchanged repository is re-scanned on every load" }
+}
+# The host must decide coverage through the shared rule, not an inline copy that can drift again.
+$fpHostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw -Encoding UTF8
+if ($fpHostSource -notmatch '\$currentSourceCoverage\s*=\s*Get-PortfolioSourceCoverage\b') { throw "The host's differential decision no longer derives sourceCoverage through Get-PortfolioSourceCoverage" }
+Write-Host '  differential reuse ok: remote-only, local-only and API-backed repositories each fingerprint the same on the way in as in the index; the host uses the shared coverage rule' -ForegroundColor DarkGray
+
 Write-Step 'Portfolio assessment — smoke: lifecycle precedence (parse-error)'
 $parseErrRepo = [pscustomobject]@{ name = 'parse-err-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
 $parseErrRoadmap = @([pscustomobject]@{ repoName = 'parse-err-repo'; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md'); roadmapState = 'parse-error'; pendingCount = 0 })
