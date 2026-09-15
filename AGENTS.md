@@ -7,6 +7,11 @@ or mirror this file; none of them holds rules of its own. If guidance appears
 in only one tool's file, it is invisible to every other tool, which is how a
 convention silently stops applying.
 
+**Read [`docs/governance/steering.md`](docs/governance/steering.md) before the
+roadmap.** It says what the product is for, what it must never do, and what
+"proved" means; the roadmap says only what to build next. When a choice feels
+like a matter of taste, steering is the tie-breaker.
+
 ## What this is
 
 A repository portfolio management system: it scores, audits, and documents a
@@ -21,10 +26,10 @@ or exported file must show what happened, why it matters, and what to do next.
 common way an agent wastes a day. Two rules make it safe to act on:
 
 1. **A `- [ ]` checkbox means "not finished". It does NOT mean "nothing
-   exists."** An item carries a state clause — `_(state: planned |
-   scaffolded | backend-complete | ui-connected | smoke-tested |
-   operator-verified)_`. Anything past `planned` asserts that code, gates, or
-   evidence already exist. **Verify before you build.** This is enforced:
+   exists."** An item carries a state clause — `_(state: planned | built |
+   verified)_` (ROADMAP §3, since 2026-09-13) — and a `check:` line naming the
+   command that decides it. Anything past `planned` asserts that code, gates,
+   or evidence already exist. **Verify before you build.** This is enforced:
    `RQ014-OPEN-ITEM-NO-ARTIFACT` in
    [`tools/Test-RoadmapStructure.ps1`](tools/Test-RoadmapStructure.ps1) fails
    any open item past `planned` that does not name a linked path, a backticked
@@ -111,7 +116,12 @@ pattern itself:
    `CLEAN` means mergeable. `BLOCKED` in this repo usually means a required
    check is still running, not that it failed — poll rather than concluding.
 3. **Merge only on `CLEAN`**, squash, delete the branch, then
-   `git switch main && git pull --ff-only`.
+   `git switch main && git pull --ff-only` — **and only for pure engineering
+   with a green check.** A change that touches `backend/config/`, a CI gate
+   (`scripts/Invoke-TestSuite.ps1`, `tools/Test-*.ps1`, `.github/workflows/**`),
+   `docs/governance/`, or what a verdict says about a repository is opened as
+   a PR and waits for the owner's review (steering contract 10; D-019,
+   2026-09-14). The handoff names it as waiting.
 
 ## Conventions
 
