@@ -246,6 +246,12 @@ Invoke-InProcessGate -Name 'foundation-domains.json integrity (Release 3.6)' -Ac
         $isScored = if ($null -eq $d.PSObject.Properties['scored']) { $true } else { [bool]$d.scored }
         if ($isScored) {
             if ($null -eq $d.nextAction -or [string]::IsNullOrWhiteSpace([string]$d.nextAction.route)) { throw "scored domain '$($d.id)' names no next-action route; a strengthen verdict could not offer one" }
+            # 3.7 M4c: a domain that routes by case names a kind and a route for every case.
+            if ($null -ne $d.PSObject.Properties['actionsByCase']) {
+                foreach ($c in @($d.actionsByCase.PSObject.Properties | Where-Object { $_.Name -ne 'note' })) {
+                    if ([string]::IsNullOrWhiteSpace([string]$c.Value.kind) -or [string]::IsNullOrWhiteSpace([string]$c.Value.route)) { throw "domain '$($d.id)' actionsByCase '$($c.Name)' names no kind or no route" }
+                }
+            }
         } else {
             if ([string]$d.status -ne 'not-scored') { throw "unscored domain '$($d.id)' must declare status 'not-scored'" }
             if ($null -eq $d.evidenceModel -or @($d.evidenceModel.subAreas).Count -eq 0) { throw "unscored domain '$($d.id)' must define its evidence model (subAreas)" }
@@ -326,6 +332,12 @@ Invoke-ScriptGate -Name 'Kind detection' -ScriptPath (Join-Path $WorkspaceRoot '
 Invoke-ScriptGate -Name 'Lifecycle consistency' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'lifecycle-consistency', '-FailOnError')
 # 3.7 M4b - the milestone's own check line, run where the roadmap says it runs.
 Invoke-ScriptGate -Name 'Applicability' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'applicability', '-FailOnError')
+# 3.7 M4c - the milestone's own check line.
+Invoke-ScriptGate -Name 'Action routing' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'action-routing', '-FailOnError')
+
+# Validator R024 - a built or verified milestone's check is a step CI runs; the
+# milestone's own check line. The rule itself also runs inside the lint below.
+Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError')
 
 Invoke-ScriptGate -Name 'Roadmap structure lint' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapStructure.ps1') -ScriptArgs @('-Path', (Join-Path $WorkspaceRoot 'ROADMAP.md'), '-FailOnError')
 

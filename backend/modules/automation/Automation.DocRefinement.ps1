@@ -162,6 +162,14 @@ function Invoke-ScheduledDocRefinement {
                 -Provider $Provider `
                 -Settings $Settings
 
+            # An unattended run cannot confirm egress (3.7 M4c): a gated preview
+            # is an error entry naming why, never an empty proposal.
+            $gatedState = [string](_Auto_GetField -Obj $preview -Name 'previewState' -Default '')
+            if ($gatedState -like 'ai-egress-*') {
+                $errors.Add([pscustomobject]@{ repoName = $repoName; docType = $docType; error = [string]$preview.egress.reason }) | Out-Null
+                continue
+            }
+
             $estimated = _Auto_GetField -Obj $preview -Name 'estimatedScore' -Default $null
             $usage = _Auto_GetField -Obj $preview -Name 'usage' -Default $null
             $proposals.Add([pscustomobject]@{

@@ -2,6 +2,88 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — A built or verified check is a step CI runs (validator R024)
+
+3.7 M4b was called built on `-Assert applicability`, and the suite never ran it.
+The roadmap validator now fails any built or verified milestone whose `check:`
+no CI step runs with every one of its arguments, `-FailOnError` included:
+CI that runs a check without it cannot fail. CI means the lines of
+`scripts/Invoke-TestSuite.ps1` (comments excluded), the commands its npm gates
+resolve to (following `--workspace` into the workspace's package.json), and
+workflow `run:` lines. A vitest check is satisfied by an npm gate that runs
+`vitest run`. A check whose script the validator cannot identify fails, and a
+repository with no suite is not checked, so the validator still works on
+roadmaps elsewhere. The finding names what is missing ("CI runs
+Test-FoundationConclusions.ps1 but never with applicability"). ROADMAP §3 states
+the rule; the live roadmap's 25 built and verified checks all hold, this one included.
+
+Check: `pwsh ./tests/Test-RoadmapCheckRunsInCi.ps1 -FailOnError`, now a suite
+gate. It runs 15 fixture repositories, each with its own suite, covering a
+missing gate, a wrong argument, a dropped `-FailOnError`, a commented-out gate,
+planned versus verified, vitest and npm resolution, a workflow step, an
+unidentifiable command and a repository with no suite. It then holds the live
+roadmap against the live suite.
+
+## 2026-09-14 — Each kind of planning gap reaches its own preview (3.7 M4c)
+
+`planning` limits 57 of 59 repositories, and every one was told `POST
+/api/roadmap/repair/preview`. That flow refuses a missing, prose, empty or
+complete roadmap — and the console reported its refusal as "Preview ready — 0
+proposed change(s)". On the local index 29 of the 58 actionable repositories
+were being sent to a preview that always declined.
+
+The planning evaluator now names its case on the domain record, and
+`foundation-domains.json` (`foundation-conclusions v2.3`) routes each case in
+`actionsByCase`: no roadmap → `/api/repo/evaluate` (drafts one from the code
+and docs); prose roadmap → `/api/ai/docs/improve/preview` with the
+`roadmap-contract` template; parse error (an empty ROADMAP.md) → the same
+preview with `roadmap-recovery`; below contract-ready → the repair preview;
+complete below contract-ready → `/api/repo/evaluate` for next-release
+candidates. Every entry says where it was observed. `Test-FoundationConclusion`
+fails a gap whose case the config does not route and a record carrying any
+other action; the payload carries `byNextAction`. The console may now run the
+two new routes, and a declined preview reads "Not previewable" with its reason.
+The repair flow stops calling a prose roadmap "cannot be parsed".
+
+No one-click egress (Ben's ruling). `Invoke-AiDocImprovePreview` now checks
+`Get-AiDocEgressDecision` before any provider call. An external provider
+(Anthropic, OpenAI) runs only when the request carries a confirmation naming
+that provider and that file. Without one, the preview returns
+`ai-egress-confirmation-required`, naming both, and sends nothing. A repository
+listed in `ai.privateScopeRepos` is refused (`ai-egress-blocked`) even with a
+confirmation. The offline heuristic provider sends nothing and asks nothing.
+The gate lives in the module, so every caller passes through it: the outcome
+card, the Operations docs panel, and scheduled doc refinement, which records a
+gated preview as an error. Private scope is a setting, a list of names saved
+through `POST /api/settings` (`aiPrivateScopeRepos`). The card disables the AI
+action for a marked repository, and both console surfaces show the provider,
+model and file before offering "Send". The action-routing check reads which
+host routes reach a provider from the host source and requires the console to
+ask before each one. Against a stand-in provider, it asserts that nothing is
+sent unconfirmed, for another file or provider, or for private scope, and that
+a matching confirmation sends exactly once. The api-host smoke asserts the
+route's answers without sending anything.
+
+Check: `pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort
+evidence/trials/release-3.7/cohort.json -Assert action-routing -FailOnError`.
+The cohort is replayed in CI from `evidence/trials/release-3.7/cohort-entries.json`
+— the nine rows as index `9c4349e9…` recorded them, restricted to the fields the
+model reads, no free text — and routes to four actions over three routes.
+
+## 2026-09-14 — Curation gates the lifecycle model (D-020)
+
+A repository curated `archived-ignore` now resolves to the lifecycle state
+`curated-out` with no next action, so the console never sends an operator to
+Roadmap Repair on a repository they chose to leave alone. The resolver gains
+the gate right after `archived`; the index writer applies the same state
+through the resolver's own helper because curation is joined at index build
+and cached assessments are reused for unchanged repositories. The consistency
+table lists `curated-out` as agreeing with `appropriate-as-is`, so the one
+explained disagreement the contract found (#298) becomes agreement by
+construction. Report module, console styles and the reference doc carry the
+state. Module smoke: `curated-out` outranks a parse-error roadmap and the
+writer applies it to a cached assessment.
+
 ## 2026-09-14 — The limiting foundation is chosen among the domains that apply (3.7 M4b)
 
 Every conclusion record now carries `limitingFoundation`: the applicable

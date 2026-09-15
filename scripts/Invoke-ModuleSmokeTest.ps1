@@ -4406,6 +4406,26 @@ if (@($archivedAssess).Count -ne 1) { throw "Expected 1 assessment for archived 
 if ($archivedAssess[0].lifecycleState -ne 'archived') { throw "Archived precedence broken: expected 'archived', got '$($archivedAssess[0].lifecycleState)'" }
 Write-Host '  archived precedence correct' -ForegroundColor DarkGray
 
+Write-Step 'Portfolio assessment — smoke: lifecycle precedence (D-020: curation outranks the roadmap, below archived)'
+$curatedDirect = _ResolveLifecycleState -IsArchived $false -RoadmapState 'parse-error' -DispatchReadiness 'blocked' -MaturityLevel 'L0-Absent' -ExecutionState 'idle' -HasReadme $false -HasRoadmap $true -PendingItemCount 3 -CurationState 'archived-ignore'
+if ($curatedDirect.state -ne 'curated-out') { throw "D-020 precedence broken: archived-ignore + parse-error resolved '$($curatedDirect.state)', expected 'curated-out'" }
+if ($curatedDirect.recommendedAction -notmatch '^No action') { throw "curated-out must carry no next action, got '$($curatedDirect.recommendedAction)'" }
+$curatedBehindArchived = _ResolveLifecycleState -IsArchived $true -RoadmapState 'pending' -DispatchReadiness 'ready' -MaturityLevel 'L3-Contract-Ready' -ExecutionState 'idle' -HasReadme $true -HasRoadmap $true -PendingItemCount 1 -CurationState 'archived-ignore'
+if ($curatedBehindArchived.state -ne 'archived') { throw "archived must still outrank curation, got '$($curatedBehindArchived.state)'" }
+# The writer applies the same state to a cached assessment: curation is joined
+# at index build, and an unchanged repository's assessment is not re-run.
+$curatedRepo = [pscustomobject]@{ name = 'curated-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
+$curatedAssess = Invoke-PortfolioAssessment -LocalRepos @($curatedRepo) -StructureStandards $structStds
+if ($curatedAssess[0].lifecycleState -eq 'curated-out') { throw 'The assessment alone must not read curation it was never given' }
+$curatedSummary = [pscustomobject]@{ totalRepos = 1; readyForWorkCount = 0; byLifecycle = @{} }
+$uncuratedPayload = New-PortfolioIndexPayload -Assessments $curatedAssess -LocalRepos @($curatedRepo) -Summary $curatedSummary -SignalSources ([pscustomobject]@{}) -GeneratedAt ((Get-Date).ToUniversalTime().ToString('o'))
+$curatedRepoId = [string]$uncuratedPayload.repos[0].repoId
+$curatedPayload = New-PortfolioIndexPayload -Assessments $curatedAssess -LocalRepos @($curatedRepo) -Summary $curatedSummary -SignalSources ([pscustomobject]@{}) -CurationByRepoId @{ $curatedRepoId = [pscustomobject]@{ curationState = 'archived-ignore'; updatedAt = '2026-09-14T00:00:00Z' } } -GeneratedAt ((Get-Date).ToUniversalTime().ToString('o'))
+if ([string]$curatedPayload.repos[0].lifecycleState -ne 'curated-out') { throw "The index writer did not apply curated-out to a cached assessment (got '$($curatedPayload.repos[0].lifecycleState)')" }
+if ([string]$curatedPayload.repos[0].recommendedAction -ne $curatedDirect.recommendedAction) { throw 'The writer and the resolver disagree on the curated-out action text' }
+if ([string]$uncuratedPayload.repos[0].lifecycleState -eq 'curated-out') { throw 'Without curation the writer must leave the lifecycle alone' }
+Write-Host '  D-020 precedence correct: curated-out outranks parse-error, sits below archived, and the writer applies it to a cached assessment' -ForegroundColor DarkGray
+
 Write-Step 'Portfolio assessment — smoke: lifecycle precedence (parse-error)'
 $parseErrRepo = [pscustomobject]@{ name = 'parse-err-repo'; localPath = $WorkspaceRoot; isArchived = $false; htmlUrl = ''; branch = 'main'; status = 'clean' }
 $parseErrRoadmap = @([pscustomobject]@{ repoName = 'parse-err-repo'; roadmapPath = (Join-Path $WorkspaceRoot 'ROADMAP.md'); roadmapState = 'parse-error'; pendingCount = 0 })
@@ -5077,15 +5097,16 @@ Write-Step 'Foundation conclusions — Release 3.6 M1: every repository leaves w
         $actual = [string]$fdByName[$name].conclusion
         if ($actual -ne $fdExpect[$name]) { throw "Fixture '$name' expected conclusion '$($fdExpect[$name])', got '$actual' ($($fdByName[$name].reason))" }
     }
-    $fdKnownRoutes = @('/api/readme/standardize/preview', '/api/roadmap/repair/preview', '/api/repository-improvement/preview')
+    $fdKnownRoutes = @('/api/readme/standardize/preview', '/api/roadmap/repair/preview', '/api/repository-improvement/preview', '/api/repo/evaluate', '/api/ai/docs/improve/preview')
     foreach ($item in $fdPayload.items) {
         if ([string]::IsNullOrWhiteSpace([string]$item.reason)) { throw "Fixture '$($item.repoName)' has no reason" }
         if ([string]$item.conclusion -eq 'strengthen' -and [string]$item.nextAction.route -notin $fdKnownRoutes) { throw "Fixture '$($item.repoName)' strengthen names an unknown route '$($item.nextAction.route)'" }
         foreach ($d in @($item.domains)) { if (@($d.evidence).Count -eq 0) { throw "Fixture '$($item.repoName)' domain '$($d.domain)' carries no evidence" } }
     }
-    if ([string]$fdByName['no-roadmap'].nextAction.route -ne '/api/roadmap/repair/preview') { throw 'A missing roadmap must offer the smallest credible plan (roadmap repair preview)' }
+    # 3.7 M4c: the repair preview refuses a missing or empty roadmap, so each routes to a flow that can act on it.
+    if ([string]$fdByName['no-roadmap'].nextAction.route -ne '/api/repo/evaluate') { throw 'A missing roadmap must offer a drafted roadmap (repo evaluation); the repair preview refuses a missing roadmap' }
     if ([string]$fdByName['struct-gap'].nextAction.route -ne '/api/repository-improvement/preview') { throw 'A critical structure gap must offer the structure repair preview' }
-    if ([string]$fdByName['parse-error'].nextAction.route -ne '/api/roadmap/repair/preview') { throw 'An unparseable roadmap must still offer the repair preview' }
+    if ([string]$fdByName['parse-error'].nextAction.route -ne '/api/ai/docs/improve/preview' -or [string]$fdByName['parse-error'].nextAction.body.templateId -ne 'roadmap-recovery') { throw 'An empty roadmap must offer a reconstructed plan (roadmap-recovery rewrite preview); the repair preview refuses it' }
     if ([string]$fdByName['archived'].kind -ne 'archived' -or [string]$fdByName['curated-archive'].kind -ne 'archived') { throw 'lifecycleState=archived and curationState=archived-ignore must both resolve kind=archived' }
     $fdArchivedPlanning = @($fdByName['archived'].domains | Where-Object { $_.domain -eq 'planning' })[0]
     if ([string]$fdArchivedPlanning.status -ne 'not-applicable') { throw "Archived planning must be not-applicable, got '$($fdArchivedPlanning.status)'" }

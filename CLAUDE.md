@@ -17,7 +17,9 @@
   touches `backend/config/`, a CI gate (`scripts/Invoke-TestSuite.ps1`,
   `tools/Test-*.ps1`, `.github/workflows/**`), `docs/governance/`, or what a
   verdict says about a repository is opened as a PR and **waits for Ben's
-  review** — never merged by a watch on green. Neither authorization extends
+  review** — never merged by a watch on green. At most two such PRs wait
+  unmerged at once; a third item is built on its branch and its PR waits
+  for a slot. Neither authorization extends
   to other repositories, where the merge is the operator's call.
 - A scheduled wakeup must carry its own verification command inline, because
   the wakeup prompt is the only text guaranteed to be in context when it

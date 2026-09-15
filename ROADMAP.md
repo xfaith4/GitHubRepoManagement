@@ -60,14 +60,25 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       panel's "not captured" figure becomes a computed one and the scorer's
       weights (D-013) have evidence to be revisited against. _(state: planned)_
       `check: pwsh ./tests/Test-DecisionLedger.ps1 -FailOnError`
-- [ ] **3.7 / M4c — next-action routing by limiting foundation.** Every
-      actionable repository is told `POST /api/roadmap/repair/preview`. A
-      configured map routes each limiting foundation to its own previewable
-      action, so `structure` and `documentation` gaps reach their own previews.
-      The check asserts that each limiting foundation routes to a distinct
-      configured action with a route — never a ratio of repositories.
-      _(state: planned)_
+- [ ] **3.7 / M4c — next-action routing by the kind of gap.** `planning` limits
+      57 of 59 repositories, so routing on the domain alone gives the portfolio one
+      action — and that action, the repair preview, refuses missing, prose, empty and
+      complete roadmaps. Route on the planning domain's case (no roadmap, prose
+      roadmap, parse error, below contract-ready, complete below contract-ready),
+      each to its own runnable preview, configured in `foundation-domains.json`
+      `actionsByCase`. No one-click egress: an action that reaches an AI provider
+      sends nothing until the operator confirms the provider and the file, and
+      nothing for a repository marked private scope in Settings. The check asserts
+      properties and that the cohort routes to more than one action — never a
+      ratio of repositories. _(state: built)_
       `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert action-routing -FailOnError`
+- [ ] **Validator R024 — a built or verified check is a step CI runs.** 3.7 M4b
+      was called built on `-Assert applicability`, and the suite never ran it.
+      `Test-RoadmapStructure` fails a built or verified milestone whose `check:`
+      no CI step runs with every one of its arguments, `-FailOnError` included.
+      CI means the canonical suite, the scripts its npm gates run, and workflow
+      `run:` lines. _(state: built)_
+      `check: pwsh ./tests/Test-RoadmapCheckRunsInCi.ps1 -FailOnError`
 - [ ] **3.7 / M5 prep — previews staged, not applied.** For each of the eight
       `strengthen` repositories, generate the preview the product recommends and
       write it to `evidence/trials/release-3.7/previews/<repo>.md`. The operator
@@ -184,6 +195,10 @@ question, and it goes to `docs/governance/open-decisions.md` instead.
 | `planned`  | Contract written (goal, boundary, `check:`); no code on any branch        | agent     |
 | `built`    | Code on a branch; `check:` not yet green in CI                            | agent     |
 | `verified` | `check:` exits 0 in CI on the PR head; evidence linked from the PR        | agent     |
+
+A `built` or `verified` milestone's `check:` must be a step CI runs, with every
+argument the line passes (validator R024). A check CI does not run can never go
+green there, so the state would rest on nobody's word.
 
 `verified` is the terminal state for this file. It is the only state that earns `[x]`,
 and `[x]` means the item leaves this file for the archive in the same PR.

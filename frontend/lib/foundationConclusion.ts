@@ -6,6 +6,8 @@
 // `conclusion` block on /api/operations/repos/{repoId} and /api/repo/evaluate.
 // No fetch, no React: the card renders from these shapes, the tests pin them.
 
+import type { AiEgressRequest } from '../types';
+
 export type FoundationConclusionKind = 'strengthen' | 'appropriate-as-is' | 'insufficiently-understood';
 export type FoundationDomainStatus = 'present' | 'weak' | 'missing' | 'not-applicable' | 'not-scored';
 
@@ -317,7 +319,99 @@ export const RUNNABLE_NEXT_ACTION_ROUTES: readonly string[] = [
   '/api/readme/standardize/preview',
   '/api/repository-improvement/preview',
   '/api/roadmap/dispatch/check',
+  // 3.7 M4c: a repository with no roadmap, or a complete one, is evaluated
+  // (a drafted roadmap or candidate items; only history is written), and a
+  // prose or empty roadmap gets a rewrite preview. Both preview; neither
+  // applies. The AI preview sends a file to a provider only once the operator
+  // confirms that provider and that file (AI_EGRESS_ROUTES).
+  '/api/repo/evaluate',
+  '/api/ai/docs/improve/preview',
 ];
+
+// ── AI egress (3.7 M4c) ───────────────────────────────────────────────────────
+// No one-click egress: a route here can send a repository's file to an AI
+// provider, so the first request only asks the backend what it would send and
+// where. The operator confirms that provider and that file, or nothing leaves.
+// A repository marked private scope in Settings never reaches these routes.
+export const AI_EGRESS_ROUTES: readonly string[] = [
+  '/api/ai/docs/improve/preview',
+];
+
+export function isAiEgressAction(action: FoundationNextAction | null | undefined): boolean {
+  return Boolean(action) && AI_EGRESS_ROUTES.includes((action as FoundationNextAction).route);
+}
+
+/** The backend's "confirm before sending" answer, or null when the result is anything else. */
+export function parseAiEgressRequest(data: Record<string, unknown> | null | undefined): AiEgressRequest | null {
+  const d = data ?? {};
+  if (d.previewState !== 'ai-egress-confirmation-required') return null;
+  const egress = (d.egress ?? {}) as Record<string, unknown>;
+  const providerId = typeof egress.providerId === 'string' ? egress.providerId : '';
+  const file = typeof egress.file === 'string' ? egress.file : '';
+  // A confirmation must name both; a request that names neither cannot be confirmed.
+  if (!providerId || !file) return null;
+  return {
+    providerId,
+    providerLabel: typeof egress.providerLabel === 'string' && egress.providerLabel ? egress.providerLabel : providerId,
+    modelId: typeof egress.modelId === 'string' && egress.modelId ? egress.modelId : null,
+    file,
+    reason: typeof egress.reason === 'string' ? egress.reason : '',
+  };
+}
+
+/** The egress request carried by apiClient's AiEgressConfirmationRequiredError, or null for any other error. */
+export function egressRequestFromError(err: unknown): AiEgressRequest | null {
+  if (!(err instanceof Error) || err.name !== 'AiEgressConfirmationRequiredError') return null;
+  const request = (err as Error & { egressRequest?: AiEgressRequest }).egressRequest;
+  return request && request.providerId && request.file ? request : null;
+}
+
+/** Why an AI action is disabled for this repository, or null when it is not. */
+export function explainPrivateScopeAction(action: FoundationNextAction | null | undefined, privateScopeRepos: readonly string[]): string | null {
+  if (!action || !isAiEgressAction(action)) return null;
+  const repoName = (action.body.repoName ?? '').trim().toLowerCase();
+  if (!repoName) return null;
+  const marked = privateScopeRepos.some(name => name.trim().toLowerCase() === repoName);
+  return marked
+    ? `${action.body.repoName} is marked private scope in Settings, so its files are never sent to an AI provider.`
+    : null;
+}
+
+/**
+ * What a preview flow returned, in one sentence. A flow that declined must
+ * read as declined: the repair preview answers a roadmap it cannot repair
+ * with previewState "repair-blocked" and no actions, and reporting that as
+ * "Preview ready — 0 proposed change(s)" told the operator it worked.
+ */
+export function summarizeNextActionResult(data: Record<string, unknown> | null | undefined): string {
+  const d = data ?? {};
+  const state = typeof d.previewState === 'string' ? d.previewState : '';
+  if (/blocked|not-recommended/.test(state)) {
+    const reason = typeof d.blockReason === 'string' && d.blockReason.trim() ? d.blockReason.trim() : state;
+    return `Not previewable: ${reason}`;
+  }
+  if (state === 'ai-egress-confirmation-required') {
+    return 'Waiting for your confirmation. Nothing has been sent.';
+  }
+  if (typeof d.suggestedRoadmapContent === 'string' && d.suggestedRoadmapContent.trim()) {
+    return 'Draft roadmap ready. Nothing has been applied.';
+  }
+  if (Array.isArray(d.suggestedAdditions)) {
+    return `Preview ready — ${d.suggestedAdditions.length} candidate item(s). Nothing has been applied.`;
+  }
+  const verdict = typeof d.verdict === 'string' ? d.verdict : null;
+  if (verdict) return `Ready: ${verdict}`;
+  const changeCount = ['changes', 'actions', 'proposedChanges', 'items']
+    .map(key => (Array.isArray(d[key]) ? (d[key] as unknown[]).length : null))
+    .find(n => n !== null);
+  if (changeCount !== null && changeCount !== undefined) {
+    return `Preview ready — ${changeCount} proposed change(s). Nothing has been applied.`;
+  }
+  if (typeof d.proposedContent === 'string' && d.proposedContent.trim()) {
+    return 'Rewrite preview ready. Nothing has been applied.';
+  }
+  return 'Preview ready. Nothing has been applied.';
+}
 
 export function isRunnableNextAction(action: FoundationNextAction | null | undefined): boolean {
   if (!action) return false;

@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { egressRequestFromError } from '../lib/foundationConclusion';
 import {
   type OperationsRepoDetail,
   type AgentRun,
   type AgentRunStatus,
   type AiDocImproveApplyResult,
+  type AiEgressConfirmation,
+  type AiEgressRequest,
   type AiDocImprovementHistoryItem,
   type AiDocImprovePreviewResult,
   type AiDocProvider,
@@ -56,6 +59,7 @@ const LIFECYCLE_STYLES: Record<RepoLifecycleState, string> = {
   archived: 'bg-gray-800 text-gray-300 border-gray-600',
   'no-checklist': 'bg-amber-900/40 text-amber-200 border-amber-700/50',
   'parse-error': 'bg-red-900/40 text-red-200 border-red-700/50',
+  'curated-out': 'bg-gray-800 text-gray-300 border-gray-600',
 };
 
 const VALUE_TIER_STYLES: Record<PortfolioValueTier, string> = {
@@ -159,6 +163,8 @@ function getLifecyclePriority(state: RepoLifecycleState): number {
       return 10;
     case 'archived':
       return 10;
+    case 'curated-out':
+      return 11;
     default:
       return 99;
   }
@@ -290,6 +296,7 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
   const [aiPreview, setAiPreview] = useState<AiDocImprovePreviewResult | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiEgressPending, setAiEgressPending] = useState<{ request: AiEgressRequest; sourceContent?: string } | null>(null);
   const [aiProposedCopied, setAiProposedCopied] = useState(false);
   const [aiHistory, setAiHistory] = useState<AiDocImprovementHistoryItem[]>([]);
   const [aiHistoryLoading, setAiHistoryLoading] = useState(false);
@@ -870,13 +877,14 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
     }
   };
 
-  const runAiImprovement = async (sourceContent?: string) => {
+  const runAiImprovement = async (sourceContent?: string, egressConfirmation?: AiEgressConfirmation) => {
     if (!selectedEntry) {
       return;
     }
 
     setAiLoading(true);
     setAiError(null);
+    setAiEgressPending(null);
     setAiProposedCopied(false);
     setAiApplyError(null);
     setAiApplyResult(null);
@@ -890,11 +898,19 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
         customPrompt: aiCustomPrompt || undefined,
         provider: aiProvider,
         currentContent: sourceContent ?? loadedContent ?? undefined,
+        egressConfirmation,
       });
       setAiPreview(preview);
       setAiHistory([]); // force a refresh next time the history tab opens
     } catch (err) {
-      setAiError(err instanceof Error ? err.message : 'Failed to generate documentation improvement preview.');
+      // 3.7 M4c: no one-click egress. The backend named the provider and file
+      // and sent nothing; the operator confirms that pair or nothing leaves.
+      const egressRequest = egressRequestFromError(err);
+      if (egressRequest) {
+        setAiEgressPending({ request: egressRequest, sourceContent });
+      } else {
+        setAiError(err instanceof Error ? err.message : 'Failed to generate documentation improvement preview.');
+      }
     } finally {
       setAiLoading(false);
     }
@@ -1977,6 +1993,41 @@ const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = ({
                           </button>
                         )}
                       </div>
+
+                      {aiEgressPending && (
+                        <div role="alertdialog" aria-labelledby="ops-ai-egress-title" className="rounded-md border border-amber-600/60 bg-gray-900 px-3 py-2 space-y-2">
+                          <p id="ops-ai-egress-title" className="text-sm font-semibold text-white">
+                            Send this file to {aiEgressPending.request.providerLabel}?
+                          </p>
+                          <p className="text-sm text-gray-300">
+                            File: <span className="font-mono break-all">{aiEgressPending.request.file}</span>
+                          </p>
+                          <p className="text-sm text-gray-300">
+                            Provider: {aiEgressPending.request.providerLabel}
+                            {aiEgressPending.request.modelId ? ` (${aiEgressPending.request.modelId})` : ''}. Nothing has been sent yet.
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void runAiImprovement(aiEgressPending.sourceContent, { providerId: aiEgressPending.request.providerId, file: aiEgressPending.request.file })}
+                              disabled={aiLoading}
+                              title={aiLoading ? 'A preview is already running; wait for it.' : `Sends ${aiEgressPending.request.file} to ${aiEgressPending.request.providerLabel}.`}
+                              className="rounded-md border border-amber-600/60 bg-amber-900/40 px-3 py-1.5 text-sm text-amber-100 hover:bg-amber-800/50 disabled:opacity-50 transition-colors"
+                            >
+                              Send to {aiEgressPending.request.providerLabel}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAiEgressPending(null)}
+                              disabled={aiLoading}
+                              title={aiLoading ? 'A preview is already running; wait for it.' : 'Sends nothing and closes this request.'}
+                              className="rounded-md border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                            >
+                              Don't send
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {aiError && (
                         <div className="rounded-md border border-red-700/40 bg-red-950/20 px-3 py-2 text-xs text-red-200">

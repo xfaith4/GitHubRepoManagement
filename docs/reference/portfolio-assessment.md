@@ -38,21 +38,24 @@ The state is computed by deterministic precedence (first match wins):
 | Order | State | Trigger | Meaning |
 | --- | --- | --- | --- |
 | 1 | `archived` | `isArchived = true` | Repo is archived; no action expected |
-| 2 | `no-checklist` | `roadmapState = no-checklist` | The roadmap plans in prose; there is no `- [ ]` unit of work to rank or dispatch |
-| 3 | `parse-error` | `roadmapState = parse-error` | Roadmap exists but cannot be parsed |
-| 4 | `running` | `executionState = running` | A Copilot task is in flight |
-| 5 | `needs-readme` | README is missing | First action: generate a README |
-| 6 | `needs-roadmap` | No `ROADMAP.md` on disk | First action: run repo evaluation to draft a roadmap |
-| 7 | `needs-roadmap-repair` | Execution contract insufficient *and* roadmap not complete | First action: open the Roadmap Repair preview |
-| 8 | `needs-structure` | Critical/warning structure findings remain, *or* dispatch readiness blocks with pending items | First action: fix missing structural elements or doc findings |
-| 9 | `ready-for-work` | Execution contract sufficient *and* pending items > 0 | Dispatch the next pending roadmap item |
-| 10 | `completed` | `roadmapState = complete` | No pending work; consider drafting next release |
-| 11 | `monitored` | No pending work and no blockers | Stable; nothing to do |
-| 12 | `discovered` | Fallback when signals are inconsistent | Re-run a portfolio scan to refresh signals |
+| 2 | `curated-out` | `curationState = archived-ignore` | The owner curated it out; no next action (D-020) |
+| 3 | `no-checklist` | `roadmapState = no-checklist` | The roadmap plans in prose; there is no `- [ ]` unit of work to rank or dispatch |
+| 4 | `parse-error` | `roadmapState = parse-error` | Roadmap exists but cannot be parsed |
+| 5 | `running` | `executionState = running` | A Copilot task is in flight |
+| 6 | `needs-readme` | README is missing | First action: generate a README |
+| 7 | `needs-roadmap` | No `ROADMAP.md` on disk | First action: run repo evaluation to draft a roadmap |
+| 8 | `needs-roadmap-repair` | Execution contract insufficient *and* roadmap not complete | First action: open the Roadmap Repair preview |
+| 9 | `needs-structure` | Critical/warning structure findings remain, *or* dispatch readiness blocks with pending items | First action: fix missing structural elements or doc findings |
+| 10 | `ready-for-work` | Execution contract sufficient *and* pending items > 0 | Dispatch the next pending roadmap item |
+| 11 | `completed` | `roadmapState = complete` | No pending work; consider drafting next release |
+| 12 | `monitored` | No pending work and no blockers | Stable; nothing to do |
+| 13 | `discovered` | Fallback when signals are inconsistent | Re-run a portfolio scan to refresh signals |
 
 (Table corrected 2026-09-14 to the order `_ResolveLifecycleState` actually
 applies; `no-checklist` was missing and `parse-error`/`running` were placed
-ahead of it.)
+ahead of it. `curated-out` added the same day under D-020: curation is joined
+at index build, so the index writer applies the same state through the
+resolver's own helper, and cached assessments cannot hide a curation change.)
 
 The conclusion model (`/api/portfolio/conclusions`) carries a `consistency`
 record per repository: whether `lifecycleState` and `conclusion` agree and,
