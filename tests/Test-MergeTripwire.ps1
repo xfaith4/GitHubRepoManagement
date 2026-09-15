@@ -157,6 +157,9 @@ function Invoke-Case {
 try {
     Write-Host '== Merge tripwire cases ==' -ForegroundColor Cyan
     $root = Build-FixtureRepository
+    # Every secret-shaped fixture is assembled from fragments, so this file's
+    # own source never matches the shapes it proves the tripwire catches; the
+    # live-tree run below scans this file too, and CI saw it do so.
     $fakeToken = 'ghp_' + ('A' * 36)
 
     Invoke-Case -Name 'ordinary source change passes' -Root $root -Expect PASS -Mutate {
@@ -223,13 +226,13 @@ try {
         param($r) Write-FixtureFile -Root $r -Path 'src/app.ps1' -Content ("Write-Output 'hello'`n`$token = '{0}'`n" -f $fakeToken) }
 
     Invoke-Case -Name 'a private key block fails' -Root $root -Expect FAIL -Mentions 'private key block' -Mutate {
-        param($r) Write-FixtureFile -Root $r -Path 'src/key.pem' -Content "-----BEGIN RSA PRIVATE KEY-----`nabc`n" }
+        param($r) Write-FixtureFile -Root $r -Path 'src/key.pem' -Content ("-----BEGIN RSA " + "PRIVATE KEY-----`nabc`n") }
 
     Invoke-Case -Name 'a placeholder credential is not a secret' -Root $root -Expect PASS -Mutate {
         param($r) Write-FixtureFile -Root $r -Path 'src/app.ps1' -Content "`$apiKey = 'REPO_MGMT_SMOKE_AI_PLACEHOLDER_KEY'`n`$password = `"`${SECRET_FROM_ENV}`"`n" }
 
     Invoke-Case -Name 'a credential assigned in the clear fails' -Root $root -Expect FAIL -Mentions 'credential assignment' -Mutate {
-        param($r) Write-FixtureFile -Root $r -Path 'src/app.ps1' -Content "`$password = 'hunter2hunter2hunter2'`n" }
+        param($r) Write-FixtureFile -Root $r -Path 'src/app.ps1' -Content ("`$pass" + "word = '" + ('hunter2' * 3) + "'`n") }
 
     Invoke-Case -Name 'envelope network true fails' -Root $root -Expect FAIL -Mentions 'defaultPermissions.network is true' -Mutate {
         param($r) Write-FixtureFile -Root $r -Path 'backend/config/agent-providers.json' -Content (@{

@@ -122,15 +122,19 @@ pattern itself:
 2. **Monitor checks to completion.** `gh pr view <n> --json mergeStateStatus`:
    `CLEAN` means mergeable. `BLOCKED` in this repo usually means a required
    check is still running, not that it failed — poll rather than concluding.
-3. **Merge only on `CLEAN`**, squash, delete the branch, then
-   `git switch main && git pull --ff-only` — **and only for pure engineering
-   with a green check.** A change that touches `backend/config/`, a CI gate
-   (`scripts/Invoke-TestSuite.ps1`, `tools/Test-*.ps1`, `.github/workflows/**`),
-   `docs/governance/`, or what a verdict says about a repository is opened as
-   a PR and waits for the owner's review (steering contract 10; D-019,
-   2026-09-14). The handoff names it as waiting. **At most two review PRs wait
-   unmerged at once** (steering §5, 2026-09-14): a further item is built and
-   verified on its branch, and its PR is opened only when a slot frees.
+3. **Merge on `CLEAN`**, delete the branch, then
+   `git switch main && git pull --ff-only`. A green check is the merge
+   (steering contract 10; D-023, 2026-09-15; the rule is
+   [`docs/governance/merge-policy.md`](docs/governance/merge-policy.md)).
+   The merge tripwire in the suite decides what the check cannot see. It
+   **holds** a change to the trust rule, a gate removed or weakened, a check
+   file deleted, or a workflow edited: the check is red until the owner adds
+   the `operator-approved` label and re-runs it, and the handoff names the PR
+   as held. It **fails** a secret, a loosened permission envelope, a versioned
+   config without a `modelVersion` bump, or a raised debt ratchet: fix it, no
+   label helps. Never apply that label yourself. **At most two held PRs wait
+   at once** (steering §5): a further held item is built and verified on its
+   branch, and its PR is opened when a slot frees.
 
 ## Conventions
 
