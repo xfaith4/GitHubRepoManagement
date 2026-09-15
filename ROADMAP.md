@@ -51,7 +51,7 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       renders its configured reason instead of a status. Seven of nine trial
       repositories sharing `planning`-weak + `structure`-weak is the observation
       that raised this, not the target: the check asserts properties, never a
-      distribution. _(state: planned)_
+      distribution. _(state: built)_
       `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert applicability -FailOnError`
 - [ ] **Accept/reject ledger (steering extension 1, Rung 1).** Every next action
       and top value item is a prediction; every response to one — accept,

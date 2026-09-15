@@ -465,6 +465,16 @@ function Get-RepositoryFoundationConclusion {
         $domains.Add([pscustomobject]$record) | Out-Null
     }
 
+    # Release 3.7 M4b: the limiting foundation is chosen only among the
+    # domains that apply to the kind - a not-applicable domain renders its
+    # configured reason and can never limit. Missing outranks weak; within a
+    # status the config's domain order holds. The lead is what strengthen's
+    # next action answers, so the two cannot drift.
+    $limitingFoundation = @(
+        @($domains | Where-Object { $_.status -eq 'missing' }) + @($domains | Where-Object { $_.status -eq 'weak' }) |
+        ForEach-Object { [pscustomobject]@{ domain = $_.domain; title = $_.title; status = $_.status; evidence = @($_.evidence) } }
+    )
+
     $conclusion = ''
     $reason = ''
     $nextAction = $null
@@ -491,13 +501,19 @@ function Get-RepositoryFoundationConclusion {
         $conclusion = $kindConclusion
         $reason = [string](_PC_GetField -Obj $kindDef -Name 'reason' -Default "Kind '$($kindVerdict.kind)' concludes $kindConclusion.")
         $basis.Add('kind rule: ' + $kindVerdict.basis)
+        # M4b: a kind that concludes appropriate-as-is says nothing limits.
+        # Applicable gaps stay visible in domains with their evidence; they
+        # are recorded here, not promoted to a limiting foundation.
+        if ($conclusion -eq 'appropriate-as-is' -and $limitingFoundation.Count -gt 0) {
+            $basis.Add('gaps recorded, not limiting: ' + (($limitingFoundation | ForEach-Object { '{0}={1}' -f $_.domain, $_.status }) -join ', '))
+            $limitingFoundation = @()
+        }
     } else {
         $gaps = @($domains | Where-Object { $_.status -in @('missing', 'weak') })
         if ($gaps.Count -gt 0) {
             $conclusion = 'strengthen'
-            $first = @($gaps | Where-Object { $_.status -eq 'missing' } | Select-Object -First 1)
-            if ($first.Count -eq 0) { $first = @($gaps | Select-Object -First 1) }
-            $lead = $first[0]
+            $leadId = [string]$limitingFoundation[0].domain
+            $lead = @($domains | Where-Object { [string]$_.domain -eq $leadId } | Select-Object -First 1)[0]
             $reason = ("{0} is {1}: {2}." -f $lead.title, $lead.status, (@($lead.evidence) -join '; '))
             $nextAction = $lead.nextAction
             foreach ($g in $gaps) { $basis.Add(("{0}={1}" -f $g.domain, $g.status)) }
@@ -545,6 +561,9 @@ function Get-RepositoryFoundationConclusion {
         reason        = $reason
         basis         = @($basis)
         domains       = @($domains)
+        # M4b: the applicable gaps, missing first, then config order; the lead
+        # is what a strengthen next action answers. Empty when nothing limits.
+        limitingFoundation = @($limitingFoundation)
         nextAction    = $nextAction
         maturityLevel = [string](_PC_GetField -Obj $Entry -Name 'maturityLevel' -Default 'L0-Absent')
         lifecycleState = [string](_PC_GetField -Obj $Entry -Name 'lifecycleState' -Default '')
@@ -567,7 +586,9 @@ function Test-FoundationConclusion {
         - appropriate-as-is cites evidence (never an absence of findings);
         - nothing presents 'L0-Absent' as the only thing it has to say;
         - lifecycleState and conclusion agree, or an explained exception applies
-          (steering extension 3; the table is foundation-domains.json lifecycleConsistency).
+          (steering extension 3; the table is foundation-domains.json lifecycleConsistency);
+        - no not-applicable domain is named as limiting, and a strengthen's next
+          action answers the lead of the limiting foundation (3.7 M4b).
     #>
     [CmdletBinding()]
     [OutputType([System.Object[]])]
@@ -604,13 +625,29 @@ function Test-FoundationConclusion {
         $violations.Add(("{0}: {1}" -f $name, [string](_PC_GetField -Obj $consistency -Name 'explanation' -Default 'lifecycle and conclusion disagree')))
     }
 
+    # M4b: a not-applicable domain never limits, and strengthen answers the lead.
+    $limiting = @(_PC_GetField -Obj $Conclusion -Name 'limitingFoundation' -Default @())
+    $notApplicable = @($domains | Where-Object { [string](_PC_GetField -Obj $_ -Name 'status' -Default '') -eq 'not-applicable' } | ForEach-Object { [string](_PC_GetField -Obj $_ -Name 'domain' -Default '') })
+    foreach ($l in $limiting) {
+        $ld = [string](_PC_GetField -Obj $l -Name 'domain' -Default '')
+        if ($ld -in $notApplicable) { $violations.Add("$name names not-applicable domain '$ld' as a limiting foundation") }
+        if ([string](_PC_GetField -Obj $l -Name 'status' -Default '') -notin @('missing', 'weak')) { $violations.Add("$name lists '$ld' as limiting with status '$(_PC_GetField -Obj $l -Name 'status' -Default '')'") }
+    }
+
     switch ($verdict) {
         'strengthen' {
             $action = _PC_GetField -Obj $Conclusion -Name 'nextAction' -Default $null
             $route = [string](_PC_GetField -Obj $action -Name 'route' -Default '')
             if ([string]::IsNullOrWhiteSpace($route)) { $violations.Add("$name concludes strengthen but names no next-action route") }
+            if ($limiting.Count -eq 0) { $violations.Add("$name concludes strengthen with no limiting foundation") }
+            else {
+                $leadDomain = [string](_PC_GetField -Obj $limiting[0] -Name 'domain' -Default '')
+                $actionDomain = [string](_PC_GetField -Obj $action -Name 'domain' -Default '')
+                if (-not [string]::IsNullOrWhiteSpace($actionDomain) -and $actionDomain -ne $leadDomain) { $violations.Add("$name's next action answers '$actionDomain' but the limiting foundation leads with '$leadDomain'") }
+            }
         }
         'appropriate-as-is' {
+            if ($limiting.Count -gt 0) { $violations.Add("$name concludes appropriate-as-is but names a limiting foundation ($(@($limiting | ForEach-Object { [string](_PC_GetField -Obj $_ -Name 'domain' -Default '') }) -join ', '))") }
             $positive = @($domains | Where-Object { [string](_PC_GetField -Obj $_ -Name 'status' -Default '') -in @('present', 'not-applicable') })
             $cited = @($positive | ForEach-Object { @(_PC_Strings -Values @(_PC_GetField -Obj $_ -Name 'evidence' -Default @())) } | Where-Object { $_ -notmatch '(?i)^no (findings|issues)' })
             if ($cited.Count -eq 0) { $violations.Add("$name concludes appropriate-as-is without citing evidence") }
@@ -713,6 +750,16 @@ function Get-PortfolioConclusionsPayload {
     $byKind = [ordered]@{}
     foreach ($i in $items) { $k = [string]$i.kind; if (-not $byKind.Contains($k)) { $byKind[$k] = 0 }; $byKind[$k]++ }
 
+    # M4b: which foundation leads, across the set. A count, never a target
+    # (steering section 6): it measures F-02, it does not decide anything.
+    $byLimitingFoundation = [ordered]@{ none = 0 }
+    foreach ($i in $items) {
+        $lf = @(_PC_GetField -Obj $i -Name 'limitingFoundation' -Default @())
+        $lead = if ($lf.Count -eq 0) { 'none' } else { [string](_PC_GetField -Obj $lf[0] -Name 'domain' -Default 'none') }
+        if (-not $byLimitingFoundation.Contains($lead)) { $byLimitingFoundation[$lead] = 0 }
+        $byLimitingFoundation[$lead]++
+    }
+
     # Steering extension 3: how the two verdict models relate across the set.
     $byConsistency = [ordered]@{ allowed = 0; explained = 0; contradiction = 0; 'unknown-lifecycle' = 0; 'not-assessed' = 0 }
     foreach ($i in $items) {
@@ -746,6 +793,7 @@ function Get-PortfolioConclusionsPayload {
         generatedAt   = $GeneratedAt
         count         = $items.Count
         byConsistency = [pscustomobject]$byConsistency
+        byLimitingFoundation = [pscustomobject]$byLimitingFoundation
         byConclusion  = [pscustomobject]$byConclusion
         byKind        = [pscustomobject]$byKind
         coverage      = [pscustomobject]$coverage
