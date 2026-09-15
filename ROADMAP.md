@@ -34,6 +34,30 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       inline. Move them into the background worker, and have the route answer
       from the index at once. Lane 0.21's other items follow it. _(state: planned)_
       `check: pwsh ./tests/Test-RequestThreadBudget.ps1 -Route /api/portfolio/assessment -MaxMs 2000 -FailOnError`
+- [ ] **Lane 0.22 — test fixtures never reach live state.** 175 of 192 live
+      agent-run records are the api-host smoke's `dispatch-success-smoke`. They
+      are most of the green "100 agent runs" badge, and a smoke fixture leads
+      the packaged work queue. The smoke writes the real agent-run ledger,
+      `roadmap-writeback.jsonl` and the packaging queue. Isolate those roots
+      as `REPO_MGMT_INDEX_ROOT` did for the index, and keep the records already
+      written out of every operational view. _(state: planned)_
+      `check: pwsh ./tests/Test-FixtureIsolation.ps1 -FailOnError`
+- [ ] **Lane 0.22 — one dispatch-eligibility rule, enforced everywhere.** The
+      Dispatch Board read "Ready" for repositories Today holds for uncommitted
+      changes, for a curated-out archived repository, for one whose own detail
+      reads "blocked", and for folders not in the index. One server-side rule
+      answers `{ ok, reasons[] }`. The board lists only eligible items and
+      collapses the rest into "N held (why)". Every Dispatch control is
+      disabled with its reason when `ok` is false. _(state: planned)_
+      `check: pwsh ./tests/Test-DispatchEligibility.ps1 -FailOnError`
+- [ ] **D-012 — the permission envelope binds.** For every adapter, a post-run
+      diff touching any `forbiddenPaths` entry (`.github/workflows/**`) fails the
+      packet by name and the branch is not pushed; provider-native sandboxing is
+      a second layer, never the only one. An agent that needs CI changed writes
+      the proposal to `.github/workflows-proposed/` and names it as waiting. A
+      packet that needs the network declares an allowlist the owner approves;
+      `network false` is never loosened silently. _(state: planned)_
+      `check: pwsh ./tests/Test-PermissionEnvelope.ps1 -FailOnError`
 - [ ] **Accept/reject ledger (steering extension 1, Rung 1).** Every next action
       and top value item is a prediction; every response to one — accept,
       reject, edit — is a label. Capture each with the prediction it answers and
@@ -72,6 +96,41 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       cycle check. Does not wait on the trial: it changes what the contract
       *can express*, not what runs. _(state: planned)_
       `check: pwsh ./tests/Test-RoadmapDependencies.ps1 -FailOnError`
+- [ ] **D-022 (1) — one lifecycle the operator sees.** Needs plan → Plan needs
+      approval → Ready for agents → Agent working → In review → Healthy /
+      Archived, with flags beside it (Uncommitted changes, CI failing, Behind
+      remote, Docs gap). The three steering conclusions stay the model's output;
+      the consistency table maps every operator state to the conclusion it
+      agrees with. L-levels and hold codes become detail. Amends steering in the
+      same PR. Decided first because the next three render these states.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-OperatorLifecycle.ps1 -FailOnError`
+- [ ] **D-022 (2) — Today as an exception inbox.** A system banner only when
+      something is abnormal; decisions grouped by type with bulk actions; actions
+      only the operator can take; stuck work with remedies; the next five
+      eligible items; a digest; everything else collapsed to counts. KPIs:
+      Decisions waiting · Stuck · Ready for agents. First to build.
+      _(state: planned)_
+      `check: npx vitest run frontend/components/TodayInbox.test.tsx`
+- [ ] **D-022 (3) — four destinations.** Today · Portfolio (Grid + Operations,
+      Doc Readiness as a filter, technology as a column) · Work · Trends, plus a
+      System drawer, Settings, Help and the source switch. One repository drawer
+      (Overview · Plan · Work · History) reachable from every repository name.
+      Lane 0.19's operator queue lives in Today or the System drawer, not a tab.
+      _(state: planned)_
+      `check: npx vitest run frontend/components/AppNavigation.test.tsx`
+- [ ] **D-022 (4) — one Work pipeline.** Proposed → Approved → Queued → Running
+      → In review → Done, plus a Needs-attention lane; the trace is each card's
+      detail and its broken-link diagnosis is the card's status; one "Send to
+      agent" with a preview and a provider choice. Lanes retire as an operator
+      concept; the lane count is a Settings knob if anything. _(state: planned)_
+      `check: npx vitest run frontend/components/WorkPipeline.test.tsx`
+- [ ] **D-022 (5) — proposals with the operator upstream.** The operator picks N
+      repositories and triggers "Generate proposals" with a cost preview and the
+      egress confirmation; the review queue shows a side-by-side diff with
+      keyboard approve, reject and skip, and each response lands in the ledger.
+      Nothing is generated in the background. _(state: planned)_
+      `check: pwsh ./tests/Test-ProposalBatch.ps1 -FailOnError`
 
 **Forward arc.** Releases 3.0-3.5 describe the finished product: dispatch that
 runs, the loop closing legibly and without a hand-off, numbers an operator can
@@ -1908,6 +1967,123 @@ background worker, as `GET /api/status` did on 2026-08-11. Then:
       into a menu instead of wrapping. Each tab's code loads on demand
       (`import()`), off the 858 KB first bundle. _(state: planned)_
       `check: npx vitest run frontend/components/TodayView.test.tsx`
+
+### Lane 0.22 — The console disagrees with itself (UX assessment 2026-09-15)
+
+An assessor used build `fa18be4` through the UI only, without reading code or
+docs. They went cold reload, every tab, Help, Settings, one repo detail, one
+trace, Dispatch history and the agent-run list, and did not press Dispatch, Run
+Evaluation, Start runner or Save. The verdict: **the main UX problem is trust,
+not layout.** The findings below are the defects. The structural
+recommendations (four destinations, one vocabulary, Today as an exception inbox,
+one Work pipeline) are product decisions and live in D-022.
+
+**What the session saw.**
+
+- **Repository counts:** 0 (summary cards), 59 (Today), 72 (scan banner), 71
+  (execution ledger), 1 (Doc Readiness, a smoke fixture), and 0 in the
+  Repository Grid, which asked for a workspace path already set.
+- **After a reload:** Today read "No repositories are indexed yet" while
+  Operations read "Indexed entries: 59". The Operation Log said "Scan complete.
+  No repositories found." and then "Operation completed successfully."
+- **One work item:** the list said "Queued for the runner"; its own trace said
+  "no queue entry exists … nothing will pick this up"; Insights said "Queued 0".
+- **One repository:** "Ready" on the Dispatch Board, "Dispatch Readiness:
+  blocked" above "Dispatch Blockers (0)" in its detail, and "L0-Absent" on Today.
+  The glossary defines L0-Absent as "No roadmap file present", yet its roadmap
+  scores 55.
+- **Board labels:** repositories Today marks "always held" for uncommitted
+  changes, and a curated-out archived repository, read "Ready" on the board.
+- **Unnoticed stuck work:** the runner heartbeat was 27.6 h old, shown as
+  "99293.3s". A lane had run 1,655 minutes. A run dispatched six days earlier had
+  no branch and no PR.
+- **Non-tasks in the work queue:** "Ready" candidates included "Code is
+  implemented", "Monorepo structure created", "Work one bounded slice at a
+  time.", a "(Deferred) … Not needed for v1" line and truncated fragments.
+  One item completed and was re-assigned 17 seconds later.
+
+**Checked against the code and data (2026-09-15).**
+
+- **Test data in the live ledger: confirmed.** 175 of 192 agent-run records in
+  the live `output/agent-runs` are `dispatch-success-smoke`. The api-host smoke
+  writes the real agent-run ledger, `roadmap-writeback.jsonl` and the packaging
+  queue.
+- **"One click, no preview": not true.** The board's Dispatch button opens the
+  task preview, not a dispatch. Its "Ready" label still ignores holds.
+
+**Keep as they are:** the work-item trace (a stage-by-stage chain with a named
+broken link, the best diagnostic in the product); Leverage's "Not captured yet",
+which names missing measurements instead of showing zeros; the "Previews first;
+nothing is applied" copy and Private Scope; and Help's "Computed from" lines.
+
+**Open, in order.** The first two lead Current focus: test fixtures never reach
+live state, and one dispatch-eligibility rule. Then:
+
+- [ ] **Only actionable roadmap lines become work.** Before ranking, each
+      candidate is classified `actionable | done-statement | deferred | guidance |
+      fragment`. Only `actionable` is ranked, queued or offered for dispatch, and
+      each repository shows "Excluded (n)" with the reason for each line. A run
+      that completes writes its item back as done, and the same item hash cannot
+      be dispatched again inside a cooldown unless the operator overrides.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-WorkItemQuality.ps1 -FailOnError`
+- [ ] **Stuck work is detected, not noticed.** Each state has a limit. A
+      runner heartbeat older than N minutes with approved work waiting is stuck,
+      and so is a lane running past its limit, a dispatch with no branch after
+      24 h, an approval that never reached the queue, or a scan stuck in one
+      phase. Each surfaces once, on Today, with its remedy (start runner, poll
+      GitHub, re-enqueue or discard, cancel and requeue). Durations read "27h",
+      never "99293.3s" or "1655m". A lane completes on merge evidence, as its
+      trace already states, not through a manual Complete button.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-StuckWork.ps1 -FailOnError`
+- [ ] **One snapshot, one denominator, honest zeros.** Every count reads the
+      same snapshot: generated-at, discovered, in scope, excluded, scanned and
+      failed. A scan that finds 0 repositories is a warning, never "completed
+      successfully", and the last good snapshot stays on screen labelled with its
+      time. An unmeasured value renders "—" with its reason, never 0. The Grid's
+      empty state never asks for a workspace path that is already set.
+      _(state: planned)_
+      `check: npx vitest run frontend/lib/portfolioSnapshot.test.ts`
+- [ ] **A control does what its label says.** A "Preview…" next action opens
+      the preview, not the generic Run Evaluation modal. Header popovers close
+      on Escape and outside click. A disabled control, including the
+      Local/GitHub switch during a scan, says why. The "Runner stalled … Use
+      Start runner" banner carries the button. Settings never shows "Checking…"
+      or an empty provider list indefinitely. _(state: planned)_
+      `check: npx vitest run frontend/components/HeaderPopovers.test.tsx`
+- [ ] **Labels match what they count.** "N need you" counts repositories, not
+      holds × codes (it read 63 for 59 repositories). "Blocking a lane" appears
+      only where work is under way and stopped. L0-Absent is never shown for a
+      repository whose roadmap exists; the glossary text and the audit
+      disagree. Help's "first pass" names tabs that exist. "Insufficiently
+      understood" shows its cause in plain words (the roadmap is prose, not a
+      checklist). _(state: planned)_
+      `check: npx vitest run frontend/lib/glossary.test.ts`
+- [ ] **Insights reports a gap as a gap.** A missing or failed snapshot breaks
+      the trend line instead of plotting 0%, and a delta's colour follows its
+      direction (a −32.3% badge rendered green). Raw keys
+      (`DifferentialChangedCount`, `differential-noop`, `awaiting-first-scan`)
+      move behind a "Scan diagnostics" disclosure. Release-number copy ("Release
+      2.3 scaffold") leaves the UI. "Failing Actions" agrees with repository
+      detail. Team Activity is scoped to the owner or removed. _(state: planned)_
+      `check: npx vitest run frontend/lib/portfolioTrendView.test.ts`
+- [ ] **Repository detail agrees with itself.** Each panel shows loading,
+      unavailable or error, never a stale score beside "not found" (README 95
+      next to "README file not found", "blocked" above "Dispatch Blockers (0)").
+      Raw errors ("No operations repo record found for repoId …") become operator
+      language with a Retry. Three conditions are flags: failing CI, a default
+      branch pointing at an agent branch, and two local repositories on one
+      remote. _(state: planned)_
+      `check: npx vitest run frontend/components/OperationsWorkspaceView.test.tsx`
+- [ ] **Nothing unfinished in production, and filters stay visible.** The
+      Grid's "Clone PLANNED" and "Archive PLANNED" controls are removed. Active
+      filters show as removable chips, and "Clear filters" clears the ones under
+      Advanced. A Doc Readiness row carries one primary action plus an overflow
+      menu, not eight buttons. The Dependencies tab (a technology inventory, read
+      by a developer as package dependencies) is renamed or folded into
+      repository detail. _(state: planned)_
+      `check: npx vitest run frontend/components/RepoGrid.test.tsx`
 
 ---
 

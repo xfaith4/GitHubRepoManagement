@@ -114,14 +114,14 @@
     "forbiddenPaths": [
       ".github/workflows/**"
     ],
-    "provisional": true
+    "provisional": false
   },
   "defaultPermissions": {
     "filesystemWrite": true,
     "shell": true,
     "network": false,
     "githubWrite": false,
-    "provisional": true
+    "provisional": false
   },
   "dispatch": {
     "defaultTarget": "auto",

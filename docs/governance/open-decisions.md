@@ -38,71 +38,8 @@ against that mistaken test and had to be withdrawn; see
 
 ## Open
 
-### D-006 — Which repository represents external management in the value trial?
-
-- **Asked** 2026-09-05 during the approved Release 3.7 preparation.
-- **Question.** Which repository is externally managed? Confirm or correct the archived-ignore Genesys-Telecom-Powershell candidate for the abandoned category as well.
-- **Why it is not an agent's call.** External management and abandonment are owner intent; neither follows from an old commit or an xfaith4 remote.
-- **Ruling so far (Ben, 2026-09-06) — the question itself stays open.**
-  External management is an **intent classification** and must not be inferred
-  from repository age, activity, remote ownership or documentation maturity.
-  `Genesys-Telecom-Powershell` may remain a provisional abandoned-category
-  candidate, but neither abandonment nor external management may be recorded as
-  fact without owner intent. **If no repository in the portfolio is
-  intentionally externally managed, the trial records that the category has no
-  natural cohort member** rather than manufacturing one — an empty category is
-  a valid trial outcome, not a gap to be filled.
-- **Default if unanswered.** Nine named candidates and one category recorded as
-  unrepresented in `evidence/trials/release-3.7/cohort.json`. The trial proceeds
-  with nine; no substitution is chosen for conformance.
-- **Blocks.** No longer the cohort — the empty-category rule above releases it.
-  Only the owner-intent labels themselves still need Ben.
-
-### D-012 — What may an agent touch, and may it edit workflow files?
-
-- **Asked** 2026-09-06, from
-  [Release 3.8 milestone 1](../../ROADMAP.md) and the spec's _Permission
-  envelope_.
-- **Question.** The spec's example envelope is `filesystemWrite true`,
-  `shell true`, `network false`, `githubWrite false`, with `forbiddenPaths`
-  of `.github/workflows/**`. Confirm it, and rule on whether an agent may
-  edit workflow files. The superseded July design said yes and flagged it.
-- **Why it is not an agent's call.** It is the security posture of every
-  agent run, and the workflow question is self-referential: an agent that can
-  edit `.github/workflows/**` can edit the CI that reviews its own work.
-- **Default if unanswered.** The config ships the spec's example marked
-  provisional and every work packet carries it, so the envelope is visible on
-  each run. **No adapter enforces it** — nothing maps it onto a provider's
-  own permission flags until this is decided.
-- **Blocks.** The enforcement half of packet H38-05 and the Codex sandbox
-  mapping in H38-16. The envelope still travels; it just does not yet bind.
-
-### D-021 — Which foundations do not apply to which kinds?
-
-- **Asked** 2026-09-14, building 3.7 M4b. Applicability is per kind
-  (steering Rung 1: "modest repositories are not graded against enterprise
-  standards"); the mechanism, the check and the reason rendering are M4b's.
-  Which rows the table carries is product policy.
-- **Question.** Beyond the Release 3.6 starting set (minimal → planning;
-  externally-managed → planning, structure; archived → planning, structure,
-  intentional-engineering), which domains do not apply to `application`,
-  `library`, `firmware`, `experiment`, `tooling`, `script-collection`,
-  `service`? Steering names two examples — a script collection is not
-  missing a test suite; a firmware sketch is not missing a Dockerfile — but
-  both live in `intentional-engineering`'s sub-areas (test, operational),
-  and applicability is per domain, not per sub-area. Marking the whole
-  domain not-applicable for those kinds says more than the sentence does.
-- **Why it is not an agent's call.** Every row changes which repositories the
-  product tells Ben need nothing, and steering section 6 forbids adding a
-  row to make one repository come out right.
-- **Default proceeded under (2026-09-14).** One row: `experiment` → planning
-  not applicable ("an experiment plans by trying; a roadmap is optional until
-  it has a direction"), fixture-only, recorded in the kind's
-  `applicabilityBasis`. Every other new kind keeps every scored domain
-  applicable. `intentional-engineering` stays `not-scored` for all of them;
-  its per-kind sub-area applicability is decided when it is scored.
-- **Blocks.** Nothing. M4b's check holds whatever the table says; a row is a
-  data change with a `modelVersion` bump.
+Nothing is open. D-006, D-012, D-021 and D-022 were decided 2026-09-15 and sit
+under [Decided](#decided) with their reasoning intact.
 
 ---
 
@@ -177,6 +114,40 @@ meaning a conforming adapter exists here, which CI can verify.
 Move entries here with the decision and its date. Keep the original question
 intact — the reasoning is what stops the next agent reopening a settled point.
 
+### D-006 — Which repository represents external management in the value trial?
+
+- **Asked** 2026-09-05 during the approved Release 3.7 preparation.
+- **Question.** Which repository is externally managed? Confirm or correct the archived-ignore Genesys-Telecom-Powershell candidate for the abandoned category as well.
+- **Why it is not an agent's call.** External management and abandonment are owner intent; neither follows from an old commit or an xfaith4 remote.
+- **Ruling so far (Ben, 2026-09-06) — the question itself stays open.**
+  External management is an **intent classification** and must not be inferred
+  from repository age, activity, remote ownership or documentation maturity.
+  `Genesys-Telecom-Powershell` may remain a provisional abandoned-category
+  candidate, but neither abandonment nor external management may be recorded as
+  fact without owner intent. **If no repository in the portfolio is
+  intentionally externally managed, the trial records that the category has no
+  natural cohort member** rather than manufacturing one — an empty category is
+  a valid trial outcome, not a gap to be filled.
+- **Default if unanswered.** Nine named candidates and one category recorded as
+  unrepresented in `evidence/trials/release-3.7/cohort.json`. The trial proceeds
+  with nine; no substitution is chosen for conformance.
+- **Decision (Ben, 2026-09-15).** **External management: no cohort member; the
+  category stays recorded as unrepresented.** Every repository in the portfolio
+  is the owner's and none is run by another party, so the category has no
+  natural member. **Abandonment: `Genesys-Telecom-Powershell` is confirmed** on
+  the strength of its `archived-ignore` curation, which is the owner's declared
+  intent, not its age or activity. **The rule, so this is never re-asked per
+  repository: a curation of `archived-ignore` is the abandonment label.**
+  Curation is the one place the owner states intent about a repository; no
+  other signal may stand in for it. Three repositories carry the curation on
+  the day of the ruling; the trial names one.
+- **What it changes.** `cohort.json`: both records' `ownerIntentConfirmed`
+  become true, with the ruling as their note. OQ-8 closes. The trial README's
+  entry-gate note and `kinds-of-work.md` stop saying the labels are open.
+  `foundation-domains.json`'s notes that owner intent may overrule a kind stay
+  true — curation is that intent.
+- **Blocks.** Nothing.
+
 ### D-011 — Are the capacity reserves right, and what does a task cost?
 
 - **Asked** 2026-09-06, from
@@ -212,6 +183,47 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   guess, and the flag comes off on evidence.
 - **Blocks.** Nothing. It gated the enforcement half of the capacity verdict;
   that half now waits on measurement instead.
+
+### D-012 — What may an agent touch, and may it edit workflow files?
+
+- **Asked** 2026-09-06, from
+  [Release 3.8 milestone 1](../../ROADMAP.md) and the spec's _Permission
+  envelope_.
+- **Question.** The spec's example envelope is `filesystemWrite true`,
+  `shell true`, `network false`, `githubWrite false`, with `forbiddenPaths`
+  of `.github/workflows/**`. Confirm it, and rule on whether an agent may
+  edit workflow files. The superseded July design said yes and flagged it.
+- **Why it is not an agent's call.** It is the security posture of every
+  agent run, and the workflow question is self-referential: an agent that can
+  edit `.github/workflows/**` can edit the CI that reviews its own work.
+- **Default if unanswered.** The config ships the spec's example marked
+  provisional and every work packet carries it, so the envelope is visible on
+  each run. **No adapter enforces it** — nothing maps it onto a provider's
+  own permission flags until this is decided.
+- **Decision (Ben, 2026-09-15).** **The envelope stands as the spec wrote it**
+  — `filesystemWrite true`, `shell true`, `network false`, `githubWrite false`,
+  `forbiddenPaths` `.github/workflows/**` — and is no longer provisional. **An
+  agent may not edit workflow files.** D-019 settled the principle one level up:
+  an agent does not review its own gates. The July "yes, flagged" is what D-019
+  walked back. Three rules make the ruling bind:
+  1. **The enforcement floor is the diff, not the provider.** Not every adapter
+     can express a forbidden path, so the universal check is post-run: a diff
+     touching any `forbiddenPaths` entry fails the packet by name and the branch
+     is not pushed. Provider-native controls (the Codex sandbox and the like)
+     are an additional layer where they exist, never the only one. This resolves
+     H38-05's enforcement half and H38-16 with one rule.
+  2. **Proposals, not edits.** An agent that believes CI must change writes the
+     proposed workflow to a non-executing location — `.github/workflows-proposed/`
+     or a named section of the handoff — and names it as waiting. The owner
+     applies it.
+  3. **`network false` is the default, and a packet that needs the network says
+     so.** A packet needing a package install declares an allowlist the owner
+     approves; the default is never loosened silently.
+- **What it changes.** `agent-providers.json`: `provisional` comes off
+  `defaultScope` and `defaultPermissions`. Steering §5 names the rule as
+  decided. Enforcement is engineering and sits in Current focus with its check:
+  the post-run diff check, the proposals path and the allowlist.
+- **Blocks.** Nothing. Unblocks H38-05's enforcement half and H38-16.
 
 ### D-013 — What are the provider ranking weights, and how is a tie broken?
 
@@ -595,3 +607,122 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   appropriate-as-is), the report module, the console's lifecycle styles, and
   the reference doc carry the new state. Implemented stacked on 3.7 M4b.
 - **Blocks.** Nothing.
+
+### D-021 — Which foundations do not apply to which kinds?
+
+- **Asked** 2026-09-14, building 3.7 M4b. Applicability is per kind
+  (steering Rung 1: "modest repositories are not graded against enterprise
+  standards"); the mechanism, the check and the reason rendering are M4b's.
+  Which rows the table carries is product policy.
+- **Question.** Beyond the Release 3.6 starting set (minimal → planning;
+  externally-managed → planning, structure; archived → planning, structure,
+  intentional-engineering), which domains do not apply to `application`,
+  `library`, `firmware`, `experiment`, `tooling`, `script-collection`,
+  `service`? Steering names two examples — a script collection is not
+  missing a test suite; a firmware sketch is not missing a Dockerfile — but
+  both live in `intentional-engineering`'s sub-areas (test, operational),
+  and applicability is per domain, not per sub-area. Marking the whole
+  domain not-applicable for those kinds says more than the sentence does.
+- **Why it is not an agent's call.** Every row changes which repositories the
+  product tells Ben need nothing, and steering section 6 forbids adding a
+  row to make one repository come out right.
+- **Default proceeded under (2026-09-14).** One row: `experiment` → planning
+  not applicable ("an experiment plans by trying; a roadmap is optional until
+  it has a direction"), fixture-only, recorded in the kind's
+  `applicabilityBasis`. Every other new kind keeps every scored domain
+  applicable. `intentional-engineering` stays `not-scored` for all of them;
+  its per-kind sub-area applicability is decided when it is scored.
+- **Decision (Ben, 2026-09-15).** **The default is ratified: one row,
+  `experiment` → planning not applicable.** Every other kind keeps every scored
+  domain applicable. **The rule, so this does not reopen: applicability rows are
+  added only from a kind's definition, never from a repository's result
+  (steering §6), and sub-area applicability is decided when
+  `intentional-engineering` is scored — not approximated at domain level
+  beforehand.** Steering's script-collection and firmware examples live there.
+- **What it changes.** Nothing in the table today; M4b is verified and archived.
+  A future row is a data change with an `observedOn` and a `modelVersion` bump.
+- **Blocks.** Nothing.
+
+### D-022 — Is the console four destinations with one vocabulary?
+
+- **Asked** 2026-09-15, from a UX assessment of build `fa18be4` made through
+  the UI alone. Its defects are Lane 0.22; its structural recommendations are
+  this decision, because each changes what the product is rather than fixing
+  what it shows.
+- **What the assessor saw.** Seven tabs (Today, Grid, Insights, Operations,
+  Doc Readiness, Dispatch Board, Dependencies) reflecting internal pipelines,
+  not operator questions; several answering the same question, none fully.
+  Four status vocabularies (Today's three conclusions; Operations' six
+  lifecycle labels; Doc Readiness's Needs Docs / dispatch-ready; Dispatch's
+  Ready / Blocked / Idle / Complete) plus L0–L4 on top of all of them, with
+  Help admitting three meanings of "ready" and two of "blocked". Three or four
+  ways to start agent work. The one system-level blocker, a runner down 27 h,
+  was absent from Today and reachable only through a header popover and a tab
+  labelled read-only analytics. Two lists of the same repositories (Grid,
+  Operations) with different columns, and a drill-down reachable from one.
+- **Proposed.**
+  1. **Four destinations:** Today (what needs me, what is stuck, what is next),
+     Portfolio (Grid + Operations + Doc Readiness as a filter + Dependencies as
+     a column), Work (Dispatch Board + packaged work + agent runs + trace +
+     "Execution right now"), Trends (Insights without the execution panels,
+     keeping Leverage). Utilities: a System drawer (runner, scanner, index
+     freshness, GitHub auth, providers, automation policy), Settings, Help, the
+     Local/GitHub source.
+  2. **One repository lifecycle** — Needs plan → Plan needs approval → Ready for
+     agents → Agent working → In review → Healthy / Archived — with orthogonal
+     flags (Uncommitted changes, CI failing, Behind remote, Docs gap). L-levels
+     become a detail score, not a headline. Hold codes stay as secondary tags.
+  3. **Today as an exception inbox:** a system banner shown only when something
+     is abnormal; decisions grouped by type with bulk actions; actions only the
+     operator can take; stuck work with remedies; the next five eligible items;
+     a digest; everything else collapsed to counts. The KPI cards become
+     Decisions waiting · Stuck · Ready for agents.
+  4. **One Work pipeline:** Proposed → Approved → Queued → Running → In review →
+     Done, plus a Needs-attention lane; the trace as each card's detail and its
+     broken-link diagnosis as the card's status; one "Send to agent" action with
+     a preview and provider choice; lanes retired as an operator concept unless
+     the lane count is something the operator tunes.
+  5. **Batched roadmap proposals:** the product generates roadmap drafts and
+     checklist conversions in the background, and Today offers "49 proposals
+     ready for review" with a diff queue and keyboard approve/reject.
+- **Why it is not an agent's call.** (1) and (4) replace surfaces the operator
+  works in daily. (2) renames the three conclusions the steering contract
+  defines, so it is a steering change. (5) calls AI routes without the operator
+  in the loop, against the no-one-click-egress ruling of 2026-09-14, and
+  spends provider budget by policy. Steering's product lens says every
+  remaining item is ranked on operational efficiency; this is the largest
+  such item there is, and its shape is the owner's.
+- **Default proceeded under (2026-09-15).** None of the five. Lane 0.22 fixes
+  the defects inside the current structure, so every surface at least tells
+  the truth before any of them is merged or removed. Lane 0.21 does the same
+  for load time. Where a Lane 0.22 item touches a surface this decision might
+  remove (the Dependencies tab, the Doc Readiness buttons), it makes the
+  smallest honest change and does not restructure.
+- **Decision (Ben, 2026-09-15).** Ruled in the order they are decided, not
+  built:
+  1. **One lifecycle — yes, and it is the vocabulary, not a rename.** The three
+     steering conclusions stay the model's output; the lifecycle is what the
+     operator sees; the consistency table built for D-020 is the contract that
+     they agree. L-levels and hold codes demote to detail. It amends steering,
+     so it lands as a review PR under D-019, and it is decided first because
+     the other three render these states.
+  2. **Today as an exception inbox — yes, and first to build.** Highest
+     operator value, smallest structural change; most of it is what Today is not
+     showing (a runner 27 hours down). The three KPIs — Decisions waiting ·
+     Stuck · Ready for agents — are the right three.
+  3. **Four destinations — yes.** Grid + Operations is the clearest duplicate in
+     the assessment.
+  4. **One Work pipeline and one "Send to agent" — yes.** Lanes retire as an
+     operator concept; the lane count becomes a Settings knob if anything.
+  5. **Batched proposals — no as written; yes with the operator upstream.**
+     Background generation would break the 2026-09-14 no-one-click-egress ruling
+     and spend budget by policy. What survives: the operator triggers "Generate
+     proposals for these N repositories" with a cost preview, and the review
+     queue with keyboard approve/reject follows.
+  **Sequencing stands as the default said:** Lane 0.22 and Lane 0.21 first, so
+  nothing is merged into the new shape carrying a known lie.
+- **What it changes.** Current focus gains the five items, in the decided
+  order, after the trial work. Lane 0.19's "Verify tab" becomes a Today section
+  or a System-drawer entry under (3), not a new tab.
+- **Blocks.** Nothing agent-executable now. The five items wait on Lane 0.21
+  and Lane 0.22.

@@ -2,6 +2,61 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-15 — Four decisions ruled: D-006, D-012, D-021, D-022
+
+The register's Open section is empty for the first time. Each ruling keeps its
+question intact and adds the decision, what it changes and what it blocks.
+
+- **D-006.** No repository is externally managed; the category stays
+  unrepresented. `Genesys-Telecom-Powershell` is confirmed abandoned on the
+  strength of its `archived-ignore` curation. The rule: a curation of
+  `archived-ignore` is the abandonment label, so this is never re-asked per
+  repository. `cohort.json` carries both labels as confirmed; OQ-8 closes.
+- **D-012.** The permission envelope stands as the spec wrote it and is no
+  longer provisional (`agent-providers.json`); an agent may not edit workflow
+  files. The enforcement floor is the diff, not the provider: a post-run diff
+  touching a forbidden path fails the packet and the branch is not pushed. An
+  agent that needs CI changed writes a proposal to `.github/workflows-proposed/`
+  and names it as waiting. A packet that needs the network declares an
+  allowlist the owner approves. Steering §5 names the rule; Current focus gains
+  the enforcement item with its check.
+- **D-021.** The one-row default is ratified. Applicability rows are added only
+  from a kind's definition, never from a repository's result, and sub-area
+  applicability is decided when `intentional-engineering` is scored.
+- **D-022.** One lifecycle the operator sees (the steering conclusions stay the
+  model's output), Today as an exception inbox (first to build), four
+  destinations, one Work pipeline, and proposals only with the operator
+  upstream — background generation is refused under the no-one-click-egress
+  ruling. Lane 0.21 and Lane 0.22 land first, so nothing is merged into the
+  new shape carrying a known lie. Current focus gains the five items after the
+  trial work.
+## 2026-09-15 — The UX assessment becomes Lane 0.22 and D-022
+
+An assessor used build `fa18be4` through the UI alone: cold reload, every
+tab, Help, Settings, one repository detail, one trace, Dispatch history and the
+agent-run list. Their verdict: the main UX problem is trust, not layout. The
+same session showed 0, 59, 72, 71 and 1 as the repository count on different
+surfaces; a work item "Queued for the runner" whose own trace said nothing would
+pick it up; one repository "Ready", "blocked" and "L0-Absent" at once; a runner
+27.6 hours stalled, shown as "99293.3s" and absent from Today; and "Code is
+implemented" ranked as work.
+
+Two claims were checked against the code and data. Test data in the live
+ledger is confirmed: 175 of 192 agent-run records are the api-host smoke's
+`dispatch-success-smoke`, and the smoke writes the real agent-run ledger,
+`roadmap-writeback.jsonl` and the packaging queue. "One click, no preview" is
+not: the board's Dispatch button opens the task preview, but its "Ready" label
+ignores holds.
+
+`ROADMAP.md` Lane 0.22 records the defects, ten items, each with what the
+session saw and what the fix must hold. Fixture isolation and one
+dispatch-eligibility rule lead Current focus, after Lane 0.21's request-thread
+item. `open-decisions.md` D-022 records the structural recommendations (four
+destinations, one lifecycle vocabulary with flags, Today as an exception inbox,
+one Work pipeline, batched roadmap proposals) as the owner's call, with the
+default that nothing is restructured until every surface tells the truth. The
+assessment's prompt and report were not committed: they name local repositories
+and a workspace path, and this repository is public.
 ## 2026-09-15 — An unchanged repository is reused on the next load (Lane 0.21)
 
 The portal froze on every page load: `GET /api/portfolio/assessment?scanMode=differential`
