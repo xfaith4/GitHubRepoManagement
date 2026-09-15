@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — Lifecycle and conclusion may not disagree unexplained (steering extension 3)
+
+`lifecycleState` (the assessment's operator-facing status) and `conclusion`
+(the foundation model's verdict) are two verdicts over the same signals. Every
+conclusion record now carries `consistency`: whether the pair is one
+`foundation-domains.json` → `lifecycleConsistency.allowed` lists, or an
+`exceptions` entry explains it — an exception counts only when its `requires`
+pattern is found in the record's basis lines or `domain=status` facts, and that
+fact is the evidence. A pair nothing explains is a `Test-FoundationConclusion`
+violation; so is a lifecycle state the table does not list. The payload carries
+`byConsistency`. Check: `pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort
+evidence/trials/release-3.7/cohort.json -Assert lifecycle-consistency
+-FailOnError` — fixtures for every agreement class, the validator proved red on
+a manufactured contradiction and on an unlisted lifecycle, the table checked
+against the assessment's full state vocabulary, and, where a local index
+exists, every repository in it and in the cohort assessed. The assessment
+reference's lifecycle table is corrected to the code's real order
+(`no-checklist` was missing).
+
 ## 2026-09-14 — Kind detection under steering contract 6 (3.7 M4a follow-through)
 
 The opinions behind the kind hints — which files, dependencies, manifest keys

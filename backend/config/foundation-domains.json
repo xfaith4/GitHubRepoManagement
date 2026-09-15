@@ -138,6 +138,55 @@
       "reason": "Archived: intentionally closed, kept for reference."
     }
   ],
+  "lifecycleConsistency": {
+    "note": "Steering extension 3 (Rung 1): lifecycleState (Portfolio.Assessment.ps1 _ResolveLifecycleState) and conclusion (this model) are two verdicts over the same signals and may not disagree without saying why. `allowed` lists, per lifecycle state, the conclusions that agree with it. Any other pair must match an `exceptions` entry whose `requires` pattern is found in the record's basis lines or its domain=status facts; the match is the explanation's evidence. A pair with no allowed entry and no matching exception is a contract violation (Test-FoundationConclusion). A lifecycle state not listed here is a violation too.",
+    "allowed": {
+      "archived": ["appropriate-as-is"],
+      "no-checklist": ["insufficiently-understood"],
+      "parse-error": ["insufficiently-understood"],
+      "running": ["strengthen", "appropriate-as-is"],
+      "needs-readme": ["strengthen"],
+      "needs-roadmap": ["strengthen"],
+      "needs-roadmap-repair": ["strengthen"],
+      "needs-structure": ["strengthen"],
+      "ready-for-work": ["strengthen", "appropriate-as-is"],
+      "completed": ["strengthen", "appropriate-as-is"],
+      "monitored": ["strengthen", "appropriate-as-is"],
+      "discovered": ["strengthen", "appropriate-as-is"]
+    },
+    "exceptions": [
+      {
+        "lifecycleState": "*",
+        "conclusion": "insufficiently-understood",
+        "requires": "^(sourceCoverage=github|lastScanStatus=(?!ok)|roadmapState=(no-checklist|parse-error))",
+        "explanation": "The lifecycle names a state, but the product could not read enough to conclude - no local checkout, a failed scan, or a plan it cannot parse - and the conclusion says what it needs before it can agree."
+      },
+      {
+        "lifecycleState": "needs-readme",
+        "conclusion": "appropriate-as-is",
+        "requires": "^(kind rule: |documentation=not-applicable)",
+        "explanation": "The lifecycle reads a missing README as blocking; the kind's applicability says documentation is not this repository's to have, or a kind rule concludes for it."
+      },
+      {
+        "lifecycleState": "needs-roadmap",
+        "conclusion": "appropriate-as-is",
+        "requires": "^(kind rule: |planning=not-applicable)",
+        "explanation": "The lifecycle reads a missing roadmap as blocking; the kind's applicability says planning is not this repository's to have, or a kind rule concludes for it."
+      },
+      {
+        "lifecycleState": "needs-roadmap-repair",
+        "conclusion": "appropriate-as-is",
+        "requires": "^(kind rule: |planning=not-applicable)",
+        "explanation": "The lifecycle reads an insufficient execution contract as blocking; the kind's applicability says planning is not this repository's to have, or a kind rule (archived by curation, externally managed) concludes for it. The lifecycle model does not read curation; this model does."
+      },
+      {
+        "lifecycleState": "needs-structure",
+        "conclusion": "appropriate-as-is",
+        "requires": "^(kind rule: |structure=not-applicable)",
+        "explanation": "The lifecycle reads open structure findings as blocking; the kind's applicability says structure is not this repository's to have, or a kind rule concludes for it."
+      }
+    ]
+  },
   "kindDetection": {
     "hintKinds": {
       "note": "Which kind each hint speaks for. Read by the coherence observation (steering extension 2): when the manifest hints and the README wording hints name kinds that share nothing, the disagreement is emitted as an observation with canonicalEffect none. It changes no verdict.",

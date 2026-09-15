@@ -321,6 +321,9 @@ Invoke-InProcessGate -Name 'roadmap-audit-action package (Release 2.3 Phase 3)' 
 # Release 3.7 M4a — the milestone's own check line, run where the roadmap says
 # it runs: kind resolves from manifests, entry points and the README purpose line.
 Invoke-ScriptGate -Name 'Kind detection' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-KindDetection.ps1') -ScriptArgs @('-FailOnError')
+# Steering extension 3 — lifecycleState and conclusion may not disagree
+# unexplained; the milestone's own check line, run where the roadmap says it runs.
+Invoke-ScriptGate -Name 'Lifecycle consistency' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'lifecycle-consistency', '-FailOnError')
 
 Invoke-ScriptGate -Name 'Roadmap structure lint' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapStructure.ps1') -ScriptArgs @('-Path', (Join-Path $WorkspaceRoot 'ROADMAP.md'), '-FailOnError')
 

@@ -43,7 +43,7 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       allowed pairs and the explanation each exception must carry; a
       contradiction with no explanation fails it. Runs before M4b because a
       contradiction it finds changes how applicability is written.
-      _(state: planned)_
+      _(state: built)_
       `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert lifecycle-consistency -FailOnError`
 - [ ] **3.7 / M4b — limiting foundation by kind applicability.** The limiting
       foundation is chosen only among the domains that apply to the repository's
