@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-15 — An unchanged repository is reused on the next load (Lane 0.21)
+
+The portal froze on every page load: `GET /api/portfolio/assessment?scanMode=differential`
+held the host's single request thread for 60–72 s. The differential decision
+counted a repository as `local+github` only when the route's GitHub API list
+contained it. The assessment and the index writer also counted a local
+repository whose status carries a GitHub `htmlUrl`. `sourceCoverage` is a token
+of the scan fingerprint, so every repository with a GitHub remote but no API
+record hashed `local` on the way in and `local+github` in the index. Those
+repositories never matched and were re-scanned inline on every load: 40 of 59
+on the operator's portfolio. Replaying the live index and status cache, the
+fix reuses 58; the 59th has a new commit.
+
+`Get-PortfolioSourceCoverage` in `Portfolio.Assessment.ps1` is now the one rule,
+used by both the assessment and the host. The module smoke writes an index for a
+remote-only, a local-only and an API-backed repository, and requires the
+fingerprint the host computes for each to equal the stored one. It also requires
+the host to use the shared rule.
+
+Lane 0.21 records the rest of the operator's timed reload: the route's GitHub
+pass still runs inline (28 s with nothing changed), polls pile up, a finished
+scan never reaches the page, "Auto-scan off" still scans on load, hidden tabs
+load at startup, timestamps are culture-formatted, and the first screen is long.
+Its first item leads Current focus.
 ## 2026-09-14 — Roadmap after the 3.7 model stack: five milestones archived, remaining order set
 
 The M4a follow-through (#297), the lifecycle/conclusion consistency contract

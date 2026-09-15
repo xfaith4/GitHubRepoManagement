@@ -27,6 +27,13 @@ by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 **Current focus (next agent actions), in order.** Every item here is agent-closable;
 the operator queue is a separate file. Take the first `[ ]` and open a PR.
 
+- [ ] **Lane 0.21 — the assessment route never holds the request thread.**
+      While a scan runs the portal stops answering: 60–72 s per page load,
+      3 m 33 s in the operator's timed reload. The fingerprint defect behind most
+      of it is fixed; the route's GitHub pass and changed-root scans still run
+      inline. Move them into the background worker, and have the route answer
+      from the index at once. Lane 0.21's other items follow it. _(state: planned)_
+      `check: pwsh ./tests/Test-RequestThreadBudget.ps1 -Route /api/portfolio/assessment -MaxMs 2000 -FailOnError`
 - [ ] **Accept/reject ledger (steering extension 1, Rung 1).** Every next action
       and top value item is a prediction; every response to one — accept,
       reject, edit — is a label. Capture each with the prediction it answers and
@@ -1831,6 +1838,76 @@ responsibility, spends time to learn nothing. If a real case arrives where the
 runner is not running and the service fails to start it, the error that case
 produces is the thing to read — a rehearsed one would not have told us what the
 real one will.
+
+### Lane 0.21 — The portal freezes while it loads (operator evaluation 2026-09-15)
+
+A timed reload: the shell painted in 0.7 s, then the host barely answered for
+3 m 33 s. `/api/log/tail` averaged 37 s, `/health/live` peaked at 48 s, and a
+reload mid-scan ended in `ERR_TIMED_OUT`. The host accepts one connection at a
+time, so any request that holds the thread holds every route. The host log
+names the one that did: each `GET /api/portfolio/assessment?scanMode=differential`
+ran 60–72 s inline (`prepMs` 50–61 s), and two page loads back to back held it
+twice.
+
+**The largest cause was a defect, fixed in the PR that opened this lane.** The
+differential decision counted a repository as `local+github` only if the
+route's GitHub API list contained it. The assessment and the index also counted
+a local repository whose status carries a GitHub `htmlUrl`. `sourceCoverage` is
+a fingerprint token, so every repository with a GitHub remote but no API record
+never matched and was re-scanned on every load. That was 40 of 59, measured
+2026-09-15; on the same data the fix reuses 58, and the 59th has a new commit.
+Both sides now use `Get-PortfolioSourceCoverage`.
+
+**Still open, in order of what the operator waits on.** First, and leading
+Current focus: the assessment route never holds the request thread. With
+nothing changed, a differential load still ran `prepMs` 28 s inline (22:59
+2026-09-14): the route's own GitHub API pass (a workflow-run call and a Pages
+lookup per repository) plus scans of changed roots. That work moves into the
+background worker, as `GET /api/status` did on 2026-08-11. Then:
+
+- [ ] **Polls never pile up behind a slow host.** The next poll starts only
+      when the previous one settles (a `setTimeout` chain, not `setInterval`).
+      Each poll has an `AbortController` timeout, backs off while calls are slow,
+      and pauses while `document.hidden`. `/api/agent-runs` returned the same
+      147 KB seven times in one load; it answers with an ETag or a `since=`
+      cursor. _(state: planned)_
+      `check: npx vitest run frontend/lib/pollLoop.test.ts`
+- [ ] **A finished scan reaches the page.** The scan ended at 05:17:15 and the
+      snapshot regenerated at 05:19:05, but the header still read "Last scan
+      01:09 AM · 64.0s scan · 9m ago". When scan status moves to `completed`, the
+      page refetches the snapshot, assessment and status. The failed
+      background-refresh path retries at that point instead of logging the same
+      warning twice. _(state: planned)_
+      `check: npx vitest run frontend/lib/scanCompletionRefresh.test.ts`
+- [ ] **"Auto-scan off" means no scan on load.** The page showed Auto-scan off
+      and started a background re-scan on load anyway. With auto-scan off it
+      serves the cached index and offers the scan; otherwise the re-scan is
+      labelled as such. _(state: planned)_
+      `check: npx vitest run frontend/lib/startupRefreshPolicy.test.ts`
+- [ ] **Hidden tabs cost nothing at startup.** Sixteen calls fire in parallel on
+      load. `operations/repos` (548 KB), `automation/packages` (374 KB) and
+      `roadmap/index` (56 KB) load when their tab opens. Startup marks each phase
+      (auth, bootstrap, snapshot, scan start and end) with `performance.mark`
+      and one `console.debug` line, so a slow reload explains itself.
+      _(state: planned)_
+      `check: npx vitest run frontend/lib/startupPhases.test.ts`
+- [ ] **Every wire timestamp is ISO 8601 UTC.** Scan status returned
+      `09/15/2026 05:13:42`, culture-formatted with no zone, and
+      `repos.index.json` `generatedAt` has the same shape. The snapshot emits
+      ISO 8601. PowerShell 7 turns ISO strings into `DateTime` on read, and
+      `[string]` then formats them in the machine's culture. Emit
+      `.ToUniversalTime().ToString('o')` at every writer, with a tripwire over
+      the route payloads. _(state: planned)_
+      `check: pwsh ./tests/Test-WireTimestamps.ps1 -FailOnError`
+- [ ] **The first screen is honest and short.** Before the snapshot arrives,
+      counts show placeholders, not "Sample data source" with zeros. Today's
+      "Blocking a lane" shows one card per repository with its reasons as tags:
+      the page ran 23,641 px, Portfolio-Forge had four cards, and
+      `roadmap-no-checklist` appeared nine times. Below about 900 px, ranking
+      rows move "Rank basis" into an expandable row, and header badges move
+      into a menu instead of wrapping. Each tab's code loads on demand
+      (`import()`), off the 858 KB first bundle. _(state: planned)_
+      `check: npx vitest run frontend/components/TodayView.test.tsx`
 
 ---
 

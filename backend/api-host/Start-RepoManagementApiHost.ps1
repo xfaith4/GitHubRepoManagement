@@ -10718,7 +10718,9 @@ try {
                             foreach ($nameKey in $allNames) {
                                 $currentLocal = if ($currentLocalMap.ContainsKey($nameKey)) { $currentLocalMap[$nameKey] } else { $null }
                                 $currentGithub = if ($currentGithubMap.ContainsKey($nameKey)) { $currentGithubMap[$nameKey] } else { $null }
-                                $currentSourceCoverage = if ($null -ne $currentLocal -and $null -ne $currentGithub) { 'local+github' } elseif ($null -ne $currentLocal) { 'local' } elseif ($null -ne $currentGithub) { 'github' } else { 'none' }
+                                # The assessment's own rule, so the fingerprint computed here
+                                # is the one the index stores (see Get-PortfolioSourceCoverage).
+                                $currentSourceCoverage = Get-PortfolioSourceCoverage -LocalRepo $currentLocal -GitHubRepo $currentGithub
                                 $currentLocalPath = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'path' -Default '') } else { '' }
                                 $currentHeadCommitSha = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'headCommitSha' -Default '') } else { '' }
                                 $currentHeadCommitDate = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'lastCommitDate' -Default '') } else { '' }
