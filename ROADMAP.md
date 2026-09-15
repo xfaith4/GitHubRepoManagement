@@ -27,29 +27,65 @@ by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 **Current focus (next agent actions), in order.** Every item here is agent-closable;
 the operator queue is a separate file. Take the first `[ ]` and open a PR.
 
-- [ ] **3.7 / M4a — kind detection.** Resolve `library`, `firmware`, `application`,
-      `experiment`, `tooling` from index signals (manifest, entry points, README
-      purpose line), not only `archived`. Eight of nine trial repositories currently
-      conclude with "no kind signal". Ship as `foundation-conclusions v2`; the
-      conclusion record already carries the index SHA, so add `modelVersion`
-      beside it and the trial stays measurable across versions. _(state: planned)_
+- [ ] **3.7 / M4a follow-through — kind under steering contract 6.** `unknown`
+      carries the hint list that failed to match, so a rule can be added as data.
+      The hint derivation (README wording patterns, the app-framework dependency
+      list, firmware file names) moves out of `Portfolio.KindSignals.ps1` into
+      `backend/config/kind-signals.json`, every rule carrying `observedOn`. Kind
+      is emitted as a ranked list with the hints each rested on, and a
+      manifest-vs-README disagreement is its own observation with
+      `canonicalEffect: none` (steering extension 2). `modelVersion` bumps.
+      _(state: built)_
       `check: pwsh ./tests/Test-KindDetection.ps1 -FailOnError`
-- [ ] **3.7 / M4b — limiting-pair differentiation.** Seven of nine share
-      `planning`-weak + `structure`-weak. Weight the limiting foundation by kind
-      applicability so a finished firmware project and an API client library do
-      not produce the same limiting pair. _(state: planned)_
-      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MaxSharedLimitingPair 0.5`
-- [ ] **3.7 / M4c — next-action diversity.** Every actionable repository is told
-      `POST /api/roadmap/repair/preview`. Map limiting foundation → action so
-      `structure` and `documentation` gaps route to their own previews.
+- [ ] **Lifecycle/conclusion consistency contract (steering extension 3, Rung 1).**
+      `lifecycleState` and `conclusion` are two verdicts over the same signals;
+      they never disagree without saying why. A contract test enumerates the
+      allowed pairs and the explanation each exception must carry; a
+      contradiction with no explanation fails it. Runs before M4b because a
+      contradiction it finds changes how applicability is written.
+      _(state: built)_
+      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert lifecycle-consistency -FailOnError`
+- [ ] **3.7 / M4b — limiting foundation by kind applicability.** The limiting
+      foundation is chosen only among the domains that apply to the repository's
+      kind; a domain `foundation-domains.json` marks not-applicable for that kind
+      renders its configured reason instead of a status. Seven of nine trial
+      repositories sharing `planning`-weak + `structure`-weak is the observation
+      that raised this, not the target: the check asserts properties, never a
+      distribution. _(state: planned)_
+      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert applicability -FailOnError`
+- [ ] **Accept/reject ledger (steering extension 1, Rung 1).** Every next action
+      and top value item is a prediction; every response to one — accept,
+      reject, edit — is a label. Capture each with the prediction it answers and
+      the index SHA and `modelVersion` it was drawn under, so the leverage
+      panel's "not captured" figure becomes a computed one and the scorer's
+      weights (D-013) have evidence to be revisited against. _(state: planned)_
+      `check: pwsh ./tests/Test-DecisionLedger.ps1 -FailOnError`
+- [ ] **3.7 / M4c — next-action routing by limiting foundation.** Every
+      actionable repository is told `POST /api/roadmap/repair/preview`. A
+      configured map routes each limiting foundation to its own previewable
+      action, so `structure` and `documentation` gaps reach their own previews.
+      The check asserts that each limiting foundation routes to a distinct
+      configured action with a route — never a ratio of repositories.
       _(state: planned)_
-      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MaxSameAction 0.5`
+      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert action-routing -FailOnError`
 - [ ] **3.7 / M5 prep — previews staged, not applied.** For each of the eight
       `strengthen` repositories, generate the preview the product recommends and
       write it to `evidence/trials/release-3.7/previews/<repo>.md`. The operator
       approves from the queue; the agent's job ends at a reviewable preview.
       _(state: planned)_
       `check: pwsh ./tests/Test-TrialPreviews.ps1 -Cohort evidence/trials/release-3.7/cohort.json -RequireAll`
+- [ ] **One manifest walk (steering extension 4).** Repo type, the technology
+      profile and kind signals are three walkers over the same files. One scan
+      produces all three views, so they cannot drift and a checkout is read once.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-ManifestWalk.ps1 -FailOnError`
+- [ ] **Portfolio brief and conclusion diff (steering extension 5, Rung 1).**
+      Diff two conclusion payloads by index SHA and render the movement as prose
+      with the evidence chain under every claim — one exported file a reader who
+      has never seen the product can act on. Deterministic; any narration is
+      constrained to the evidence lines and marked as narration.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-PortfolioBrief.ps1 -FailOnError`
 - [ ] **Lane 0.19 — surface the operator queue in the console.**
       `operatorOnlyItemCount` is produced and read nowhere. Render
       `docs/governance/operator-queue.md` as a Verify tab so parked work is
@@ -72,6 +108,10 @@ provider-aware, so that proof is not capped by one agent's subscription.
 ---
 
 ## 1. What This Document Is
+
+> Read [`docs/governance/steering.md`](docs/governance/steering.md) first. It
+> says what the product is for, what it must never do, and what "proved" means;
+> this file says only what to build next.
 
 This is the **active execution roadmap**. Its job is to answer two questions
 for any operator or coding agent:

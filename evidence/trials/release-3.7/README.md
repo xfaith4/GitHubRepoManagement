@@ -94,3 +94,41 @@ advisor. This is the clearest thing for milestone 4 to fix.
 These are recorded, not acted on. Fixing them is milestone 4's job ("adjust and
 decide"), and doing it now — before the improvements are executed and measured —
 would change the model mid-measurement.
+
+## What the product could not see
+
+Recorded 2026-09-14 against the conclusions above (foundation-conclusions v1,
+index generated 2026-09-13T21:07:51Z), as steering Rung 2A requires of every
+trial. Each line is a limit of the product, not a finding about the repository.
+
+- **What each repository is.** v1 carried no kind signal, so eight of nine were
+  judged against every domain. Kind detection (M4a, #295) reads manifests,
+  entry points and the README purpose line; the live index carries those
+  signals only after the portal's next service restart (OQ-12), so the
+  conclusions above were drawn without them.
+- **A workspace root.** 2026-06-13_Orchestration is an npm workspace whose
+  purpose line names its packages rather than what they are for, and whose
+  dependencies live one level down. The scanner reads the root only; the
+  repository resolves `unknown`, and since the M4a follow-through that
+  `unknown` names the one hint it saw (`monorepo`) so the next rule is a data
+  change. The v2 signals for all nine are recorded in `kind-baseline-v2.json`
+  as hints and a SHA-256 of each purpose line - never the text, because this
+  repository is public.
+- **A purpose line that is an instruction.** FowlingScorecard's first README
+  sentence tells an operator what to do, not what the repository is. The
+  product reads the first prose line; it cannot tell a purpose statement from
+  a quick-start line.
+- **Disagreement between manifest and README.** FowlingScorecard carries a
+  PowerShell module manifest and a served page; 300PixelLED_2812B carries
+  Arduino sketches and a web app. The product picks one kind by rule order and
+  does not surface the disagreement (steering extension 2).
+- **Owner intent.** `abandoned-project` and `externally-managed-project` are
+  cohort categories, not findings; both records carry
+  `ownerIntentConfirmed: false`, and the product concludes neither (D-006,
+  contract 7).
+- **Whether its recommendations are accepted.** No accept/reject ledger exists;
+  the leverage panel reports that figure as not captured. Every approval or
+  rejection in this trial is recorded by hand in `cohort.json` until the
+  ledger ships (steering extension 1).
+- **Whether the live surfaces show what the payload says.** Engine output is
+  what is recorded here; the entry gate's eyes-on check is OQ-1.

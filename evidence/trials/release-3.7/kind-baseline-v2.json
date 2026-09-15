@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "v1",
+  "model": "kind-baseline",
+  "capturedAt": "2026-09-14T06:56:51.6539699Z",
+  "scanner": "foundation-conclusions v2 (Portfolio.KindSignals.ps1 at e2f3436, #295)",
+  "modelVersion": "foundation-conclusions v2",
+  "sourceIndexSha256": null,
+  "sourceIndexNote": "No index carrying kindSignals exists until the portal restarts (OQ-12). Signals were scanned from the local checkouts at the recorded commit SHAs; lifecycleState and curationState come from output/index/repos.index.json (generated 2026-09-14T05:41:22.7261607Z). Regenerable by re-running the v2 scanner over the same commits.",
+  "purpose": "The M4a follow-through check (tests/Test-KindDetection.ps1) replays the current kind rules over these v2 signals and asserts zero kind deltas: a later model version that changes an answer must say so here, with a new baseline.",
+  "textPolicy": "Records carry the hints and a SHA-256 of the README purpose line (UTF-8, as the scanner returns it), never the line, entry points or evidence text: this repository is public and the cohort repositories may not be (Ben, 2026-09-14). The check compares the hash when it rescans.",
+  "records": [
+    {
+      "repository": "2026-06-13_Orchestration",
+      "checkoutCommit": "bfeb833d44713a925f6512fb6b2951492e1dccdd",
+      "lifecycleState": "needs-roadmap-repair",
+      "curationState": "none",
+      "indexRowFound": true,
+      "kindSignals": {
+        "hints": [
+          "monorepo"
+        ],
+        "readmePurposeSha256": "8e1b5eb8bdbf893ebf2aa1075b65184371eb9333215466c216bf6959dddc765c"
+      },
+      "kind": "unknown",
+      "kindBasis": "no kind signal in the index; every scored domain applies"
+    },
+    {
+      "repository": "300PixelLED_2812B",
+      "checkoutCommit": "fe4b5b57e8e66e8bc0e85720973d859affd79ce7",
+      "lifecycleState": "needs-roadmap-repair",
+      "curationState": "none",
+      "indexRowFound": true,
+      "kindSignals": {
+        "hints": [
+          "firmware-target",
+          "script-entry",
+          "web-app",
+          "firmware-wording"
+        ],
+        "readmePurposeSha256": "63964512c77089e8c888992a4c8e7857cc733cb327533b4543c72110cbebbb13"
+      },
+      "kind": "firmware",
+      "kindBasis": "a firmware target is checked in (platformio.ini, Arduino sketch or ESP sdkconfig)"
+    },
+    {
+      "repository": "ActiveFamilyArchive",
+      "checkoutCommit": "69c39c4c494ee9acd017be3ba8dacc43d8889b28",
+      "lifecycleState": "needs-roadmap-repair",
+      "curationState": "none",
+      "indexRowFound": true,
+      "kindSignals": {
+        "hints": [
+          "web-app",
+          "application-wording"
+        ],
+        "readmePurposeSha256": "e574f7863c59ae715fd7eb3c70e4d3de5734d5f2bc536bd1e39cca9092ac89fc"
+      },
+      "kind": "application",
+      "kindBasis": "a served page or app framework outranks a helper module in the same repository: a served page, an app-framework dependency or an executable project"
+    },
+    {
+      "repository": "AI_PromptRefiner_GUI",
+      "checkoutCommit": "5deaa85756112656c3e33aa18d55b51c79d0ec69",
+      "lifecycleState": "needs-roadmap",
+      "curationState": "none",
+      "indexRowFound": true,
+      "kindSignals": {
+        "hints": [
+          "script-entry",
+          "web-app",
+          "application-wording"
+        ],
+        "readmePurposeSha256": "dc5c804573a36a98f81c16e6bc3e3f78cdd9bdc182a78500f215e0c9dbcfe2a1"
+      },
+      "kind": "application",
+      "kindBasis": "a served page or app framework outranks a helper module in the same repository: a served page, an app-framework dependency or an executable project"
+    },
+    {
+      "repository": "DevPortConsole",
+      "checkoutCommit": "d25d29c3fe57a45d2f49a5b79bc8c06de82fd3e3",
+      "lifecycleState": "needs-structure",
+      "curationState": "none",
+      "indexRowFound": true,
+      "kindSignals": {
+        "hints": [
+          "script-entry",
+          "tooling-wording"
+        ],
+        "readmePurposeSha256": "348c10bc8bc43010f667a6884c6fa82d3265a9bb3b6aa2671a2827ba4c18ea47"
+      },
+      "kind": "tooling",
+      "kindBasis": "the README purpose line calls it a tool or utility, or loose scripts sit at the root with no module manifest"
+    },
+    {
+      "repository": "FowlingScorecard",
+      "checkoutCommit": "05d10f05b17970af31768d301630ac51e45f7712",
+      "lifecycleState": "needs-roadmap-repair",
+      "curationState": "none",
+      "indexRowFound": true,
+      "kindSignals": {
+        "hints": [
+          "module-manifest",
+          "library-manifest",
+          "web-app",
+          "tooling-wording"
+        ],
+        "readmePurposeSha256": "e6c74ddcbf19c3cf1f5aae9c33bcf3369bc29edb8eceba0400eca3c71c621049"
+      },
+      "kind": "application",
+      "kindBasis": "a served page or app framework outranks a helper module in the same repository: a served page, an app-framework dependency or an executable project"
+    },
+    {
+      "repository": "genesys-contract-client",
+      "checkoutCommit": "32f952a91323c63b49a873c7a5e7cb23ad9ce0b7",
+      "lifecycleState": "no-checklist",
+      "curationState": "none",
+      "indexRowFound": true,
+      "kindSignals": {
+        "hints": [
+          "library-wording"
+        ],
+        "readmePurposeSha256": "cd1412090aef53cb943ee9ce7335fa42018738cf45c303f05a0d4bfb426a2f62"
+      },
+      "kind": "library",
+      "kindBasis": "the README purpose line calls it a library, module, client or wrapper"
+    },
+    {
+      "repository": "Genesys-Telecom-Powershell",
+      "checkoutCommit": "45b909516b6ec0ddb7223d5cbdef71836bdc580a",
+      "lifecycleState": "needs-roadmap-repair",
+      "curationState": "archived-ignore",
+      "indexRowFound": true,
+      "kindSignals": {
+        "hints": [
+          "script-entry"
+        ],
+        "readmePurposeSha256": null
+      },
+      "kind": "archived",
+      "kindBasis": "curationState=archived-ignore"
+    },
+    {
+      "repository": "Genesys.Core",
+      "checkoutCommit": "77b1ad9f7fd9125a628bb635919587b2f2c362a3",
+      "lifecycleState": "needs-roadmap-repair",
+      "curationState": "none",
+      "indexRowFound": true,
+      "kindSignals": {
+        "hints": [
+          "web-app",
+          "tooling-wording",
+          "application-wording"
+        ],
+        "readmePurposeSha256": "a998e3bbc00ce4443f48744a1d57f3cd764d771309629229386aaa1f852fc10c"
+      },
+      "kind": "application",
+      "kindBasis": "a served page or app framework outranks a helper module in the same repository: a served page, an app-framework dependency or an executable project"
+    }
+  ]
+}

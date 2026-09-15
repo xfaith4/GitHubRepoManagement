@@ -2,6 +2,88 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — Lifecycle and conclusion may not disagree unexplained (steering extension 3)
+
+`lifecycleState` (the assessment's operator-facing status) and `conclusion`
+(the foundation model's verdict) are two verdicts over the same signals. Every
+conclusion record now carries `consistency`: whether the pair is one
+`foundation-domains.json` → `lifecycleConsistency.allowed` lists, or an
+`exceptions` entry explains it — an exception counts only when its `requires`
+pattern is found in the record's basis lines or `domain=status` facts, and that
+fact is the evidence. A pair nothing explains is a `Test-FoundationConclusion`
+violation; so is a lifecycle state the table does not list. The payload carries
+`byConsistency`. Check: `pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort
+evidence/trials/release-3.7/cohort.json -Assert lifecycle-consistency
+-FailOnError` — fixtures for every agreement class, the validator proved red on
+a manufactured contradiction and on an unlisted lifecycle, the table checked
+against the assessment's full state vocabulary, and, where a local index
+exists, every repository in it and in the cohort assessed. The assessment
+reference's lifecycle table is corrected to the code's real order
+(`no-checklist` was missing).
+
+## 2026-09-14 — Kind detection under steering contract 6 (3.7 M4a follow-through)
+
+The opinions behind the kind hints — which files, dependencies, manifest keys
+and README words count — move out of `Portfolio.KindSignals.ps1` into
+`backend/config/kind-signals.json` (`kind-signals v1`), every group naming the
+repositories it was observed on; the scanner keeps only the mechanics and stamps
+`kindSignals.signalModel` on each index entry. `foundation-domains.json` is
+`foundation-conclusions v2.1`: every detection rule carries `observedOn`, and
+`kindDetection.hintKinds` says which kind each hint speaks for. The conclusion
+record now carries `kindCandidates` (every matching rule, ranked, with what it
+matched on), `kindHints` (the hints present even when none matched — an
+`unknown` names them, so the next rule is a data change), and `observations`:
+a manifest-vs-README disagreement is emitted with `canonicalEffect: none` and
+its provenance, and changes no verdict. The check proves two more things:
+the canonical kind is the first matching rule in config order with no score
+in the pick, and replaying v2.1 over the nine cohort repositories' recorded v2
+signals (`evidence/trials/release-3.7/kind-baseline-v2.json`, keyed by each
+checkout's commit, holding hints and a SHA-256 of each README purpose line but
+never the text) yields zero kind deltas. The kind-detection fixtures use
+invented README sentences, not the cohort's. OQ-13 asks the operator to confirm
+or correct the nine cohort kinds once re-concluded on v2. Waits for review
+under D-019.
+
+## 2026-09-14 — Steering adopted; merge-on-green narrowed (D-019)
+
+`docs/governance/steering.md` is Ben's statement of what the product is for,
+its eleven contracts, the proof ladder and the order of the extensions. D-019
+narrows the merge authorization to match contract 10: pure engineering with a
+green check merges on green; changes to `backend/config/`, CI gates,
+`docs/governance/`, or what a verdict says about a repository wait for review.
+Current focus is re-sequenced to the steering order (M4a follow-through,
+lifecycle/conclusion consistency, M4b, the accept/reject ledger, M4c, M5 prep,
+one manifest walk, the portfolio brief), and the M4b/M4c checks are rewritten
+as properties — no distribution targets. M4a is `verified` (its check was green
+in CI on #295) and moves to the archive. The trial record gains the "what the
+product could not see" section steering asks of every trial.
+
+## 2026-09-14 — Repository kind resolves from what is checked in (Release 3.7 M4a)
+
+Eight of the nine Release 3.7 trial repositories concluded with "no kind signal"
+because the index carried only `repoType` and `technologies`, and neither tells
+a PowerShell library apart from a PowerShell utility. The scan now emits a
+`kindSignals` object per index entry (`backend/modules/portfolio/Portfolio.KindSignals.ps1`):
+the manifest kind, entry points, the README purpose line and a list of hint ids,
+each with one evidence line. `foundation-domains.json` (now
+`modelVersion: foundation-conclusions v2`) defines `application`, `firmware`,
+`experiment` and `tooling` beside the existing kinds, and its detection rules
+gained `whenAny` — "this dotted path holds one of these values" — so
+`kindSignals.hints` and `technologies.id` are matchable without code. Every
+conclusion record and the conclusions payload carry `modelVersion`, so the
+trial's per-record index SHA stays comparable across model versions.
+
+Run over the real cohort checkouts before merge: ActiveFamilyArchive,
+FowlingScorecard, AI_PromptRefiner_GUI and Genesys.Core resolve `application`;
+DevPortConsole `tooling`; genesys-contract-client `library`; 300PixelLED_2812B
+`firmware`; Genesys-Telecom-Powershell `archived`; 2026-06-13_Orchestration
+stays `unknown` (a workspace root with no purpose wording and no root
+dependencies — the signals do not say "experiment", so the product does not
+either). Check: `pwsh ./tests/Test-KindDetection.ps1 -FailOnError`, wired into
+the suite as the `Kind detection` gate. The live portal emits `kindSignals`
+after its next service restart (OQ-12); until then the live index has none and
+every non-archived repository still reads `unknown`.
+
 ## 2026-09-13 — Records moved out of ROADMAP.md Current Status
 
 Moved verbatim from `ROADMAP.md` "Current Status (Agent Context)" when the

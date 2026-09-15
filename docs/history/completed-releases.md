@@ -6746,3 +6746,19 @@ api-host steps, and 47 frontend tests across `foundationConclusion`,
 - [ ] **[non-blocker]** The foundation-coverage series starts as a one-point
       scaffold on a fresh database; it becomes history-backed as scans
       accrue, on the same clock as maturity history.
+
+## Release 3.7 — verified milestones (release still open; moved from ROADMAP.md Current focus under the §3 archive rule)
+
+- [x] **3.7 / M4a — kind detection.** Resolve `library`, `firmware`, `application`,
+      `experiment`, `tooling` from index signals (manifest, entry points, README
+      purpose line), not only `archived`. Eight of nine trial repositories currently
+      conclude with "no kind signal". Ship as `foundation-conclusions v2`; the
+      conclusion record already carries the index SHA, so add `modelVersion`
+      beside it and the trial stays measurable across versions. _(state: verified)_
+      `check: pwsh ./tests/Test-KindDetection.ps1 -FailOnError`
+
+Verified 2026-09-14: the `Kind detection` gate exited 0 in CI on the head of
+#295, merged as `e2f3436`. Field proof (the live index carrying `kindSignals`
+after the portal's service restart) is OQ-12 in the operator queue. The
+follow-through that brings the scanner under steering contract 6 is the first
+item in Current focus.

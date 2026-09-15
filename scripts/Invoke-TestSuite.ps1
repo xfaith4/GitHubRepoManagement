@@ -263,7 +263,11 @@ Invoke-InProcessGate -Name 'foundation-domains.json integrity (Release 3.6)' -Ac
     }
     foreach ($r in @($parsed.kindDetection.rules)) {
         if ([string]$r.kind -notin @($parsed.kinds | ForEach-Object { [string]$_.id })) { throw "kindDetection rule names unknown kind '$($r.kind)'" }
-        if ($null -eq $r.when) { throw "kindDetection rule for '$($r.kind)' has no 'when'" }
+        # foundation-conclusions v2 (3.7 M4a): a rule matches on `when` (field
+        # equality), `whenAny` (a dotted path holds one of the listed values), or both.
+        $hasWhen = $null -ne $r.PSObject.Properties['when'] -and $null -ne $r.when
+        $hasWhenAny = $null -ne $r.PSObject.Properties['whenAny'] -and $null -ne $r.whenAny
+        if (-not $hasWhen -and -not $hasWhenAny) { throw "kindDetection rule for '$($r.kind)' has neither 'when' nor 'whenAny'" }
     }
     Write-Host ("  foundation-domains.json valid: {0} domains ({1} scored), {2} kinds, {3} detection rule(s)" -f @($parsed.domains).Count, @($parsed.domains | Where-Object { $null -eq $_.PSObject.Properties['scored'] -or $_.scored }).Count, @($parsed.kinds).Count, @($parsed.kindDetection.rules).Count) -ForegroundColor DarkGray
 }
@@ -313,6 +317,13 @@ Invoke-InProcessGate -Name 'roadmap-audit-action package (Release 2.3 Phase 3)' 
     if ($LASTEXITCODE -ne 0) { throw "roadmap-audit-action audit failed against ROADMAP.md (exit $LASTEXITCODE)" }
     Write-Host '  roadmap-audit-action: composite action audits ROADMAP.md and passes' -ForegroundColor DarkGray
 }
+
+# Release 3.7 M4a — the milestone's own check line, run where the roadmap says
+# it runs: kind resolves from manifests, entry points and the README purpose line.
+Invoke-ScriptGate -Name 'Kind detection' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-KindDetection.ps1') -ScriptArgs @('-FailOnError')
+# Steering extension 3 — lifecycleState and conclusion may not disagree
+# unexplained; the milestone's own check line, run where the roadmap says it runs.
+Invoke-ScriptGate -Name 'Lifecycle consistency' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'lifecycle-consistency', '-FailOnError')
 
 Invoke-ScriptGate -Name 'Roadmap structure lint' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapStructure.ps1') -ScriptArgs @('-Path', (Join-Path $WorkspaceRoot 'ROADMAP.md'), '-FailOnError')
 

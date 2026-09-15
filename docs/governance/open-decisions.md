@@ -515,3 +515,29 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   in the PR rather than inferred from a state flip. It is not merged by a
   watch on green; Ben reviews it.
 - **Blocks.** Nothing. R020's promotion to error waits on PR 1.
+
+### D-019 — Which changes may merge on a green check, and which wait for Ben?
+
+- **Asked** 2026-09-14, evaluating `docs/governance/steering.md` against
+  `CLAUDE.md`. #295 (3.7 M4a) had just merged on green; it changed what the
+  product says about every repository and added a CI gate.
+- **Question.** `CLAUDE.md` said the monitor-to-green-then-merge loop was
+  durably authorized for this repository. Steering contract 10 says nothing
+  that changes governance, CI, or what the product claims about itself merges
+  on a green light alone. Both cannot hold.
+- **Why it was not an agent's call.** It decides who carries review load, and
+  it is self-referential: an agent that may merge a change to the gates on
+  green is reviewing its own work.
+- **Decision (Ben, 2026-09-14).** **Steering contract 10 governs; `CLAUDE.md`
+  is narrowed to match.** Pure engineering with a green check merges on green.
+  Anything touching `backend/config/`, a CI gate, `docs/governance/`, or what
+  a verdict says about a repository waits for Ben's review. The review load is
+  Ben's to carry; that is what the contract costs. #295 stays — the kind work
+  is sound; the breach was the merge path, not the content — and its
+  follow-through (first item in Current focus) brings it under contract 6.
+- **What it changes.** `CLAUDE.md` and `AGENTS.md` state the boundary. A PR
+  that crosses it is opened, left for review, and named as waiting in the
+  handoff. #294 (Release 3.6 closure) and PR 0 (this decision, the steering
+  document, the re-sequenced Current focus and the M4b/M4c property checks)
+  are reviewed together.
+- **Blocks.** Nothing.

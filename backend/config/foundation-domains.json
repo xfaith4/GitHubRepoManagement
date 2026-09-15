@@ -1,6 +1,7 @@
 {
   "schemaVersion": "v1",
   "model": "foundation-domains",
+  "modelVersion": "foundation-conclusions v2.1",
   "principle": "The product does not prescribe what a repository should become; it identifies and strengthens the foundations that allow each repository to succeed at what it is intended to be.",
   "refinementRule": "Domains and kinds are data, not a taxonomy. Add, split, merge or re-weight one here; every change stays covered by the foundation-domains.json integrity gate and the module-smoke fixture set. Never add a domain the product cannot evidence from visible repository state, and never let a conclusion cite the absence of findings as evidence.",
   "conclusions": {
@@ -104,8 +105,12 @@
   "kinds": [
     { "id": "unknown", "title": "Not yet classified", "applicability": {}, "note": "No kind signal; every scored domain applies. A curation or classifier signal refines this." },
     { "id": "service", "title": "Service or application", "applicability": {} },
-    { "id": "library", "title": "Library", "applicability": {} },
     { "id": "script-collection", "title": "Script collection", "applicability": {} },
+    { "id": "application", "title": "Application", "applicability": {}, "note": "Release 3.7 M4a: a served page, an app-framework manifest, an executable project, or a README that says so. M4b decides what this kind is not judged on." },
+    { "id": "library", "title": "Library", "applicability": {} },
+    { "id": "firmware", "title": "Firmware", "applicability": {}, "note": "Release 3.7 M4a: a firmware target (platformio.ini, Arduino sketch, ESP sdkconfig) or a README that says so." },
+    { "id": "experiment", "title": "Experiment", "applicability": {}, "note": "Release 3.7 M4a: the README purpose line calls it an experiment, prototype, spike or bootstrap. Provisional by nature; D-006 owner intent may overrule it." },
+    { "id": "tooling", "title": "Tooling", "applicability": {}, "note": "Release 3.7 M4a: a CLI entry, loose root scripts with no module manifest, or a README that calls it a tool or utility." },
     {
       "id": "minimal",
       "title": "Minimal utility",
@@ -133,11 +138,84 @@
       "reason": "Archived: intentionally closed, kept for reference."
     }
   ],
+  "lifecycleConsistency": {
+    "note": "Steering extension 3 (Rung 1): lifecycleState (Portfolio.Assessment.ps1 _ResolveLifecycleState) and conclusion (this model) are two verdicts over the same signals and may not disagree without saying why. `allowed` lists, per lifecycle state, the conclusions that agree with it. Any other pair must match an `exceptions` entry whose `requires` pattern is found in the record's basis lines or its domain=status facts; the match is the explanation's evidence. A pair with no allowed entry and no matching exception is a contract violation (Test-FoundationConclusion). A lifecycle state not listed here is a violation too.",
+    "allowed": {
+      "archived": ["appropriate-as-is"],
+      "no-checklist": ["insufficiently-understood"],
+      "parse-error": ["insufficiently-understood"],
+      "running": ["strengthen", "appropriate-as-is"],
+      "needs-readme": ["strengthen"],
+      "needs-roadmap": ["strengthen"],
+      "needs-roadmap-repair": ["strengthen"],
+      "needs-structure": ["strengthen"],
+      "ready-for-work": ["strengthen", "appropriate-as-is"],
+      "completed": ["strengthen", "appropriate-as-is"],
+      "monitored": ["strengthen", "appropriate-as-is"],
+      "discovered": ["strengthen", "appropriate-as-is"]
+    },
+    "exceptions": [
+      {
+        "lifecycleState": "*",
+        "conclusion": "insufficiently-understood",
+        "requires": "^(sourceCoverage=github|lastScanStatus=(?!ok)|roadmapState=(no-checklist|parse-error))",
+        "explanation": "The lifecycle names a state, but the product could not read enough to conclude - no local checkout, a failed scan, or a plan it cannot parse - and the conclusion says what it needs before it can agree."
+      },
+      {
+        "lifecycleState": "needs-readme",
+        "conclusion": "appropriate-as-is",
+        "requires": "^(kind rule: |documentation=not-applicable)",
+        "explanation": "The lifecycle reads a missing README as blocking; the kind's applicability says documentation is not this repository's to have, or a kind rule concludes for it."
+      },
+      {
+        "lifecycleState": "needs-roadmap",
+        "conclusion": "appropriate-as-is",
+        "requires": "^(kind rule: |planning=not-applicable)",
+        "explanation": "The lifecycle reads a missing roadmap as blocking; the kind's applicability says planning is not this repository's to have, or a kind rule concludes for it."
+      },
+      {
+        "lifecycleState": "needs-roadmap-repair",
+        "conclusion": "appropriate-as-is",
+        "requires": "^(kind rule: |planning=not-applicable)",
+        "explanation": "The lifecycle reads an insufficient execution contract as blocking; the kind's applicability says planning is not this repository's to have, or a kind rule (archived by curation, externally managed) concludes for it. The lifecycle model does not read curation; this model does."
+      },
+      {
+        "lifecycleState": "needs-structure",
+        "conclusion": "appropriate-as-is",
+        "requires": "^(kind rule: |structure=not-applicable)",
+        "explanation": "The lifecycle reads open structure findings as blocking; the kind's applicability says structure is not this repository's to have, or a kind rule concludes for it."
+      }
+    ]
+  },
   "kindDetection": {
-    "note": "Only signals the index already carries. Anything undetected is 'unknown' - honest, and every scored domain applies.",
+    "hintKinds": {
+      "note": "Which kind each hint speaks for. Read by the coherence observation (steering extension 2): when the manifest hints and the README wording hints name kinds that share nothing, the disagreement is emitted as an observation with canonicalEffect none. It changes no verdict.",
+      "firmware-target": "firmware",
+      "module-manifest": "library",
+      "library-manifest": "library",
+      "web-app": "application",
+      "executable-manifest": "application",
+      "cli-entry": "tooling",
+      "script-entry": "tooling",
+      "firmware-wording": "firmware",
+      "library-wording": "library",
+      "application-wording": "application",
+      "tooling-wording": "tooling",
+      "experiment-wording": "experiment"
+    },
+    "note": "Only signals the index already carries. Every matching rule is a ranked candidate and the first is the kind; each rule names the repositories it was observed on (steering section 5); `when` is field equality, `whenAny` is 'this dotted path holds one of these values' (kindSignals.hints comes from Portfolio.KindSignals.ps1 at scan time). Anything undetected is 'unknown' - honest, and every scored domain applies.",
     "rules": [
       { "kind": "archived", "when": { "lifecycleState": "archived" }, "basis": "lifecycleState=archived" },
-      { "kind": "archived", "when": { "curationState": "archived-ignore" }, "basis": "curationState=archived-ignore" }
+      { "kind": "archived", "when": { "curationState": "archived-ignore" }, "basis": "curationState=archived-ignore" },
+      { "kind": "firmware", "whenAny": { "kindSignals.hints": ["firmware-target"] }, "basis": "a firmware target is checked in (platformio.ini, Arduino sketch or ESP sdkconfig)" , "observedOn": ["300PixelLED_2812B"] },
+      { "kind": "experiment", "whenAny": { "kindSignals.hints": ["experiment-wording"] }, "basis": "the README purpose line calls it an experiment, prototype, spike or bootstrap" , "observedOn": [] },
+      { "kind": "application", "whenAny": { "kindSignals.hints": ["web-app", "executable-manifest"] }, "basis": "a served page or app framework outranks a helper module in the same repository: a served page, an app-framework dependency or an executable project" , "observedOn": ["ActiveFamilyArchive", "FowlingScorecard", "AI_PromptRefiner_GUI", "Genesys.Core"] },
+      { "kind": "library", "whenAny": { "kindSignals.hints": ["module-manifest", "library-manifest"] }, "basis": "the manifest declares a module or publishable package" , "observedOn": ["FowlingScorecard"] },
+      { "kind": "firmware", "whenAny": { "kindSignals.hints": ["firmware-wording"] }, "basis": "the README purpose line names a firmware target" , "observedOn": ["300PixelLED_2812B"] },
+      { "kind": "tooling", "whenAny": { "kindSignals.hints": ["cli-entry"] }, "basis": "the manifest declares a command-line entry" , "observedOn": [] },
+      { "kind": "library", "whenAny": { "kindSignals.hints": ["library-wording"] }, "basis": "the README purpose line calls it a library, module, client or wrapper" , "observedOn": ["genesys-contract-client"] },
+      { "kind": "application", "whenAny": { "kindSignals.hints": ["application-wording"] }, "basis": "the README purpose line calls it an application, site, dashboard or engine" , "observedOn": ["Genesys.Core"] },
+      { "kind": "tooling", "whenAny": { "kindSignals.hints": ["tooling-wording", "script-entry"] }, "basis": "the README purpose line calls it a tool or utility, or loose scripts sit at the root with no module manifest" , "observedOn": ["DevPortConsole"] }
     ]
   }
 }

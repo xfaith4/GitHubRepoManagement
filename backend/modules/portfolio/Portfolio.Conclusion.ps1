@@ -65,10 +65,43 @@ function Get-FoundationDomainsConfig {
     return $parsed
 }
 
+function _PC_ResolvePath {
+    <#
+        Walk a dotted path over an entry. An array along the way maps the rest
+        of the path over its elements, so 'technologies.id' yields the id list
+        and 'kindSignals.hints' the hint list. Missing -> @().
+    #>
+    param([object]$Obj, [string]$Path)
+    $current = @($Obj)
+    foreach ($segment in ($Path -split '\.')) {
+        $next = [System.Collections.Generic.List[object]]::new()
+        foreach ($node in $current) {
+            if ($null -eq $node) { continue }
+            $value = _PC_GetField -Obj $node -Name $segment -Default $null
+            if ($null -eq $value) { continue }
+            if ($value -is [string] -or $value -isnot [System.Collections.IEnumerable]) { $next.Add($value) | Out-Null }
+            else { foreach ($v in @($value)) { if ($null -ne $v) { $next.Add($v) | Out-Null } } }
+        }
+        $current = @($next)
+        if ($current.Count -eq 0) { return @() }
+    }
+    return @($current)
+}
+
 function Resolve-RepositoryKind {
     <#
     .SYNOPSIS
         Pick the repository kind from the config's detection rules; 'unknown' when nothing matches.
+    .DESCRIPTION
+        Rules are tried in file order. Every matching rule is kept as a ranked
+        candidate (first per kind wins its basis) so honest ambiguity is
+        visible; `kind` is the first candidate. A rule carries `when` (every
+        named field equals its value) and/or `whenAny` (every named path holds
+        at least one of the listed values). Paths are dotted and array-aware,
+        so `kindSignals.hints` and `technologies.id` work. An 'unknown' verdict
+        names the hints that were present and matched no rule, so the next
+        rule can be added as data (steering Rung 1).
+        Returns { kind, basis, candidates[] of { kind, basis, matchedOn[] }, hints[] }.
     #>
     [CmdletBinding()]
     param(
@@ -78,25 +111,94 @@ function Resolve-RepositoryKind {
 
     $detection = _PC_GetField -Obj $Config -Name 'kindDetection' -Default $null
     $rules = @(_PC_GetField -Obj $detection -Name 'rules' -Default @())
+    $hintsPresent = @(_PC_Strings -Values @(_PC_ResolvePath -Obj $Entry -Path 'kindSignals.hints'))
+    $candidates = [System.Collections.Generic.List[object]]::new()
+    $seenKinds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($rule in $rules) {
         $when = _PC_GetField -Obj $rule -Name 'when' -Default $null
-        if ($null -eq $when) { continue }
-        $names = @()
-        $names = @(_PC_PropertyNames -Obj $when)
-        $allMatch = $names.Count -gt 0
-        foreach ($name in $names) {
+        $whenAny = _PC_GetField -Obj $rule -Name 'whenAny' -Default $null
+        if ($null -eq $when -and $null -eq $whenAny) { continue }
+        $matched = $true
+        $matchedOn = [System.Collections.Generic.List[string]]::new()
+        foreach ($name in @(_PC_PropertyNames -Obj $when)) {
             $expected = [string](_PC_GetField -Obj $when -Name $name -Default '')
             $actual = [string](_PC_GetField -Obj $Entry -Name $name -Default '')
-            if ($actual -ne $expected) { $allMatch = $false; break }
+            if ($actual -ne $expected) { $matched = $false; break }
+            $matchedOn.Add("$name=$expected") | Out-Null
         }
-        if ($allMatch) {
-            return [pscustomobject]@{
-                kind  = [string](_PC_GetField -Obj $rule -Name 'kind' -Default 'unknown')
-                basis = [string](_PC_GetField -Obj $rule -Name 'basis' -Default 'detection rule')
+        if ($matched) {
+            foreach ($path in @(_PC_PropertyNames -Obj $whenAny)) {
+                $accepted = @(_PC_Strings -Values @(_PC_GetField -Obj $whenAny -Name $path -Default @()))
+                $present = @(_PC_Strings -Values @(_PC_ResolvePath -Obj $Entry -Path $path))
+                $hit = @($present | Where-Object { $_ -in $accepted } | Select-Object -First 1)
+                if ($hit.Count -eq 0) { $matched = $false; break }
+                $matchedOn.Add("$path=$($hit[0])") | Out-Null
             }
         }
+        if (-not $matched -or $matchedOn.Count -eq 0) { continue }
+        $kind = [string](_PC_GetField -Obj $rule -Name 'kind' -Default 'unknown')
+        if (-not $seenKinds.Add($kind)) { continue }
+        $basis = [string](_PC_GetField -Obj $rule -Name 'basis' -Default '')
+        if ([string]::IsNullOrWhiteSpace($basis)) { $basis = $matchedOn -join ', ' }
+        $candidates.Add([pscustomobject]@{ kind = $kind; basis = $basis; matchedOn = @($matchedOn) }) | Out-Null
     }
-    return [pscustomobject]@{ kind = 'unknown'; basis = 'no kind signal in the index; every scored domain applies' }
+    if ($candidates.Count -gt 0) {
+        return [pscustomobject]@{
+            kind       = [string]$candidates[0].kind
+            basis      = [string]$candidates[0].basis
+            candidates = @($candidates)
+            hints      = @($hintsPresent)
+        }
+    }
+    $unknownBasis = 'no kind signal in the index; every scored domain applies'
+    if ($hintsPresent.Count -gt 0) {
+        $unknownBasis = 'no kind rule matched the hints present ({0}); every scored domain applies' -f ($hintsPresent -join ', ')
+    }
+    return [pscustomobject]@{ kind = 'unknown'; basis = $unknownBasis; candidates = @(); hints = @($hintsPresent) }
+}
+
+function _PC_KindCoherenceObservation {
+    <#
+        Steering extension 2: manifest-vs-README disagreement is its own
+        finding - observed, never judged. Emitted only when the manifest hints
+        and the wording hints each name kinds and share none. Carries its
+        provenance and canonicalEffect: none (steering section 4, rule 1).
+    #>
+    param([object]$Entry, [object]$Config, [object[]]$Hints)
+    $detection = _PC_GetField -Obj $Config -Name 'kindDetection' -Default $null
+    $hintKinds = _PC_GetField -Obj $detection -Name 'hintKinds' -Default $null
+    if ($null -eq $hintKinds -or @($Hints).Count -eq 0) { return $null }
+    $manifestKinds = [System.Collections.Generic.List[string]]::new()
+    $manifestHints = [System.Collections.Generic.List[string]]::new()
+    $wordingKinds = [System.Collections.Generic.List[string]]::new()
+    $wordingHints = [System.Collections.Generic.List[string]]::new()
+    foreach ($h in @($Hints)) {
+        $kind = [string](_PC_GetField -Obj $hintKinds -Name ([string]$h) -Default '')
+        if ([string]::IsNullOrWhiteSpace($kind)) { continue }
+        if ([string]$h -like '*-wording') {
+            if (-not $wordingKinds.Contains($kind)) { $wordingKinds.Add($kind) | Out-Null }
+            $wordingHints.Add([string]$h) | Out-Null
+        } else {
+            if (-not $manifestKinds.Contains($kind)) { $manifestKinds.Add($kind) | Out-Null }
+            $manifestHints.Add([string]$h) | Out-Null
+        }
+    }
+    if ($manifestKinds.Count -eq 0 -or $wordingKinds.Count -eq 0) { return $null }
+    $shared = @($manifestKinds | Where-Object { $_ -in $wordingKinds })
+    if ($shared.Count -gt 0) { return $null }
+    $signals = _PC_GetField -Obj $Entry -Name 'kindSignals' -Default $null
+    return [pscustomobject]@{
+        id              = 'kind-coherence'
+        canonicalEffect = 'none'
+        statement       = ('manifests say {0} ({1}); the README purpose line says {2} ({3})' -f ($manifestKinds -join '/'), ($manifestHints -join ', '), ($wordingKinds -join '/'), ($wordingHints -join ', '))
+        provenance      = [pscustomobject]@{
+            source       = 'kindSignals.hints on the index entry'
+            signalModel  = [string](_PC_GetField -Obj $signals -Name 'signalModel' -Default '')
+            mapping      = 'foundation-domains.json kindDetection.hintKinds'
+            modelVersion = [string](_PC_GetField -Obj $Config -Name 'modelVersion' -Default '')
+        }
+        changedVerdict  = $false
+    }
 }
 
 function _PC_KindDefinition {
@@ -244,6 +346,55 @@ function _PC_ActionFromDefinition {
     }
 }
 
+function _PC_LifecycleConsistency {
+    <#
+        Steering extension 3: lifecycleState and conclusion are two verdicts
+        over the same signals; they may not disagree without saying why. The
+        allowed pairs and the explained exceptions are data
+        (foundation-domains.json lifecycleConsistency); an exception counts
+        only when its `requires` pattern is found in the record's basis lines
+        or domain=status facts, and that fact is the explanation's evidence.
+        Returns $null when the config carries no table (no claim either way).
+    #>
+    param([object]$Config, [string]$LifecycleState, [string]$Conclusion, [string[]]$Basis, [object[]]$Domains)
+    $table = _PC_GetField -Obj $Config -Name 'lifecycleConsistency' -Default $null
+    if ($null -eq $table) { return $null }
+    $allowed = _PC_GetField -Obj $table -Name 'allowed' -Default $null
+    $states = @(_PC_PropertyNames -Obj $allowed)
+    $record = [ordered]@{ lifecycleState = $LifecycleState; conclusion = $Conclusion; holds = $false; agreement = ''; explanation = ''; evidence = @() }
+    if ($LifecycleState -notin $states) {
+        $record.agreement = 'unknown-lifecycle'
+        $record.explanation = "lifecycleState '$LifecycleState' is not in lifecycleConsistency.allowed, so nothing says which conclusions agree with it"
+        return [pscustomobject]$record
+    }
+    $okList = @(_PC_Strings -Values @(_PC_GetField -Obj $allowed -Name $LifecycleState -Default @()))
+    if ($Conclusion -in $okList) {
+        $record.holds = $true; $record.agreement = 'allowed'
+        $record.explanation = "lifecycleState '$LifecycleState' and conclusion '$Conclusion' agree"
+        return [pscustomobject]$record
+    }
+    $facts = [System.Collections.Generic.List[string]]::new()
+    foreach ($b in @($Basis)) { if (-not [string]::IsNullOrWhiteSpace($b)) { $facts.Add([string]$b) | Out-Null } }
+    foreach ($d in @($Domains)) { $facts.Add(('{0}={1}' -f [string](_PC_GetField -Obj $d -Name 'domain' -Default ''), [string](_PC_GetField -Obj $d -Name 'status' -Default ''))) | Out-Null }
+    foreach ($ex in @(_PC_GetField -Obj $table -Name 'exceptions' -Default @())) {
+        $exState = [string](_PC_GetField -Obj $ex -Name 'lifecycleState' -Default '*')
+        $exConclusion = [string](_PC_GetField -Obj $ex -Name 'conclusion' -Default '*')
+        if ($exState -ne '*' -and $exState -ne $LifecycleState) { continue }
+        if ($exConclusion -ne '*' -and $exConclusion -ne $Conclusion) { continue }
+        $pattern = [string](_PC_GetField -Obj $ex -Name 'requires' -Default '')
+        if ([string]::IsNullOrWhiteSpace($pattern)) { continue }
+        $hit = @($facts | Where-Object { $_ -match $pattern } | Select-Object -First 1)
+        if ($hit.Count -eq 0) { continue }
+        $record.holds = $true; $record.agreement = 'explained'
+        $record.explanation = [string](_PC_GetField -Obj $ex -Name 'explanation' -Default 'an exception applies')
+        $record.evidence = @($hit)
+        return [pscustomobject]$record
+    }
+    $record.agreement = 'contradiction'
+    $record.explanation = "lifecycleState '$LifecycleState' and conclusion '$Conclusion' disagree and nothing in the basis explains it"
+    return [pscustomobject]$record
+}
+
 function Get-RepositoryFoundationConclusion {
     <#
     .SYNOPSIS
@@ -263,6 +414,9 @@ function Get-RepositoryFoundationConclusion {
     $repoId = [string](_PC_GetField -Obj $Entry -Name 'repoId' -Default '')
     $repoName = [string](_PC_GetField -Obj $Entry -Name 'repoName' -Default '')
     $kindVerdict = Resolve-RepositoryKind -Entry $Entry -Config $Config
+    $observations = @()
+    $coherence = _PC_KindCoherenceObservation -Entry $Entry -Config $Config -Hints @($kindVerdict.hints)
+    if ($null -ne $coherence) { $observations = @($coherence) }
     $kindDef = _PC_KindDefinition -Config $Config -Kind $kindVerdict.kind
     $applicability = _PC_GetField -Obj $kindDef -Name 'applicability' -Default $null
     $configDomains = @(_PC_GetField -Obj $Config -Name 'domains' -Default @())
@@ -368,13 +522,25 @@ function Get-RepositoryFoundationConclusion {
         }
     }
 
+    $consistency = _PC_LifecycleConsistency -Config $Config -LifecycleState ([string](_PC_GetField -Obj $Entry -Name 'lifecycleState' -Default '')) -Conclusion $conclusion -Basis @($basis) -Domains @($domains)
+
     return [pscustomobject]@{
         schemaVersion = 'v1'
         model         = 'foundation-conclusion'
         repoId        = $repoId
         repoName      = $repoName
+        # Release 3.7 M4a: the trial records the index SHA a conclusion was
+        # drawn from; modelVersion beside it keeps that comparable across
+        # kind-model changes. Read from config so a data-only refinement bumps it.
+        modelVersion  = [string](_PC_GetField -Obj $Config -Name 'modelVersion' -Default 'foundation-conclusions v1')
         kind          = $kindVerdict.kind
         kindBasis     = $kindVerdict.basis
+        # v2.1: every matching rule, ranked, with the hints each rested on; the
+        # hints present even when none matched; and observations - findings
+        # with canonicalEffect none that changed no verdict (steering section 4).
+        kindCandidates = @($kindVerdict.candidates)
+        kindHints     = @($kindVerdict.hints)
+        observations  = @($observations)
         conclusion    = $conclusion
         reason        = $reason
         basis         = @($basis)
@@ -382,6 +548,10 @@ function Get-RepositoryFoundationConclusion {
         nextAction    = $nextAction
         maturityLevel = [string](_PC_GetField -Obj $Entry -Name 'maturityLevel' -Default 'L0-Absent')
         lifecycleState = [string](_PC_GetField -Obj $Entry -Name 'lifecycleState' -Default '')
+        # Steering extension 3: whether the lifecycle state and this conclusion
+        # agree, and when they do not, the configured explanation with the
+        # basis fact that earns it. Null only when the config has no table.
+        consistency   = $consistency
         generatedAt   = $GeneratedAt
     }
 }
@@ -395,7 +565,9 @@ function Test-FoundationConclusion {
         - a conclusion from the config's set and every domain status from its set;
         - strengthen names a next action with a route;
         - appropriate-as-is cites evidence (never an absence of findings);
-        - nothing presents 'L0-Absent' as the only thing it has to say.
+        - nothing presents 'L0-Absent' as the only thing it has to say;
+        - lifecycleState and conclusion agree, or an explained exception applies
+          (steering extension 3; the table is foundation-domains.json lifecycleConsistency).
     #>
     [CmdletBinding()]
     [OutputType([System.Object[]])]
@@ -425,6 +597,11 @@ function Test-FoundationConclusion {
         $ev = @(_PC_Strings -Values @(_PC_GetField -Obj $d -Name 'evidence' -Default @()))
         if ($ev.Count -eq 0) { $violations.Add("$name domain '$(_PC_GetField -Obj $d -Name 'domain' -Default '?')' has no evidence") }
         foreach ($line in $ev) { if ($line.Trim() -eq 'L0-Absent') { $violations.Add("$name cites bare 'L0-Absent' as evidence") } }
+    }
+
+    $consistency = _PC_GetField -Obj $Conclusion -Name 'consistency' -Default $null
+    if ($null -ne $consistency -and -not [bool](_PC_GetField -Obj $consistency -Name 'holds' -Default $false)) {
+        $violations.Add(("{0}: {1}" -f $name, [string](_PC_GetField -Obj $consistency -Name 'explanation' -Default 'lifecycle and conclusion disagree')))
     }
 
     switch ($verdict) {
@@ -536,6 +713,15 @@ function Get-PortfolioConclusionsPayload {
     $byKind = [ordered]@{}
     foreach ($i in $items) { $k = [string]$i.kind; if (-not $byKind.Contains($k)) { $byKind[$k] = 0 }; $byKind[$k]++ }
 
+    # Steering extension 3: how the two verdict models relate across the set.
+    $byConsistency = [ordered]@{ allowed = 0; explained = 0; contradiction = 0; 'unknown-lifecycle' = 0; 'not-assessed' = 0 }
+    foreach ($i in $items) {
+        $c = _PC_GetField -Obj $i -Name 'consistency' -Default $null
+        $a = if ($null -eq $c) { 'not-assessed' } else { [string](_PC_GetField -Obj $c -Name 'agreement' -Default 'not-assessed') }
+        if (-not $byConsistency.Contains($a)) { $byConsistency[$a] = 0 }
+        $byConsistency[$a]++
+    }
+
     $statuses = @(_PC_GetField -Obj $Config -Name 'domainStatuses' -Default @())
     $coverage = [ordered]@{}
     foreach ($domain in @(_PC_GetField -Obj $Config -Name 'domains' -Default @())) {
@@ -556,8 +742,10 @@ function Get-PortfolioConclusionsPayload {
     return [pscustomobject]@{
         schemaVersion = 'v1'
         model         = 'foundation-conclusions'
+        modelVersion  = [string](_PC_GetField -Obj $Config -Name 'modelVersion' -Default 'foundation-conclusions v1')
         generatedAt   = $GeneratedAt
         count         = $items.Count
+        byConsistency = [pscustomobject]$byConsistency
         byConclusion  = [pscustomobject]$byConclusion
         byKind        = [pscustomobject]$byKind
         coverage      = [pscustomobject]$coverage
