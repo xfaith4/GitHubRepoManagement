@@ -93,12 +93,15 @@ function Resolve-RepositoryKind {
     .SYNOPSIS
         Pick the repository kind from the config's detection rules; 'unknown' when nothing matches.
     .DESCRIPTION
-        Rules are tried in file order; the first match wins. A rule carries
-        `when` (every named field equals its value) and/or `whenAny` (every
-        named path holds at least one of the listed values). Paths are dotted
-        and array-aware, so `kindSignals.hints` and `technologies.id` work.
-        foundation-conclusions v2 (Release 3.7 M4a) added whenAny; v1 rules
-        with only `when` are unchanged.
+        Rules are tried in file order. Every matching rule is kept as a ranked
+        candidate (first per kind wins its basis) so honest ambiguity is
+        visible; `kind` is the first candidate. A rule carries `when` (every
+        named field equals its value) and/or `whenAny` (every named path holds
+        at least one of the listed values). Paths are dotted and array-aware,
+        so `kindSignals.hints` and `technologies.id` work. An 'unknown' verdict
+        names the hints that were present and matched no rule, so the next
+        rule can be added as data (steering Rung 1).
+        Returns { kind, basis, candidates[] of { kind, basis, matchedOn[] }, hints[] }.
     #>
     [CmdletBinding()]
     param(
@@ -108,6 +111,9 @@ function Resolve-RepositoryKind {
 
     $detection = _PC_GetField -Obj $Config -Name 'kindDetection' -Default $null
     $rules = @(_PC_GetField -Obj $detection -Name 'rules' -Default @())
+    $hintsPresent = @(_PC_Strings -Values @(_PC_ResolvePath -Obj $Entry -Path 'kindSignals.hints'))
+    $candidates = [System.Collections.Generic.List[object]]::new()
+    $seenKinds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($rule in $rules) {
         $when = _PC_GetField -Obj $rule -Name 'when' -Default $null
         $whenAny = _PC_GetField -Obj $rule -Name 'whenAny' -Default $null
@@ -129,16 +135,70 @@ function Resolve-RepositoryKind {
                 $matchedOn.Add("$path=$($hit[0])") | Out-Null
             }
         }
-        if ($matched -and $matchedOn.Count -gt 0) {
-            $basis = [string](_PC_GetField -Obj $rule -Name 'basis' -Default '')
-            if ([string]::IsNullOrWhiteSpace($basis)) { $basis = $matchedOn -join ', ' }
-            return [pscustomobject]@{
-                kind  = [string](_PC_GetField -Obj $rule -Name 'kind' -Default 'unknown')
-                basis = $basis
-            }
+        if (-not $matched -or $matchedOn.Count -eq 0) { continue }
+        $kind = [string](_PC_GetField -Obj $rule -Name 'kind' -Default 'unknown')
+        if (-not $seenKinds.Add($kind)) { continue }
+        $basis = [string](_PC_GetField -Obj $rule -Name 'basis' -Default '')
+        if ([string]::IsNullOrWhiteSpace($basis)) { $basis = $matchedOn -join ', ' }
+        $candidates.Add([pscustomobject]@{ kind = $kind; basis = $basis; matchedOn = @($matchedOn) }) | Out-Null
+    }
+    if ($candidates.Count -gt 0) {
+        return [pscustomobject]@{
+            kind       = [string]$candidates[0].kind
+            basis      = [string]$candidates[0].basis
+            candidates = @($candidates)
+            hints      = @($hintsPresent)
         }
     }
-    return [pscustomobject]@{ kind = 'unknown'; basis = 'no kind signal in the index; every scored domain applies' }
+    $unknownBasis = 'no kind signal in the index; every scored domain applies'
+    if ($hintsPresent.Count -gt 0) {
+        $unknownBasis = 'no kind rule matched the hints present ({0}); every scored domain applies' -f ($hintsPresent -join ', ')
+    }
+    return [pscustomobject]@{ kind = 'unknown'; basis = $unknownBasis; candidates = @(); hints = @($hintsPresent) }
+}
+
+function _PC_KindCoherenceObservation {
+    <#
+        Steering extension 2: manifest-vs-README disagreement is its own
+        finding - observed, never judged. Emitted only when the manifest hints
+        and the wording hints each name kinds and share none. Carries its
+        provenance and canonicalEffect: none (steering section 4, rule 1).
+    #>
+    param([object]$Entry, [object]$Config, [object[]]$Hints)
+    $detection = _PC_GetField -Obj $Config -Name 'kindDetection' -Default $null
+    $hintKinds = _PC_GetField -Obj $detection -Name 'hintKinds' -Default $null
+    if ($null -eq $hintKinds -or @($Hints).Count -eq 0) { return $null }
+    $manifestKinds = [System.Collections.Generic.List[string]]::new()
+    $manifestHints = [System.Collections.Generic.List[string]]::new()
+    $wordingKinds = [System.Collections.Generic.List[string]]::new()
+    $wordingHints = [System.Collections.Generic.List[string]]::new()
+    foreach ($h in @($Hints)) {
+        $kind = [string](_PC_GetField -Obj $hintKinds -Name ([string]$h) -Default '')
+        if ([string]::IsNullOrWhiteSpace($kind)) { continue }
+        if ([string]$h -like '*-wording') {
+            if (-not $wordingKinds.Contains($kind)) { $wordingKinds.Add($kind) | Out-Null }
+            $wordingHints.Add([string]$h) | Out-Null
+        } else {
+            if (-not $manifestKinds.Contains($kind)) { $manifestKinds.Add($kind) | Out-Null }
+            $manifestHints.Add([string]$h) | Out-Null
+        }
+    }
+    if ($manifestKinds.Count -eq 0 -or $wordingKinds.Count -eq 0) { return $null }
+    $shared = @($manifestKinds | Where-Object { $_ -in $wordingKinds })
+    if ($shared.Count -gt 0) { return $null }
+    $signals = _PC_GetField -Obj $Entry -Name 'kindSignals' -Default $null
+    return [pscustomobject]@{
+        id              = 'kind-coherence'
+        canonicalEffect = 'none'
+        statement       = ('manifests say {0} ({1}); the README purpose line says {2} ({3})' -f ($manifestKinds -join '/'), ($manifestHints -join ', '), ($wordingKinds -join '/'), ($wordingHints -join ', '))
+        provenance      = [pscustomobject]@{
+            source       = 'kindSignals.hints on the index entry'
+            signalModel  = [string](_PC_GetField -Obj $signals -Name 'signalModel' -Default '')
+            mapping      = 'foundation-domains.json kindDetection.hintKinds'
+            modelVersion = [string](_PC_GetField -Obj $Config -Name 'modelVersion' -Default '')
+        }
+        changedVerdict  = $false
+    }
 }
 
 function _PC_KindDefinition {
@@ -305,6 +365,9 @@ function Get-RepositoryFoundationConclusion {
     $repoId = [string](_PC_GetField -Obj $Entry -Name 'repoId' -Default '')
     $repoName = [string](_PC_GetField -Obj $Entry -Name 'repoName' -Default '')
     $kindVerdict = Resolve-RepositoryKind -Entry $Entry -Config $Config
+    $observations = @()
+    $coherence = _PC_KindCoherenceObservation -Entry $Entry -Config $Config -Hints @($kindVerdict.hints)
+    if ($null -ne $coherence) { $observations = @($coherence) }
     $kindDef = _PC_KindDefinition -Config $Config -Kind $kindVerdict.kind
     $applicability = _PC_GetField -Obj $kindDef -Name 'applicability' -Default $null
     $configDomains = @(_PC_GetField -Obj $Config -Name 'domains' -Default @())
@@ -421,6 +484,12 @@ function Get-RepositoryFoundationConclusion {
         modelVersion  = [string](_PC_GetField -Obj $Config -Name 'modelVersion' -Default 'foundation-conclusions v1')
         kind          = $kindVerdict.kind
         kindBasis     = $kindVerdict.basis
+        # v2.1: every matching rule, ranked, with the hints each rested on; the
+        # hints present even when none matched; and observations - findings
+        # with canonicalEffect none that changed no verdict (steering section 4).
+        kindCandidates = @($kindVerdict.candidates)
+        kindHints     = @($kindVerdict.hints)
+        observations  = @($observations)
         conclusion    = $conclusion
         reason        = $reason
         basis         = @($basis)

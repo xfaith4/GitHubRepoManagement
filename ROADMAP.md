@@ -35,7 +35,7 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       is emitted as a ranked list with the hints each rested on, and a
       manifest-vs-README disagreement is its own observation with
       `canonicalEffect: none` (steering extension 2). `modelVersion` bumps.
-      _(state: planned)_
+      _(state: built)_
       `check: pwsh ./tests/Test-KindDetection.ps1 -FailOnError`
 - [ ] **Lifecycle/conclusion consistency contract (steering extension 3, Rung 1).**
       `lifecycleState` and `conclusion` are two verdicts over the same signals;

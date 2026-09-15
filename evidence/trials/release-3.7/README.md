@@ -109,8 +109,11 @@ trial. Each line is a limit of the product, not a finding about the repository.
 - **A workspace root.** 2026-06-13_Orchestration is an npm workspace whose
   purpose line names its packages rather than what they are for, and whose
   dependencies live one level down. The scanner reads the root only; the
-  repository resolves `unknown`, and until the M4a follow-through lands that
-  `unknown` does not say which hints it saw.
+  repository resolves `unknown`, and since the M4a follow-through that
+  `unknown` names the one hint it saw (`monorepo`) so the next rule is a data
+  change. The v2 signals for all nine are recorded in `kind-baseline-v2.json`
+  as hints and a SHA-256 of each purpose line - never the text, because this
+  repository is public.
 - **A purpose line that is an instruction.** FowlingScorecard's first README
   sentence tells an operator what to do, not what the repository is. The
   product reads the first prose line; it cannot tell a purpose statement from

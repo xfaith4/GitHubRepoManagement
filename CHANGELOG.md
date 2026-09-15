@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — Kind detection under steering contract 6 (3.7 M4a follow-through)
+
+The opinions behind the kind hints — which files, dependencies, manifest keys
+and README words count — move out of `Portfolio.KindSignals.ps1` into
+`backend/config/kind-signals.json` (`kind-signals v1`), every group naming the
+repositories it was observed on; the scanner keeps only the mechanics and stamps
+`kindSignals.signalModel` on each index entry. `foundation-domains.json` is
+`foundation-conclusions v2.1`: every detection rule carries `observedOn`, and
+`kindDetection.hintKinds` says which kind each hint speaks for. The conclusion
+record now carries `kindCandidates` (every matching rule, ranked, with what it
+matched on), `kindHints` (the hints present even when none matched — an
+`unknown` names them, so the next rule is a data change), and `observations`:
+a manifest-vs-README disagreement is emitted with `canonicalEffect: none` and
+its provenance, and changes no verdict. The check proves two more things:
+the canonical kind is the first matching rule in config order with no score
+in the pick, and replaying v2.1 over the nine cohort repositories' recorded v2
+signals (`evidence/trials/release-3.7/kind-baseline-v2.json`, keyed by each
+checkout's commit, holding hints and a SHA-256 of each README purpose line but
+never the text) yields zero kind deltas. The kind-detection fixtures use
+invented README sentences, not the cohort's. OQ-13 asks the operator to confirm
+or correct the nine cohort kinds once re-concluded on v2. Waits for review
+under D-019.
+
 ## 2026-09-14 — Steering adopted; merge-on-green narrowed (D-019)
 
 `docs/governance/steering.md` is Ben's statement of what the product is for,
