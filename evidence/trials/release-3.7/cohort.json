@@ -349,8 +349,8 @@
       "countedImprovement": false,
       "headCommit": "45b909516b6ec0ddb7223d5cbdef71836bdc580a",
       "cachedOutcomeDiagnostic": null,
-      "ownerIntentConfirmed": false,
-      "ownerIntentNote": "Owner intent is not established. D-006 keeps the intent LABEL open even though the selection is released; this category assignment is not a claim about what the owner intended.",
+      "ownerIntentConfirmed": true,
+      "ownerIntentNote": "Owner intent confirmed 2026-09-15 (D-006): the repository is curated archived-ignore, and by that ruling a curation of archived-ignore is the owner's abandonment label; no other signal stands in for it.",
       "conclusionRun": {
         "generatedAt": "2026-09-13T21:46:30.5031086Z",
         "indexGeneratedAt": "2026-09-13T21:07:51.3160158Z",
@@ -539,8 +539,8 @@
       "outcomeQuality": null,
       "materiallyImproved": false,
       "countedImprovement": false,
-      "ownerIntentConfirmed": false,
-      "ownerIntentNote": "Owner intent is not established. D-006 keeps the intent LABEL open even though the selection is released; this category assignment is not a claim about what the owner intended."
+      "ownerIntentConfirmed": true,
+      "ownerIntentNote": "Owner intent confirmed 2026-09-15 (D-006): no repository in the portfolio is externally managed, so the category has no natural member and stays unrepresented."
     },
     {
       "category": "nearly-finished-repository",

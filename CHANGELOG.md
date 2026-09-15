@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-15 — Four decisions ruled: D-006, D-012, D-021, D-022
+
+The register's Open section is empty for the first time. Each ruling keeps its
+question intact and adds the decision, what it changes and what it blocks.
+
+- **D-006.** No repository is externally managed; the category stays
+  unrepresented. `Genesys-Telecom-Powershell` is confirmed abandoned on the
+  strength of its `archived-ignore` curation. The rule: a curation of
+  `archived-ignore` is the abandonment label, so this is never re-asked per
+  repository. `cohort.json` carries both labels as confirmed; OQ-8 closes.
+- **D-012.** The permission envelope stands as the spec wrote it and is no
+  longer provisional (`agent-providers.json`); an agent may not edit workflow
+  files. The enforcement floor is the diff, not the provider: a post-run diff
+  touching a forbidden path fails the packet and the branch is not pushed. An
+  agent that needs CI changed writes a proposal to `.github/workflows-proposed/`
+  and names it as waiting. A packet that needs the network declares an
+  allowlist the owner approves. Steering §5 names the rule; Current focus gains
+  the enforcement item with its check.
+- **D-021.** The one-row default is ratified. Applicability rows are added only
+  from a kind's definition, never from a repository's result, and sub-area
+  applicability is decided when `intentional-engineering` is scored.
+- **D-022.** One lifecycle the operator sees (the steering conclusions stay the
+  model's output), Today as an exception inbox (first to build), four
+  destinations, one Work pipeline, and proposals only with the operator
+  upstream — background generation is refused under the no-one-click-egress
+  ruling. Lane 0.21 and Lane 0.22 land first, so nothing is merged into the
+  new shape carrying a known lie. Current focus gains the five items after the
+  trial work.
 ## 2026-09-15 — The UX assessment becomes Lane 0.22 and D-022
 
 An assessor used build `fa18be4` through the UI alone: cold reload, every

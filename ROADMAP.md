@@ -50,6 +50,14 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       collapses the rest into "N held (why)". Every Dispatch control is
       disabled with its reason when `ok` is false. _(state: planned)_
       `check: pwsh ./tests/Test-DispatchEligibility.ps1 -FailOnError`
+- [ ] **D-012 — the permission envelope binds.** For every adapter, a post-run
+      diff touching any `forbiddenPaths` entry (`.github/workflows/**`) fails the
+      packet by name and the branch is not pushed; provider-native sandboxing is
+      a second layer, never the only one. An agent that needs CI changed writes
+      the proposal to `.github/workflows-proposed/` and names it as waiting. A
+      packet that needs the network declares an allowlist the owner approves;
+      `network false` is never loosened silently. _(state: planned)_
+      `check: pwsh ./tests/Test-PermissionEnvelope.ps1 -FailOnError`
 - [ ] **Accept/reject ledger (steering extension 1, Rung 1).** Every next action
       and top value item is a prediction; every response to one — accept,
       reject, edit — is a label. Capture each with the prediction it answers and
@@ -88,6 +96,41 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       cycle check. Does not wait on the trial: it changes what the contract
       *can express*, not what runs. _(state: planned)_
       `check: pwsh ./tests/Test-RoadmapDependencies.ps1 -FailOnError`
+- [ ] **D-022 (1) — one lifecycle the operator sees.** Needs plan → Plan needs
+      approval → Ready for agents → Agent working → In review → Healthy /
+      Archived, with flags beside it (Uncommitted changes, CI failing, Behind
+      remote, Docs gap). The three steering conclusions stay the model's output;
+      the consistency table maps every operator state to the conclusion it
+      agrees with. L-levels and hold codes become detail. Amends steering in the
+      same PR. Decided first because the next three render these states.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-OperatorLifecycle.ps1 -FailOnError`
+- [ ] **D-022 (2) — Today as an exception inbox.** A system banner only when
+      something is abnormal; decisions grouped by type with bulk actions; actions
+      only the operator can take; stuck work with remedies; the next five
+      eligible items; a digest; everything else collapsed to counts. KPIs:
+      Decisions waiting · Stuck · Ready for agents. First to build.
+      _(state: planned)_
+      `check: npx vitest run frontend/components/TodayInbox.test.tsx`
+- [ ] **D-022 (3) — four destinations.** Today · Portfolio (Grid + Operations,
+      Doc Readiness as a filter, technology as a column) · Work · Trends, plus a
+      System drawer, Settings, Help and the source switch. One repository drawer
+      (Overview · Plan · Work · History) reachable from every repository name.
+      Lane 0.19's operator queue lives in Today or the System drawer, not a tab.
+      _(state: planned)_
+      `check: npx vitest run frontend/components/AppNavigation.test.tsx`
+- [ ] **D-022 (4) — one Work pipeline.** Proposed → Approved → Queued → Running
+      → In review → Done, plus a Needs-attention lane; the trace is each card's
+      detail and its broken-link diagnosis is the card's status; one "Send to
+      agent" with a preview and a provider choice. Lanes retire as an operator
+      concept; the lane count is a Settings knob if anything. _(state: planned)_
+      `check: npx vitest run frontend/components/WorkPipeline.test.tsx`
+- [ ] **D-022 (5) — proposals with the operator upstream.** The operator picks N
+      repositories and triggers "Generate proposals" with a cost preview and the
+      egress confirmation; the review queue shows a side-by-side diff with
+      keyboard approve, reject and skip, and each response lands in the ledger.
+      Nothing is generated in the background. _(state: planned)_
+      `check: pwsh ./tests/Test-ProposalBatch.ps1 -FailOnError`
 
 **Forward arc.** Releases 3.0-3.5 describe the finished product: dispatch that
 runs, the loop closing legibly and without a hand-off, numbers an operator can

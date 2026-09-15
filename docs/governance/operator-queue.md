@@ -13,7 +13,6 @@ session, one phone on the LAN — and take the batch when convenient.
 | OQ-5  | github.com              | Grant PAT `Checks: Read` (D-003)                                                           | 3.8 scheduler dependency     |
 | OQ-6  | Authenticated shell     | One real `gh agent-task` run through the runner                                            | Release 2.9 field proof      |
 | OQ-7  | Galaxy S24 Ultra on LAN | Mobile surfaces (2.5/2.6)                                                                  | Release 2.9 device proof     |
-| OQ-8  | Judgement               | D-006 owner-intent labels                                                                  | cohort metadata only         |
 | OQ-9  | Elevated shell          | Run `Enable-SharedLanAccess.ps1`; confirm an anonymous request is refused after the rebind | Release 2.9 shared-LAN proof |
 | OQ-11 | Browser, logged in      | Clock and denominator presentation on the console (Lane 0.15)                              | Lane 0.15 field proof        |
 | OQ-10 | Registered GitHub App   | Prove live installation-token exchange and refresh (optional; PAT supersedes)              | Release 2.9 optional proof   |

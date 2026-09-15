@@ -33,7 +33,7 @@ would launder a pending judgement into a recorded fact.
 
 - Deploy and live-check the Lane 0.15 truth fixes; verify Today, outcome card and Insights with the operator.
 - Required module/API smoke checks must exit 0. Automated UI checks do not establish live operator verification.
-- ~~Confirm all ten categories, then freeze this cohort before recording results.~~ **Done 2026-09-13** — nine selected, one recorded unrepresented under D-006. Owner-intent *labels* remain open and are tracked per record, not here; they gate how a result is described, not whether the cohort is settled.
+- ~~Confirm all ten categories, then freeze this cohort before recording results.~~ **Done 2026-09-13** — nine selected, one recorded unrepresented under D-006. **Owner-intent labels ruled 2026-09-15 (D-006):** no repository is externally managed, and `archived-ignore` curation is the abandonment label; both records carry `ownerIntentConfirmed: true`.
 - Refresh each repository through the product; freeze its source, scope, timestamps, head commit and before-state evidence. Cached outcomes in cohort.json are diagnostic context only.
 
 ## Evidence per repository

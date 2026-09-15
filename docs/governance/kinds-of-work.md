@@ -20,9 +20,9 @@ mixing them once made the roadmap read "everything is done" over real gaps:
 3. **Product / design decisions** — waiting on a judgement, not on time or
    engineering. These have one durable home:
    [`docs/governance/open-decisions.md`](open-decisions.md).
-   **Nine of the ten are now answered** (2026-09-06 closed D-001 through D-005,
-   D-007 and D-008); only D-006's owner-intent labels remain open, and its
-   ruling already released the work it was blocking. A decision raised only in
+   **Every question asked so far is answered** (2026-09-06 closed D-001 through
+   D-005, D-007 and D-008; 2026-09-15 closed D-006's owner-intent labels, D-012,
+   D-021 and D-022). A decision raised only in
    conversation gets made by default, by whichever agent next touches the code.
 4. **Calendar-gated accrual** — the 7/90-day trend windows fill only as
    time passes with capture running. No ledger of its own: the trend series in
