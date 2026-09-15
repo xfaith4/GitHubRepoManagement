@@ -8,19 +8,19 @@
 
 ## Claude Code specifics
 
-- `.claude/settings.json` is the versioned repo contract (hooks, permissions).
-  `settings.local.json` is per-machine and gitignored; policy never goes there.
-- The monitor-to-green-then-merge loop in `AGENTS.md` is authorized for this
-  repository **for pure engineering with a green check only** (D-019,
-  2026-09-14, mirroring steering contract 10): open the PR, poll
-  `mergeStateStatus`, merge on `CLEAN` without asking again. A change that
-  touches `backend/config/`, a CI gate (`scripts/Invoke-TestSuite.ps1`,
-  `tools/Test-*.ps1`, `.github/workflows/**`), `docs/governance/`, or what a
-  verdict says about a repository is opened as a PR and **waits for Ben's
-  review** — never merged by a watch on green. At most two such PRs wait
-  unmerged at once; a third item is built on its branch and its PR waits
-  for a slot. Neither authorization extends
-  to other repositories, where the merge is the operator's call.
+- `.claude/hooks/` holds the versioned hook scripts. `.claude/settings.local.json`
+  is per-machine and untracked; policy never goes there.
+- **A green check is the merge** (D-023, 2026-09-15; the rule is
+  [`docs/governance/merge-policy.md`](docs/governance/merge-policy.md)). Open
+  the PR, poll `mergeStateStatus`, merge on `CLEAN` without asking again,
+  delete the branch, name the merge in the handoff. That includes
+  `backend/config/`, `docs/governance/`, gates and verdicts. The merge
+  tripwire in the suite decides what the check cannot see: it **holds** the
+  trust rule, the gates and the CI definition for Ben (`HELD` — red until he
+  adds the `operator-approved` label and re-runs), and **fails** a secret or
+  a loosened guard outright. You never apply that label. At most two held
+  PRs wait at once. Neither authorization extends to other repositories,
+  where the merge is the operator's call.
 - A scheduled wakeup must carry its own verification command inline, because
   the wakeup prompt is the only text guaranteed to be in context when it
   fires. Write it as an end-state to verify, never as a list of steps.

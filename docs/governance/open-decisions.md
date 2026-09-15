@@ -726,3 +726,44 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   or a System-drawer entry under (3), not a new tab.
 - **Blocks.** Nothing agent-executable now. The five items wait on Lane 0.21
   and Lane 0.22.
+
+### D-023 — What may an agent merge on green, and what does a person still hold?
+
+- **Asked** 2026-09-15 by Ben, with #306 and #307 waiting for his review and
+  a third review PR capped out on its branch: "I would like to change the
+  rule that requires me to review PRs. In order for my portfolio to truly
+  gain momentum, there needs to be a safe way to trust in the automation
+  we've developed."
+- **Question.** D-019 (2026-09-14) held four classes of change for review —
+  `backend/config/`, a CI gate, `docs/governance/`, what a verdict says about
+  a repository — because an agent merging a change to its own gates is
+  reviewing its own work. That rule put the operator in the path of most
+  governance and config PRs. What is the safe substitute for a person's eye?
+- **Why it is not an agent's call.** It decides who carries review load and
+  what risk the owner accepts, and it is the rule an agent works under.
+- **Decision (Ben, 2026-09-15, by merging the PR that carries this entry).**
+  **A green check is the merge.** The human eye is replaced by a gate that
+  names what it was catching:
+  1. **Held for Ben, cleared by the `operator-approved` label:** the trust
+     rule and its enforcement (`docs/governance/merge-policy.md`,
+     `tools/Test-MergeTripwire.ps1`, its proof test), `.github/workflows/**`
+     (D-012), `CODEOWNERS`, section 2 of `steering.md`; a gate removed from
+     the suite or its `-FailOnError` dropped; a test or check file deleted.
+  2. **Failed outright, no label clears it:** a secret shape on an added
+     line; the permission envelope floor loosened (D-012); a versioned
+     config without a `modelVersion` bump (contract 6); a debt ratchet
+     raised.
+  3. **Everything else merges on green** — config, governance, verdicts
+     included — and is audited after, by revert when wrong.
+  The threat model is mistakes, not an adversarial agent: the label is
+  forbidden to agents by rule and shown by GitHub's audit log, not blocked.
+  What the tripwire cannot see is written into the policy so nobody reads
+  the gate as a reviewer: a gate hollowed from inside, a decision recorded
+  that Ben did not make, a verdict changed without its observation.
+- **What it changes.** Steering contract 10 is rewritten; §5's two-PR cap
+  now counts only held PRs; `CLAUDE.md` and `AGENTS.md` point at the policy.
+  The tripwire runs in the suite on every PR (`Merge tripwire proof`, then
+  `Merge tripwire`). The `operator-approved` label exists. To hold a class
+  again, Ben adds its path to the tripwire's protected list — an edit the
+  tripwire itself holds.
+- **Blocks.** Nothing. Until this PR merges, D-019 applies.
