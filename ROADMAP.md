@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Active release:** **Release 2.9 — Operator Field Proof + Mobile Completion**
-> **Next active release:** **Release 3.6 — Every Repository Gets an Outcome** is in **`validation`** — engineering complete 2026-08-27, all six milestones `smoke-tested` and every acceptance criterion gated; only operator verification remains, batched with 2.9. The next release is **Release 3.7 — Portfolio Value Proof**: cohort preparation may proceed; Lane 0.15 truth validation **landed 2026-09-05** (#228), so measured execution now waits only on live Release 3.6 verification, the D-006 cohort decision and the cohort freeze — all operator work, no engineering. Ten real repositories decide the 80+ rollout
+> **Next active release:** **Release 3.7 — Portfolio Value Proof**. Release 3.6 closed 2026-09-14 (archived; its field proof is OQ-1 in the operator queue). 3.7's cohort is selected and concluded; its agent-closable items lead Current focus, and the measured trial waits on OQ-3.
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -258,7 +258,7 @@ its own `check:` and the human half is appended to the operator queue. The valid
 | 3.3       | Steady-State Operation                                                   | `done` 2026-08-19 — retention, rehearsed restore, honest transport, decision-grade exports |
 | **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
 | 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
-| **3.6**   | **Every Repository Gets an Outcome**                                     | **`validation`** - engineering complete 2026-08-27; operator proof batches with 2.9        |
+| 3.6       | Every Repository Gets an Outcome                                         | `done` — closed 2026-09-14 (D-018 PR 2); see archive. Field proof: OQ-1. Its two non-blockers live on as Current focus M4a and the 2.9 trend accrual |
 | **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
 | **3.8**   | **Provider-Aware Execution**                                             | **`planned`** 2026-09-06 — Codex/Claude/Copilot behind one provider-neutral task contract  |
 
@@ -273,7 +273,7 @@ closes or a new dependency appears.
 
 **Trial sequencing — approved 2026-09-05.** Select the ten by kind now; fix
 and validate the remaining Lane 0.15 truth defects before measured execution.
-Live Release 3.6 verification and operator approvals remain required. Lane
+Release 3.6 field proof (OQ-1) and operator approvals remain required. Lane
 0.18 acceptance evidence is required for each counted improvement, but an
 independent operator check can supply it; completing all of Lane 0.18 is not
 a prerequisite. **Dependency ordering is no longer blocked:** D-001 was
@@ -293,9 +293,10 @@ eligibility. The cohort is unblocked too; see the D-006 note under Release 3.7.
 2. **Release 2.9 — the active release.** Its engineering half closed
    2026-08-26 (archived); what remains is the operator half, batched and
    waiting on Ben's presence at the machine.
-3. **Operator-verify Release 3.6** — the `Today` landing, the outcome card
-   and the Insights leverage panel, seen on the live portal. Engineering is
-   closed; only eyes remain, and they batch with the session below.
+3. **Release 3.6 field proof** — OQ-1 in the operator queue: eyes on the
+   `Today` landing, the outcome card and the Insights leverage panel.
+   Engineering closed 2026-09-14; the proof ratchets the archived record and
+   holds nothing.
 4. **One batched operator session** — an elevated shell covers the watchdog,
    the service installer and 2.7's freeze-prevention deploy; one authenticated
    shell covers the `gh agent-task` run and the re-homed 3.1/3.5 live-portal
@@ -497,243 +498,6 @@ half depends on none of these.
 
 ---
 
-### Release 3.6 — Every Repository Gets an Outcome
-
-**Status:** validation — engineering complete 2026-08-27. All six milestones
-are `smoke-tested` and every acceptance criterion below is asserted by a
-gate; what remains is operator verification (eyes on the live portal), which
-no agent may claim. That proof batches with the Release 2.9 operator session.
-
-**Goal:** every repository in the portfolio — including the ~50 with no
-roadmap — leaves the console with an explainable conclusion (_strengthen_,
-_appropriate as-is_, or _insufficiently understood_) grounded in visible repo
-state across the foundation domains, with a reachable preview-first next
-action wherever improvement is warranted and a plain statement of why
-wherever it is not.
-
-#### Product outcomes
-
-- A newcomer can tell from the first screen what the product evaluates, what
-  it uncovers, and how its findings strengthen a portfolio.
-- No repository reads as merely `L0-Absent`, "not dispatchable", or "not
-  applicable": each carries one conclusion, its domain evidence, and — for
-  _strengthen_ — one next action the console can actually run; _appropriate
-  as-is_ is a first-class, filterable, evidenced outcome.
-- The foundation domains are data the product can refine, not a taxonomy a
-  repository is forced to fit, and foundation coverage is measurable over
-  time.
-
-#### Engineering milestones
-
-- [ ] **Conclusion model (backend).** One per-repo object — `conclusion`
-      (strengthen | appropriate-as-is | insufficiently-understood), `reason`,
-      per-domain `{domain, status: present|weak|missing|not-applicable,
-      evidence, nextAction?}`, `basis` — composed from signals that already
-      exist (README contract, doc findings, roadmap audit and maturity,
-      structure audit, scope classifier), served by
-      `GET /api/portfolio/conclusions` and per repo. Domains and per-kind
-      applicability live in `backend/config/foundation-domains.json`
-      (`schemaVersion: "v1"`), so refining a domain is a data change. What
-      exists: [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1),
-      [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1),
-      [`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1).
-      _(state: smoke-tested 2026-08-26 —
-      [`Portfolio.Conclusion.ps1`](backend/modules/portfolio/Portfolio.Conclusion.ps1)
-      composes the conclusion from the cached index only; `not-scored` joins
-      the domain statuses for the defined-only domain; `GET
-      /api/portfolio/conclusions` (+ `?conclusion=` filter) and
-      `/api/portfolio/conclusions/{repoId}` serve it under the Release 3.2
-      read budget. Gates: module smoke shows the validator red on a blank
-      reason, no route and bare `L0-Absent` before nine fixtures all conclude
-      and coverage reconciles; api-host smoke proves 100% of the live index
-      concludes, the fixture's `strengthen` next action answers JSON 200, and
-      the route census guards the route; the config-integrity gate versions
-      the JSON. CI Smoke is the arbiter. No UI consumer yet — that is the
-      outcome card.)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Outcome card (UI).** Per repository: the conclusion, why, each
-      domain's status and evidence, and the next action wired to the existing
-      preview-first repair and packaging flows; repos without a roadmap show
-      a conclusion, not `L0-Absent`; _appropriate as-is_ renders and filters
-      like any other outcome. What exists:
-      [`RepoEvaluationModal.tsx`](frontend/components/RepoEvaluationModal.tsx).
-      _(state: smoke-tested 2026-08-27 —
-      [`OutcomeCard.tsx`](frontend/components/OutcomeCard.tsx) renders the
-      conclusion, its reason, every domain's status and evidence, and one
-      preview-first next action; it leads the evaluation modal, and a repo the
-      index does not know says so instead of showing nothing. The action is
-      data, so the card runs it only when its route is one of this console's
-      preview-first flows — an unrecognised route still renders, disabled,
-      with the reason. Backend (2026-08-26): an `outcome` summary on every
-      `/api/operations/repos` entry, the full `conclusion` + contract on the
-      detail and on `/api/repo/evaluate`, and the packaging flow offered
-      preview-first for a healthy repo with pending work — all from
-      `foundation-domains.json`. Data layer:
-      [`foundationConclusion.ts`](frontend/lib/foundationConclusion.ts).
-      Gates: 9 component tests (no repo reads as a bare `L0-Absent`,
-      appropriate-as-is renders as a first-class outcome with its evidence, a
-      rogue route is refused, a broken contract is shown not hidden), 11 data
-      tests, module smoke and api-host smoke on the payloads. Filtering by
-      conclusion lands with the ranked `Today` landing below.)_
-      `check: pwsh ./scripts/Invoke-ApiHostSmokeTest.ps1`
-- [ ] **First interaction — the ranked `Today` landing.** The default view is
-      a ranked table with _why now_, one primary next action per row, and
-      effort (the value score and work-unit estimate already exist, three
-      clicks deep) under a one-paragraph orientation; tab labels pose the
-      question each view answers, with the Release 2.6 subtitle second.
-      Decides the Lane 0.5 question (2026-08-23). What exists:
-      [`DashboardViewTabs.tsx`](frontend/components/DashboardViewTabs.tsx),
-      [`RepoGrid.tsx`](frontend/components/RepoGrid.tsx), the value scorer.
-      _(state: smoke-tested 2026-08-27 —
-      [`TodayView.tsx`](frontend/components/TodayView.tsx) is the default
-      landing: an orientation paragraph naming what was assessed and
-      concluded, then a ranked table of repository / why now / one next action
-      / effort, with every conclusion filterable including appropriate-as-is.
-      Ranking is pure and explainable in
-      [`todayRanking.ts`](frontend/lib/todayRanking.ts) — conclusion, then
-      curation, then whether an action exists, then value, gaps and (only as a
-      tiebreak) cheaper effort — and every row carries the basis for its rank.
-      `estimatedSessionWorkUnits` reaches a surface for the first time; the
-      index always emitted it. Every tab now poses its question with the
-      Release 2.6 subtitle second. Gates: 13 ranking tests, 10 view tests, the
-      viewMeta contract test (every view has a unique question ending in `?`),
-      and the module smoke's Dashboard source-order tripwire. This closes Lane
-      0.5.)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Flexible standards.** Per-kind applicability in
-      `foundation-domains.json` (library, service, script collection,
-      archived, minimal, externally managed) so a domain can be
-      `not-applicable` with a stated reason; `L0-Absent` reads as "no plan
-      recorded" with the smallest credible plan offered.
-      _(state: smoke-tested 2026-08-27 — the six kinds and their applicability
-      reasons are data in `foundation-domains.json`; `archived` is detected
-      from `lifecycleState` / `curationState=archived-ignore`, the rest await
-      a kind signal and read as `unknown` (every domain applies) rather than
-      guessed; a missing roadmap reads "no plan recorded" and offers the
-      roadmap repair preview. The module smoke proves a JSON-only detection
-      rule flips a conclusion with no code change, and the outcome card
-      renders a `not-applicable` domain with its stated reason — asserted by
-      an `OutcomeCard` test, which is the rendering half this item was
-      waiting on.)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Measure — coverage and leverage.** `GET /api/portfolio/trend` gains a
-      foundation-coverage series (per domain: present / weak / missing /
-      not-applicable) captured by
-      [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1), and a
-      leverage family derived from ledgers the product already keeps
-      (agent-run metrics, execution metrics, queue summaries, the
-      operator-verification log): finding → accepted action, action → merged
-      improvement, operator minutes per completed task, agent PR first-pass
-      success, recommendations accepted vs rejected (the one new capture),
-      repositories concluded appropriate-as-is or archived. Insights renders
-      foundations gained and hours returned over the window.
-      _(state: smoke-tested 2026-08-27 — `GET /api/portfolio/trend` gains a
-      `foundationCoverage` series (present as a share of the foundations that
-      APPLY; not-applicable and not-scored excluded from both halves, so an
-      archived repo neither inflates nor dilutes it) plus a `leverage` block.
-      It accrues for real: a `foundation_coverage` table (schema v3, one row
-      per domain per scan, 180-day floor, in the backup manifest) written from
-      the one site that writes maturity history, and read back with the same
-      latest-capture-per-day rule. Leverage derives agent first-pass success,
-      estimate accuracy, time to deliver, tasks completed, repositories
-      needing nothing, and field-proof surfaces from ledgers already
-      kept; **operator minutes per task and recommendations accepted vs
-      rejected ship `available: false` with the reason they are not
-      captured** — the roadmap names them and the product does not have them,
-      so the gap is on the surface rather than implied to be zero.
-      [`LeveragePanel.tsx`](frontend/components/LeveragePanel.tsx) renders
-      both halves in Insights and shows an em dash, never a 0, for anything
-      unmeasured; `Invoke-DailyEvidence.ps1` records the day's figures in the
-      manifest. Gates: module smoke (coverage math, archived exclusion, empty
-      portfolio null, series present in BOTH builder blocks and inside the
-      frontend palette, leverage contract red on a zeroed fixture first),
-      api-host smoke (series shape and range, every metric states a basis, the
-      two uncaptured ones named and null), and 15 frontend tests.)_
-      `check: pwsh ./scripts/Invoke-ApiHostSmokeTest.ps1`
-- [ ] **Define the intentional-engineering evidence model — define, not
-      score.** Name the evidence per sub-area (test, architecture,
-      operational, maintenance, delivery health), how each is read from a
-      repository, which are cheap from existing signals (Actions results,
-      merge readiness, PR state) and which need a detector; record it in
-      `foundation-domains.json` as `not-scored`, so Release 3.7's ten
-      repositories decide which evidence earns a detector. _(state:
-      smoke-tested 2026-08-26 — recorded as the `intentional-engineering`
-      domain with `scored: false`, `status: not-scored` and six sub-areas
-      (test, operational, delivery-health, maintenance: cheap from existing
-      signals; architecture, release: need a detector). The config-integrity
-      gate refuses a scored status on it; the conclusion reports what it
-      observes for the domain, "observed, not judged".)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-
-#### Acceptance criteria
-
-- 100% of indexed repositories carry a conclusion with a non-empty reason and
-  none presents `L0-Absent` or "not applicable" as its only state — asserted
-  over the live index and a fixture set (no-roadmap, archived, vendored,
-  minimal utility).
-- Every `strengthen` conclusion names a next action whose route returns
-  `application/json` with HTTP 200 for the fixture repo; every
-  `appropriate-as-is` conclusion cites its evidence — never an absence of
-  findings.
-- Adding a domain or a per-kind applicability rule is a JSON-only change,
-  covered by the config-integrity gate and a module-smoke fixture.
-- The default landing is the ranked `Today` table — orientation paragraph,
-  one primary action per row, effort — and every tab label poses its
-  question (unit test).
-- `GET /api/portfolio/trend` reports foundation coverage and the leverage
-  family for the window, each metric with its basis, and Insights renders
-  both.
-
-#### Out of scope
-
-- New detectors beyond composing existing signals; scoring intentional
-  engineering (defined only); prescribing a target architecture for any
-  repository; auto-applying repairs; mobile surfaces.
-
-**Validation plan:** module smoke — the conclusion model over the fixture
-set, detector shown red first against a blank-reason fixture; api-host smoke
-— the conclusions and trend routes return JSON (the SPA fallback makes status
-alone meaningless); `npm run test:unit` — Today landing and outcome card; the
-config-integrity gate for `foundation-domains.json`; CI Smoke is the arbiter.
-
-**Risks:** domains hardening into a taxonomy (data-defined, with an explicit
-refinement rule); _appropriate as-is_ becoming a dumping ground (every such
-conclusion must cite evidence); scoring intentional engineering before it is
-defined (it ships `not-scored`).
-
-**Dependencies:** Release 2.9's three foundations-first items; the existing
-assessment, audit, classifier, and trend modules. No external resource.
-
-**Traceability:** PRs #188 (conclusion model), #189 (outcome-card backend),
-then #191 (outcome card), #192 (`Today` landing) and #193 (coverage +
-leverage), each merged on a green CI Smoke. Gates: the `Foundation
-conclusions` and
-`Foundation coverage + leverage` module-smoke sections, the
-`foundation-domains.json integrity` suite gate, the conclusions and trend
-api-host steps, and 47 frontend tests across `foundationConclusion`,
-`todayRanking`, `portfolioLeverage`, `OutcomeCard`, `TodayView` and
-`LeveragePanel`.
-
-**Known issues:**
-
-- [ ] **Two leverage metrics ship uncaptured, by design.** Operator minutes
-      per task needs an operator-side timer the product does not have;
-      recommendations accepted vs rejected needs an accept/reject ledger the
-      packaging approve/reject routes do not write. Both render with their
-      reason rather than a zero — Release 3.7's nine repositories decide
-      whether either earns a capture.
-      `check: pwsh ./scripts/Invoke-ApiHostSmokeTest.ps1`
-- [ ] **[non-blocker]** Only `archived` has a kind-detection rule. `library`,
-      `service`, `script-collection`, `minimal` and `externally-managed`
-      exist as data with their applicability reasons but await a signal, so
-      they read as `unknown` (every domain applies). Refining that is a
-      JSON-only change, proven by the module smoke.
-- [ ] **[non-blocker]** The foundation-coverage series starts as a one-point
-      scaffold on a fresh database; it becomes history-backed as scans
-      accrue, on the same clock as maturity history.
-
----
-
 ### Release 3.7 — Portfolio Value Proof
 
 **Status:** planned — defined 2026-08-23; sequencing approved 2026-09-05.
@@ -858,7 +622,7 @@ arbiter for any product fix the nine expose.
 prevents it); counting a repair as an improvement when the repository is not
 stronger (outcome quality is recorded, not assumed).
 
-**Dependencies:** Lane 0.15 truth validation; live Release 3.6 verification;
+**Dependencies:** Lane 0.15 truth validation; Release 3.6 field proof (OQ-1);
 the operator's approvals and measured effort. **D-006 no longer blocks the
 cohort** (decided 2026-09-06): external management is owner intent and may not
 be inferred, so a category with no natural member is recorded as unrepresented

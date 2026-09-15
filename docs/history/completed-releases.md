@@ -6512,6 +6512,241 @@ milestone is worth keeping.
       over the subset, because a subset leaves the ratchet loose and the tax in
       place. *(state: done 2026-09-09 — H38-37 gave 53 PowerShell files a UTF-8 BOM, byte prefix only, each verified as a one-line diff and a byte-identical tail; PSUseBOMForUnicodeEncodedFile ratcheted from 54 to 0)*
 
+## Release 3.6 — Every Repository Gets an Outcome (closed 2026-09-14, archived from ROADMAP.md)
+
+**Status:** done — closed 2026-09-14 under D-018 PR 2 (every milestone `verified`: its check is green in CI on the closing PR head); engineering complete 2026-08-27. All six milestones
+are `smoke-tested` and every acceptance criterion below is asserted by a
+gate; what remains is operator verification (eyes on the live portal), which
+no agent may claim. That proof batches with the Release 2.9 operator session.
+
+**Goal:** every repository in the portfolio — including the ~50 with no
+roadmap — leaves the console with an explainable conclusion (*strengthen*,
+*appropriate as-is*, or *insufficiently understood*) grounded in visible repo
+state across the foundation domains, with a reachable preview-first next
+action wherever improvement is warranted and a plain statement of why
+wherever it is not.
+
+#### Product outcomes
+
+- A newcomer can tell from the first screen what the product evaluates, what
+  it uncovers, and how its findings strengthen a portfolio.
+- No repository reads as merely `L0-Absent`, "not dispatchable", or "not
+  applicable": each carries one conclusion, its domain evidence, and — for
+  *strengthen* — one next action the console can actually run; _appropriate
+  as-is_ is a first-class, filterable, evidenced outcome.
+- The foundation domains are data the product can refine, not a taxonomy a
+  repository is forced to fit, and foundation coverage is measurable over
+  time.
+
+#### Engineering milestones
+
+- [x] **Conclusion model (backend).** One per-repo object — `conclusion`
+      (strengthen | appropriate-as-is | insufficiently-understood), `reason`,
+      per-domain `{domain, status: present|weak|missing|not-applicable,
+      evidence, nextAction?}`, `basis` — composed from signals that already
+      exist (README contract, doc findings, roadmap audit and maturity,
+      structure audit, scope classifier), served by
+      `GET /api/portfolio/conclusions` and per repo. Domains and per-kind
+      applicability live in `backend/config/foundation-domains.json`
+      (`schemaVersion: "v1"`), so refining a domain is a data change. What
+      exists: [`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1),
+      [`DocAudit.Scanner.ps1`](backend/modules/docaudit/DocAudit.Scanner.ps1),
+      [`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1).
+      _(state: verified 2026-08-26 —
+      [`Portfolio.Conclusion.ps1`](backend/modules/portfolio/Portfolio.Conclusion.ps1)
+      composes the conclusion from the cached index only; `not-scored` joins
+      the domain statuses for the defined-only domain; `GET
+      /api/portfolio/conclusions` (+ `?conclusion=` filter) and
+      `/api/portfolio/conclusions/{repoId}` serve it under the Release 3.2
+      read budget. Gates: module smoke shows the validator red on a blank
+      reason, no route and bare `L0-Absent` before nine fixtures all conclude
+      and coverage reconciles; api-host smoke proves 100% of the live index
+      concludes, the fixture's `strengthen` next action answers JSON 200, and
+      the route census guards the route; the config-integrity gate versions
+      the JSON. CI Smoke is the arbiter. No UI consumer yet — that is the
+      outcome card.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [x] **Outcome card (UI).** Per repository: the conclusion, why, each
+      domain's status and evidence, and the next action wired to the existing
+      preview-first repair and packaging flows; repos without a roadmap show
+      a conclusion, not `L0-Absent`; *appropriate as-is* renders and filters
+      like any other outcome. What exists:
+      [`RepoEvaluationModal.tsx`](frontend/components/RepoEvaluationModal.tsx).
+      _(state: verified 2026-08-27 —
+      [`OutcomeCard.tsx`](frontend/components/OutcomeCard.tsx) renders the
+      conclusion, its reason, every domain's status and evidence, and one
+      preview-first next action; it leads the evaluation modal, and a repo the
+      index does not know says so instead of showing nothing. The action is
+      data, so the card runs it only when its route is one of this console's
+      preview-first flows — an unrecognised route still renders, disabled,
+      with the reason. Backend (2026-08-26): an `outcome` summary on every
+      `/api/operations/repos` entry, the full `conclusion` + contract on the
+      detail and on `/api/repo/evaluate`, and the packaging flow offered
+      preview-first for a healthy repo with pending work — all from
+      `foundation-domains.json`. Data layer:
+      [`foundationConclusion.ts`](frontend/lib/foundationConclusion.ts).
+      Gates: 9 component tests (no repo reads as a bare `L0-Absent`,
+      appropriate-as-is renders as a first-class outcome with its evidence, a
+      rogue route is refused, a broken contract is shown not hidden), 11 data
+      tests, module smoke and api-host smoke on the payloads. Filtering by
+      conclusion lands with the ranked `Today` landing below.)_
+      `check: pwsh ./scripts/Invoke-ApiHostSmokeTest.ps1`
+- [x] **First interaction — the ranked `Today` landing.** The default view is
+      a ranked table with *why now*, one primary next action per row, and
+      effort (the value score and work-unit estimate already exist, three
+      clicks deep) under a one-paragraph orientation; tab labels pose the
+      question each view answers, with the Release 2.6 subtitle second.
+      Decides the Lane 0.5 question (2026-08-23). What exists:
+      [`DashboardViewTabs.tsx`](frontend/components/DashboardViewTabs.tsx),
+      [`RepoGrid.tsx`](frontend/components/RepoGrid.tsx), the value scorer.
+      _(state: verified 2026-08-27 —
+      [`TodayView.tsx`](frontend/components/TodayView.tsx) is the default
+      landing: an orientation paragraph naming what was assessed and
+      concluded, then a ranked table of repository / why now / one next action
+      / effort, with every conclusion filterable including appropriate-as-is.
+      Ranking is pure and explainable in
+      [`todayRanking.ts`](frontend/lib/todayRanking.ts) — conclusion, then
+      curation, then whether an action exists, then value, gaps and (only as a
+      tiebreak) cheaper effort — and every row carries the basis for its rank.
+      `estimatedSessionWorkUnits` reaches a surface for the first time; the
+      index always emitted it. Every tab now poses its question with the
+      Release 2.6 subtitle second. Gates: 13 ranking tests, 10 view tests, the
+      viewMeta contract test (every view has a unique question ending in `?`),
+      and the module smoke's Dashboard source-order tripwire. This closes Lane
+      0.5.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [x] **Flexible standards.** Per-kind applicability in
+      `foundation-domains.json` (library, service, script collection,
+      archived, minimal, externally managed) so a domain can be
+      `not-applicable` with a stated reason; `L0-Absent` reads as "no plan
+      recorded" with the smallest credible plan offered.
+      _(state: verified 2026-08-27 — the six kinds and their applicability
+      reasons are data in `foundation-domains.json`; `archived` is detected
+      from `lifecycleState` / `curationState=archived-ignore`, the rest await
+      a kind signal and read as `unknown` (every domain applies) rather than
+      guessed; a missing roadmap reads "no plan recorded" and offers the
+      roadmap repair preview. The module smoke proves a JSON-only detection
+      rule flips a conclusion with no code change, and the outcome card
+      renders a `not-applicable` domain with its stated reason — asserted by
+      an `OutcomeCard` test, which is the rendering half this item was
+      waiting on.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [x] **Measure — coverage and leverage.** `GET /api/portfolio/trend` gains a
+      foundation-coverage series (per domain: present / weak / missing /
+      not-applicable) captured by
+      [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1), and a
+      leverage family derived from ledgers the product already keeps
+      (agent-run metrics, execution metrics, queue summaries, the
+      operator-verification log): finding → accepted action, action → merged
+      improvement, operator minutes per completed task, agent PR first-pass
+      success, recommendations accepted vs rejected (the one new capture),
+      repositories concluded appropriate-as-is or archived. Insights renders
+      foundations gained and hours returned over the window.
+      _(state: verified 2026-08-27 — `GET /api/portfolio/trend` gains a
+      `foundationCoverage` series (present as a share of the foundations that
+      APPLY; not-applicable and not-scored excluded from both halves, so an
+      archived repo neither inflates nor dilutes it) plus a `leverage` block.
+      It accrues for real: a `foundation_coverage` table (schema v3, one row
+      per domain per scan, 180-day floor, in the backup manifest) written from
+      the one site that writes maturity history, and read back with the same
+      latest-capture-per-day rule. Leverage derives agent first-pass success,
+      estimate accuracy, time to deliver, tasks completed, repositories
+      needing nothing, and field-proof surfaces from ledgers already
+      kept; **operator minutes per task and recommendations accepted vs
+      rejected ship `available: false` with the reason they are not
+      captured** — the roadmap names them and the product does not have them,
+      so the gap is on the surface rather than implied to be zero.
+      [`LeveragePanel.tsx`](frontend/components/LeveragePanel.tsx) renders
+      both halves in Insights and shows an em dash, never a 0, for anything
+      unmeasured; `Invoke-DailyEvidence.ps1` records the day's figures in the
+      manifest. Gates: module smoke (coverage math, archived exclusion, empty
+      portfolio null, series present in BOTH builder blocks and inside the
+      frontend palette, leverage contract red on a zeroed fixture first),
+      api-host smoke (series shape and range, every metric states a basis, the
+      two uncaptured ones named and null), and 15 frontend tests.)_
+      `check: pwsh ./scripts/Invoke-ApiHostSmokeTest.ps1`
+- [x] **Define the intentional-engineering evidence model — define, not
+      score.** Name the evidence per sub-area (test, architecture,
+      operational, maintenance, delivery health), how each is read from a
+      repository, which are cheap from existing signals (Actions results,
+      merge readiness, PR state) and which need a detector; record it in
+      `foundation-domains.json` as `not-scored`, so Release 3.7's ten
+      repositories decide which evidence earns a detector. _(state:
+      verified 2026-08-26 — recorded as the `intentional-engineering`
+      domain with `scored: false`, `status: not-scored` and six sub-areas
+      (test, operational, delivery-health, maintenance: cheap from existing
+      signals; architecture, release: need a detector). The config-integrity
+      gate refuses a scored status on it; the conclusion reports what it
+      observes for the domain, "observed, not judged".)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+
+#### Acceptance criteria
+
+- 100% of indexed repositories carry a conclusion with a non-empty reason and
+  none presents `L0-Absent` or "not applicable" as its only state — asserted
+  over the live index and a fixture set (no-roadmap, archived, vendored,
+  minimal utility).
+- Every `strengthen` conclusion names a next action whose route returns
+  `application/json` with HTTP 200 for the fixture repo; every
+  `appropriate-as-is` conclusion cites its evidence — never an absence of
+  findings.
+- Adding a domain or a per-kind applicability rule is a JSON-only change,
+  covered by the config-integrity gate and a module-smoke fixture.
+- The default landing is the ranked `Today` table — orientation paragraph,
+  one primary action per row, effort — and every tab label poses its
+  question (unit test).
+- `GET /api/portfolio/trend` reports foundation coverage and the leverage
+  family for the window, each metric with its basis, and Insights renders
+  both.
+
+#### Out of scope
+
+- New detectors beyond composing existing signals; scoring intentional
+  engineering (defined only); prescribing a target architecture for any
+  repository; auto-applying repairs; mobile surfaces.
+
+**Validation plan:** module smoke — the conclusion model over the fixture
+set, detector shown red first against a blank-reason fixture; api-host smoke
+— the conclusions and trend routes return JSON (the SPA fallback makes status
+alone meaningless); `npm run test:unit` — Today landing and outcome card; the
+config-integrity gate for `foundation-domains.json`; CI Smoke is the arbiter.
+
+**Risks:** domains hardening into a taxonomy (data-defined, with an explicit
+refinement rule); *appropriate as-is* becoming a dumping ground (every such
+conclusion must cite evidence); scoring intentional engineering before it is
+defined (it ships `not-scored`).
+
+**Dependencies:** Release 2.9's three foundations-first items; the existing
+assessment, audit, classifier, and trend modules. No external resource.
+
+**Traceability:** PRs #188 (conclusion model), #189 (outcome-card backend),
+then #191 (outcome card), #192 (`Today` landing) and #193 (coverage +
+leverage), each merged on a green CI Smoke. Gates: the `Foundation
+conclusions` and
+`Foundation coverage + leverage` module-smoke sections, the
+`foundation-domains.json integrity` suite gate, the conclusions and trend
+api-host steps, and 47 frontend tests across `foundationConclusion`,
+`todayRanking`, `portfolioLeverage`, `OutcomeCard`, `TodayView` and
+`LeveragePanel`.
+
+**Known issues:**
+
+- [ ] **Two leverage metrics ship uncaptured, by design.** Operator minutes
+      per task needs an operator-side timer the product does not have;
+      recommendations accepted vs rejected needs an accept/reject ledger the
+      packaging approve/reject routes do not write. Both render with their
+      reason rather than a zero — Release 3.7's nine repositories decide
+      whether either earns a capture.
+      `check: pwsh ./scripts/Invoke-ApiHostSmokeTest.ps1`
+- [ ] **[non-blocker]** Only `archived` has a kind-detection rule. `library`,
+      `service`, `script-collection`, `minimal` and `externally-managed`
+      exist as data with their applicability reasons but await a signal, so
+      they read as `unknown` (every domain applies). Refining that is a
+      JSON-only change, proven by the module smoke.
+- [ ] **[non-blocker]** The foundation-coverage series starts as a one-point
+      scaffold on a fresh database; it becomes history-backed as scans
+      accrue, on the same clock as maturity history.
+
 ## Release 3.7 — verified milestones (release still open; moved from ROADMAP.md Current focus under the §3 archive rule)
 
 - [x] **3.7 / M4a — kind detection.** Resolve `library`, `firmware`, `application`,
