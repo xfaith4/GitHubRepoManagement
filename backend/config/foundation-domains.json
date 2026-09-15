@@ -156,6 +156,7 @@
     "note": "Steering extension 3 (Rung 1): lifecycleState (Portfolio.Assessment.ps1 _ResolveLifecycleState) and conclusion (this model) are two verdicts over the same signals and may not disagree without saying why. `allowed` lists, per lifecycle state, the conclusions that agree with it. Any other pair must match an `exceptions` entry whose `requires` pattern is found in the record's basis lines or its domain=status facts; the match is the explanation's evidence. A pair with no allowed entry and no matching exception is a contract violation (Test-FoundationConclusion). A lifecycle state not listed here is a violation too.",
     "allowed": {
       "archived": ["appropriate-as-is"],
+      "curated-out": ["appropriate-as-is"],
       "no-checklist": ["insufficiently-understood"],
       "parse-error": ["insufficiently-understood"],
       "running": ["strengthen", "appropriate-as-is"],

@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — Curation gates the lifecycle model (D-020)
+
+A repository curated `archived-ignore` now resolves to the lifecycle state
+`curated-out` with no next action, so the console never sends an operator to
+Roadmap Repair on a repository they chose to leave alone. The resolver gains
+the gate right after `archived`; the index writer applies the same state
+through the resolver's own helper because curation is joined at index build
+and cached assessments are reused for unchanged repositories. The consistency
+table lists `curated-out` as agreeing with `appropriate-as-is`, so the one
+explained disagreement the contract found (#298) becomes agreement by
+construction. Report module, console styles and the reference doc carry the
+state. Module smoke: `curated-out` outranks a parse-error roadmap and the
+writer applies it to a cached assessment.
+
 ## 2026-09-14 — The limiting foundation is chosen among the domains that apply (3.7 M4b)
 
 Every conclusion record now carries `limitingFoundation`: the applicable

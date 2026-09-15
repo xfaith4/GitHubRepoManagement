@@ -56,6 +56,7 @@ const LIFECYCLE_STYLES: Record<RepoLifecycleState, string> = {
   archived: 'bg-gray-800 text-gray-300 border-gray-600',
   'no-checklist': 'bg-amber-900/40 text-amber-200 border-amber-700/50',
   'parse-error': 'bg-red-900/40 text-red-200 border-red-700/50',
+  'curated-out': 'bg-gray-800 text-gray-300 border-gray-600',
 };
 
 const VALUE_TIER_STYLES: Record<PortfolioValueTier, string> = {
@@ -159,6 +160,8 @@ function getLifecyclePriority(state: RepoLifecycleState): number {
       return 10;
     case 'archived':
       return 10;
+    case 'curated-out':
+      return 11;
     default:
       return 99;
   }
