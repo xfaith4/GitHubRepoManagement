@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-09-13
+**Last updated:** 2026-09-14
 
 Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
 as is every completed milestone from the releases and lanes still open below.
@@ -27,32 +27,6 @@ by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 **Current focus (next agent actions), in order.** Every item here is agent-closable;
 the operator queue is a separate file. Take the first `[ ]` and open a PR.
 
-- [ ] **3.7 / M4a follow-through — kind under steering contract 6.** `unknown`
-      carries the hint list that failed to match, so a rule can be added as data.
-      The hint derivation (README wording patterns, the app-framework dependency
-      list, firmware file names) moves out of `Portfolio.KindSignals.ps1` into
-      `backend/config/kind-signals.json`, every rule carrying `observedOn`. Kind
-      is emitted as a ranked list with the hints each rested on, and a
-      manifest-vs-README disagreement is its own observation with
-      `canonicalEffect: none` (steering extension 2). `modelVersion` bumps.
-      _(state: built)_
-      `check: pwsh ./tests/Test-KindDetection.ps1 -FailOnError`
-- [ ] **Lifecycle/conclusion consistency contract (steering extension 3, Rung 1).**
-      `lifecycleState` and `conclusion` are two verdicts over the same signals;
-      they never disagree without saying why. A contract test enumerates the
-      allowed pairs and the explanation each exception must carry; a
-      contradiction with no explanation fails it. Runs before M4b because a
-      contradiction it finds changes how applicability is written.
-      _(state: built)_
-      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert lifecycle-consistency -FailOnError`
-- [ ] **3.7 / M4b — limiting foundation by kind applicability.** The limiting
-      foundation is chosen only among the domains that apply to the repository's
-      kind; a domain `foundation-domains.json` marks not-applicable for that kind
-      renders its configured reason instead of a status. Seven of nine trial
-      repositories sharing `planning`-weak + `structure`-weak is the observation
-      that raised this, not the target: the check asserts properties, never a
-      distribution. _(state: built)_
-      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert applicability -FailOnError`
 - [ ] **Accept/reject ledger (steering extension 1, Rung 1).** Every next action
       and top value item is a prediction; every response to one — accept,
       reject, edit — is a label. Capture each with the prediction it answers and
@@ -60,36 +34,15 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       panel's "not captured" figure becomes a computed one and the scorer's
       weights (D-013) have evidence to be revisited against. _(state: planned)_
       `check: pwsh ./tests/Test-DecisionLedger.ps1 -FailOnError`
-- [ ] **3.7 / M4c — next-action routing by the kind of gap.** `planning` limits
-      57 of 59 repositories, so routing on the domain alone gives the portfolio one
-      action — and that action, the repair preview, refuses missing, prose, empty and
-      complete roadmaps. Route on the planning domain's case (no roadmap, prose
-      roadmap, parse error, below contract-ready, complete below contract-ready),
-      each to its own runnable preview, configured in `foundation-domains.json`
-      `actionsByCase`. No one-click egress: an action that reaches an AI provider
-      sends nothing until the operator confirms the provider and the file, and
-      nothing for a repository marked private scope in Settings. The check asserts
-      properties and that the cohort routes to more than one action — never a
-      ratio of repositories. _(state: built)_
-      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert action-routing -FailOnError`
-- [ ] **Validator R024 — a built or verified check is a step CI runs.** 3.7 M4b
-      was called built on `-Assert applicability`, and the suite never ran it.
-      `Test-RoadmapStructure` fails a built or verified milestone whose `check:`
-      no CI step runs with every one of its arguments, `-FailOnError` included.
-      CI means the canonical suite, the scripts its npm gates run, and workflow
-      `run:` lines. _(state: built)_
-      `check: pwsh ./tests/Test-RoadmapCheckRunsInCi.ps1 -FailOnError`
-- [ ] **3.7 / M5 prep — previews staged, not applied.** For each of the eight
-      `strengthen` repositories, generate the preview the product recommends and
-      write it to `evidence/trials/release-3.7/previews/<repo>.md`. The operator
-      approves from the queue; the agent's job ends at a reviewable preview.
-      _(state: planned)_
+- [ ] **3.7 / M5 prep — previews staged, not applied.** For each `strengthen`
+      repository in the cohort, generate the preview its next action produces and
+      stage it under the gitignored `output/trials/release-3.7/previews/`. The
+      tracked record in `evidence/trials/release-3.7/` holds only the action, route,
+      preview hash and state, never repository text, because this repository is
+      public. An AI-routed preview is staged as a confirmation request naming the
+      provider and the file; the agent sends nothing. The operator approves from
+      the queue, and each response lands in the ledger above. _(state: planned)_
       `check: pwsh ./tests/Test-TrialPreviews.ps1 -Cohort evidence/trials/release-3.7/cohort.json -RequireAll`
-- [ ] **One manifest walk (steering extension 4).** Repo type, the technology
-      profile and kind signals are three walkers over the same files. One scan
-      produces all three views, so they cannot drift and a checkout is read once.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-ManifestWalk.ps1 -FailOnError`
 - [ ] **Portfolio brief and conclusion diff (steering extension 5, Rung 1).**
       Diff two conclusion payloads by index SHA and render the movement as prose
       with the evidence chain under every claim — one exported file a reader who
@@ -97,6 +50,11 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       constrained to the evidence lines and marked as narration.
       _(state: planned)_
       `check: pwsh ./tests/Test-PortfolioBrief.ps1 -FailOnError`
+- [ ] **One manifest walk (steering extension 4).** Repo type, the technology
+      profile and kind signals are three walkers over the same files. One scan
+      produces all three views, so they cannot drift and a checkout is read once.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-ManifestWalk.ps1 -FailOnError`
 - [ ] **Lane 0.19 — surface the operator queue in the console.**
       `operatorOnlyItemCount` is produced and read nowhere. Render
       `docs/governance/operator-queue.md` as a Verify tab so parked work is
@@ -282,14 +240,16 @@ within one repository, acyclic, keyed on stable item ids, gating dispatch
 eligibility. The cohort is unblocked too; see the D-006 note under Release 3.7.
 
 1. **Release 3.7 — Portfolio Value Proof** is the next engineering
-   release (execution contract in §6). Its four milestones follow the
-   trial-facing consistency fixes: Release 3.6 finished 2026-08-27 with
-   all six milestones `smoke-tested` and every acceptance criterion gated, so
-   the product now concludes for every repository, ranks what to do first,
-   and measures its own leverage. 3.7 needs Ben for the approvals, not for
-   the engineering. Every release from 1.x through 3.6 is engineering-closed;
-   new work is still proposed as a release with its own contract, never
-   appended to a closed one.
+   release (execution contract in §6). The model fixes the first cohort pass
+   exposed — kind detection (M4a and its follow-through), limiting foundation
+   by kind applicability (M4b), next action by the kind of gap (M4c) — and the
+   lifecycle/conclusion consistency contract were verified 2026-09-14 and
+   archived. What remains, in order: the accept/reject ledger, so responses
+   to previews are captured from the first one; M5 prep, staging the
+   previews; the portfolio brief; measured execution; the rollout decision.
+   3.7 needs Ben for the approvals, not for the engineering. Every release
+   from 1.x through 3.6 is engineering-closed; new work is still proposed as a
+   release with its own contract, never appended to a closed one.
 2. **Release 2.9 — the active release.** Its engineering half closed
    2026-08-26 (archived); what remains is the operator half, batched and
    waiting on Ben's presence at the machine.
@@ -322,9 +282,11 @@ already satisfiable in parallel — D-001's dependency notion and D-003's
 
 | Open item                                 | Depends on                                             | Type               |
 | ----------------------------------------- | ------------------------------------------------------ | ------------------ |
-| 3.7 M4a/b/c model fixes                   | nothing — ship as `foundation-conclusions v2`          | none               |
-| 3.7 M5 previews staged                    | M4a (kind must resolve before previews are meaningful) | soft — sequencing  |
+| 3.7 accept/reject ledger                  | nothing                                                | none               |
+| 3.7 M5 previews staged                    | the ledger; OQ-12 (live index carries kind signals)    | soft — sequencing  |
+| 3.7 portfolio brief                       | nothing — two conclusion payloads already exist        | none               |
 | 3.7 measured execution + rollout decision | operator approvals (queue item OQ-3)                   | **operator queue** |
+| One manifest walk                         | nothing                                                | none               |
 | 3.8 D-001 dependency notion               | nothing                                                | none               |
 | 3.8 provider-aware scheduler              | 3.7 rollout decision; D-003 grant (OQ-5)               | soft — sequencing  |
 | Lane 0.19 verify tab                      | nothing                                                | none               |
@@ -579,8 +541,13 @@ is the trial working: finding them on nine repositories rather than eighty.
    weakest, but as the universal recommendation it means the model is currently
    a planning detector rather than a portfolio advisor.
 
-Deliberately recorded and not fixed: adjusting the model now, before the
-improvements are executed and measured, would change it mid-measurement.
+**All three addressed before measurement, 2026-09-14.** M4a resolves kind from
+manifests, entry points and the README purpose line; M4b chooses the limiting
+foundation only among the domains that apply to the kind; M4c routes each kind
+of planning gap to its own preview. All are verified and archived in
+`docs/history/completed-releases.md`. They landed before any improvement was
+executed, so no measurement straddles a model change, and every conclusion
+carries `modelVersion` and the index SHA it was drawn under.
 
 **Still open:**
 
@@ -592,10 +559,13 @@ improvements are executed and measured, would change it mid-measurement.
       independently checked acceptance criterion and before/after evidence;
       merge evidence alone is insufficient. _(state: planned)_
       `check: pwsh ./tests/Test-TrialExecution.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MinCountedImprovements 5`
-- [ ] **Adjust and decide** — fix the false positives and bad recommendations
-      the nine expose; record the go/no-go for the full rollout and the
-      leverage numbers behind it. _(state: planned)_
-      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MaxSharedLimitingPair 0.5 -MaxSameAction 0.5`
+- [ ] **Adjust and decide** — every false positive or bad recommendation the
+      executed improvements expose is either fixed as a rule change carrying
+      `observedOn` or recorded with its reason, and the go/no-go for the full
+      rollout is recorded with the leverage numbers behind it. The check asserts
+      that record, never a distribution over the cohort (steering §6).
+      _(state: planned)_
+      `check: pwsh ./tests/Test-TrialDecision.ps1 -Cohort evidence/trials/release-3.7/cohort.json -FailOnError`
 
 #### Acceptance criteria
 
