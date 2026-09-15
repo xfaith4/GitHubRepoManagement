@@ -104,6 +104,64 @@ against that mistaken test and had to be withdrawn; see
 - **Blocks.** Nothing. M4b's check holds whatever the table says; a row is a
   data change with a `modelVersion` bump.
 
+### D-022 — Is the console four destinations with one vocabulary?
+
+- **Asked** 2026-09-15, from a UX assessment of build `fa18be4` made through
+  the UI alone. Its defects are Lane 0.22; its structural recommendations are
+  this decision, because each changes what the product is rather than fixing
+  what it shows.
+- **What the assessor saw.** Seven tabs (Today, Grid, Insights, Operations,
+  Doc Readiness, Dispatch Board, Dependencies) reflecting internal pipelines,
+  not operator questions; several answering the same question, none fully.
+  Four status vocabularies (Today's three conclusions; Operations' six
+  lifecycle labels; Doc Readiness's Needs Docs / dispatch-ready; Dispatch's
+  Ready / Blocked / Idle / Complete) plus L0–L4 on top of all of them, with
+  Help admitting three meanings of "ready" and two of "blocked". Three or four
+  ways to start agent work. The one system-level blocker, a runner down 27 h,
+  was absent from Today and reachable only through a header popover and a tab
+  labelled read-only analytics. Two lists of the same repositories (Grid,
+  Operations) with different columns, and a drill-down reachable from one.
+- **Proposed.**
+  1. **Four destinations:** Today (what needs me, what is stuck, what is next),
+     Portfolio (Grid + Operations + Doc Readiness as a filter + Dependencies as
+     a column), Work (Dispatch Board + packaged work + agent runs + trace +
+     "Execution right now"), Trends (Insights without the execution panels,
+     keeping Leverage). Utilities: a System drawer (runner, scanner, index
+     freshness, GitHub auth, providers, automation policy), Settings, Help, the
+     Local/GitHub source.
+  2. **One repository lifecycle** — Needs plan → Plan needs approval → Ready for
+     agents → Agent working → In review → Healthy / Archived — with orthogonal
+     flags (Uncommitted changes, CI failing, Behind remote, Docs gap). L-levels
+     become a detail score, not a headline. Hold codes stay as secondary tags.
+  3. **Today as an exception inbox:** a system banner shown only when something
+     is abnormal; decisions grouped by type with bulk actions; actions only the
+     operator can take; stuck work with remedies; the next five eligible items;
+     a digest; everything else collapsed to counts. The KPI cards become
+     Decisions waiting · Stuck · Ready for agents.
+  4. **One Work pipeline:** Proposed → Approved → Queued → Running → In review →
+     Done, plus a Needs-attention lane; the trace as each card's detail and its
+     broken-link diagnosis as the card's status; one "Send to agent" action with
+     a preview and provider choice; lanes retired as an operator concept unless
+     the lane count is something the operator tunes.
+  5. **Batched roadmap proposals:** the product generates roadmap drafts and
+     checklist conversions in the background, and Today offers "49 proposals
+     ready for review" with a diff queue and keyboard approve/reject.
+- **Why it is not an agent's call.** (1) and (4) replace surfaces the operator
+  works in daily. (2) renames the three conclusions the steering contract
+  defines, so it is a steering change. (5) calls AI routes without the operator
+  in the loop, against the no-one-click-egress ruling of 2026-09-14, and
+  spends provider budget by policy. Steering's product lens says every
+  remaining item is ranked on operational efficiency; this is the largest
+  such item there is, and its shape is the owner's.
+- **Default proceeded under (2026-09-15).** None of the five. Lane 0.22 fixes
+  the defects inside the current structure, so every surface at least tells
+  the truth before any of them is merged or removed. Lane 0.21 does the same
+  for load time. Where a Lane 0.22 item touches a surface this decision might
+  remove (the Dependencies tab, the Doc Readiness buttons), it makes the
+  smallest honest change and does not restructure.
+- **Blocks.** Nothing agent-executable. Rung 2 work that builds new surfaces
+  waits on it.
+
 ---
 
 ## Withdrawn

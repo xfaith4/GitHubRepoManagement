@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-15 — The UX assessment becomes Lane 0.22 and D-022
+
+An assessor used build `fa18be4` through the UI alone: cold reload, every
+tab, Help, Settings, one repository detail, one trace, Dispatch history and the
+agent-run list. Their verdict: the main UX problem is trust, not layout. The
+same session showed 0, 59, 72, 71 and 1 as the repository count on different
+surfaces; a work item "Queued for the runner" whose own trace said nothing would
+pick it up; one repository "Ready", "blocked" and "L0-Absent" at once; a runner
+27.6 hours stalled, shown as "99293.3s" and absent from Today; and "Code is
+implemented" ranked as work.
+
+Two claims were checked against the code and data. Test data in the live
+ledger is confirmed: 175 of 192 agent-run records are the api-host smoke's
+`dispatch-success-smoke`, and the smoke writes the real agent-run ledger,
+`roadmap-writeback.jsonl` and the packaging queue. "One click, no preview" is
+not: the board's Dispatch button opens the task preview, but its "Ready" label
+ignores holds.
+
+`ROADMAP.md` Lane 0.22 records the defects, ten items, each with what the
+session saw and what the fix must hold. Fixture isolation and one
+dispatch-eligibility rule lead Current focus, after Lane 0.21's request-thread
+item. `open-decisions.md` D-022 records the structural recommendations (four
+destinations, one lifecycle vocabulary with flags, Today as an exception inbox,
+one Work pipeline, batched roadmap proposals) as the owner's call, with the
+default that nothing is restructured until every surface tells the truth. The
+assessment's prompt and report were not committed: they name local repositories
+and a workspace path, and this repository is public.
 ## 2026-09-15 — An unchanged repository is reused on the next load (Lane 0.21)
 
 The portal froze on every page load: `GET /api/portfolio/assessment?scanMode=differential`
