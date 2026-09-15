@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — A built or verified check is a step CI runs (validator R024)
+
+3.7 M4b was called built on `-Assert applicability`, and the suite never ran it.
+The roadmap validator now fails any built or verified milestone whose `check:`
+no CI step runs with every one of its arguments, `-FailOnError` included:
+CI that runs a check without it cannot fail. CI means the lines of
+`scripts/Invoke-TestSuite.ps1` (comments excluded), the commands its npm gates
+resolve to (following `--workspace` into the workspace's package.json), and
+workflow `run:` lines. A vitest check is satisfied by an npm gate that runs
+`vitest run`. A check whose script the validator cannot identify fails, and a
+repository with no suite is not checked, so the validator still works on
+roadmaps elsewhere. The finding names what is missing ("CI runs
+Test-FoundationConclusions.ps1 but never with applicability"). ROADMAP §3 states
+the rule; the live roadmap's 25 built and verified checks all hold, this one included.
+
+Check: `pwsh ./tests/Test-RoadmapCheckRunsInCi.ps1 -FailOnError`, now a suite
+gate. It runs 15 fixture repositories, each with its own suite, covering a
+missing gate, a wrong argument, a dropped `-FailOnError`, a commented-out gate,
+planned versus verified, vitest and npm resolution, a workflow step, an
+unidentifiable command and a repository with no suite. It then holds the live
+roadmap against the live suite.
+
 ## 2026-09-14 — Each kind of planning gap reaches its own preview (3.7 M4c)
 
 `planning` limits 57 of 59 repositories, and every one was told `POST

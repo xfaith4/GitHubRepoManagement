@@ -1742,6 +1742,14 @@ if (-not $script:VocabularyRulesLoaded) {
                 -Line ([int]$f.Line) -Category 'vocabulary' -Rule $vr.rule
         }
     }
+    # R024 reads the repository the roadmap sits in: a built or verified
+    # milestone's check must be a step its CI runs. No suite there, no finding.
+    $roadmapRepoRoot = Split-Path -Parent (Resolve-Path -LiteralPath $Path).Path
+    foreach ($f in @(Test-R024CheckRunsInCi -Lines $lines -RepoRoot $roadmapRepoRoot)) {
+        if ($null -eq $f) { continue }
+        Add-Finding -Severity 'error' -Code ([string]$f.Rule) -Message ([string]$f.Message) `
+            -Line ([int]$f.Line) -Category 'vocabulary' -Rule 'check-runs-in-ci'
+    }
 }
 
 # Pretty-print release sequence summary so the operator sees what was parsed.
