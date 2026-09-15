@@ -6819,7 +6819,7 @@ Verified 2026-09-14, each gate exiting 0 in CI on its PR head:
 | M4c | #301 | `58240fe` | 34923391918 | `Action routing` |
 | Validator R024 | #302 | `ae2e515` | 34923393620 | `Check runs in CI` |
 
-D-020 (#300, run 34908732169) had no milestone of its own: `archived-ignore`
+#300, #301 and #302 merged into the branches they were stacked on and reached `main` through #303. D-020 (#300, run 34908732169) had no milestone of its own: `archived-ignore`
 resolves to the lifecycle state `curated-out`. The live index reflects kind
 signals only after OQ-12. Verified means the CI check is green, not operator
 sign-off (D-018).
