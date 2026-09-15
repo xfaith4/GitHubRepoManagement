@@ -80,8 +80,12 @@ that weakens one is wrong even if every test passes.
    under `evidence/` is run spill. The audit script and `.gitignore` agree,
    or one has silently disabled the other.
 
-10. **Nothing that changes governance, CI, or what the product claims about
-    itself merges on a green light alone.** The owner reviews it.
+10. **A green check is the merge; what the check cannot see is held, never
+    argued.** The merge tripwire (`docs/governance/merge-policy.md`) holds
+    the trust rule, the guards and the CI definition for the owner, and fails
+    a secret or a loosened guard outright. Everything else merges on green
+    and is audited after — by revert when wrong (D-023, 2026-09-15, replacing
+    the D-019 reading of this contract).
 
 11. **A canonical verdict is reproducible from index SHA + config +
     `modelVersion`, and nothing else.** Same three inputs, same conclusion,
@@ -314,9 +318,10 @@ serves. Prefer the lowest rung that is not yet passed.
 - You may not edit `.github/workflows/**` (D-012, decided 2026-09-15). A
   workflow you believe CI needs goes to `.github/workflows-proposed/` or a
   named section of the handoff, marked as waiting; the owner applies it.
-- At most two unmerged review PRs in the stack at once. Beyond that, build
-  the next item on its branch and wait for the owner rather than stacking a
-  third (2026-09-14).
+- At most two pull requests held by the merge tripwire wait at once. Beyond
+  that, build the next item on its branch and open its PR when a slot frees
+  (2026-09-14; narrowed to held PRs by D-023, 2026-09-15). A PR the tripwire
+  passes merges on green and never counts.
 
 ---
 
@@ -329,7 +334,8 @@ serves. Prefer the lowest rung that is not yet passed.
 - "Abandoned," "external," or "not a project" written anywhere the owner
   did not write it.
 - A green CI run described as operator verification.
-- A merge on green of a change to what the product says about itself.
+- A tripwire finding argued away in a PR body instead of fixed, or the
+  `operator-approved` label applied by anyone but the owner.
 - Reproducing the owner's own repo layout as the standard other people are
   graded against.
 - A peer-group prevalence cited as the basis of a verdict about one

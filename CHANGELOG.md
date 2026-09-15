@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-15 — A green check is the merge (D-023)
+
+Ben asked to change the rule that held four classes of change for his review
+(D-019), because the portfolio cannot gain momentum while the automation is
+not trusted. The rule is replaced by a gate, so trust rests on checks rather
+than on a reader.
+
+- **`docs/governance/merge-policy.md`** is the rule: every PR with a green
+  check merges, including config, governance, gates and verdicts.
+- **`tools/Test-MergeTripwire.ps1`** runs in the suite on every PR and reads
+  the diff against the base. It **holds** the trust rule, the tripwire, the CI
+  definition, section 2 of `steering.md`, a gate removed or weakened and a
+  check file deleted — red until Ben adds the `operator-approved` label and
+  re-runs. It **fails** a secret on an added line, a loosened permission
+  envelope, a versioned config without a `modelVersion` bump, and a raised
+  debt ratchet — no label clears those.
+- **`tests/Test-MergeTripwire.ps1`** proves it over 28 fixture cases, each a
+  real git repository, then runs it on the live tree.
+- What the tripwire does not see is named in the policy with the remedy
+  (`git revert`), the audit command, and the kill switch (add a path to the
+  protected list — itself a held edit).
+- Steering contract 10, §5 (the two-PR cap now counts only held PRs) and §6,
+  `CLAUDE.md` and `AGENTS.md` carry the rule. The `operator-approved` label
+  exists on GitHub.
+
 ## 2026-09-15 — Four decisions ruled: D-006, D-012, D-021, D-022
 
 The register's Open section is empty for the first time. Each ruling keeps its

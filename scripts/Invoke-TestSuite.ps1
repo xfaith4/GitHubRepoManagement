@@ -348,6 +348,14 @@ Invoke-ScriptGate -Name 'Roadmap structure lint' -ScriptPath (Join-Path $toolsDi
 # Verified non-vacuous by running it against 17dc1db, which it fails.
 Invoke-ScriptGate -Name 'Roadmap capability record' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapCapabilityRecord.ps1') -ScriptArgs @('-FailOnError')
 
+# D-023, 2026-09-15: a green check is the merge. The tripwire holds what only
+# the owner may approve (the trust rule, a gate removed, a workflow edited) and
+# fails what no approval clears (a secret, a loosened guard). The proof runs
+# it over fixture repositories first, so a hollow tripwire fails before it
+# passes anything.
+Invoke-ScriptGate -Name 'Merge tripwire proof' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-MergeTripwire.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Merge tripwire' -ScriptPath (Join-Path $toolsDir 'Test-MergeTripwire.ps1') -ScriptArgs @('-FailOnError')
+
 # ── Summary ────────────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host '===== Test suite summary =====' -ForegroundColor White
