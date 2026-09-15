@@ -6762,3 +6762,64 @@ Verified 2026-09-14: the `Kind detection` gate exited 0 in CI on the head of
 after the portal's service restart) is OQ-12 in the operator queue. The
 follow-through that brings the scanner under steering contract 6 is the first
 item in Current focus.
+
+- [x] **3.7 / M4a follow-through — kind under steering contract 6.** `unknown`
+      carries the hint list that failed to match, so a rule can be added as data.
+      The hint derivation (README wording patterns, the app-framework dependency
+      list, firmware file names) moves out of `Portfolio.KindSignals.ps1` into
+      `backend/config/kind-signals.json`, every rule carrying `observedOn`. Kind
+      is emitted as a ranked list with the hints each rested on, and a
+      manifest-vs-README disagreement is its own observation with
+      `canonicalEffect: none` (steering extension 2). `modelVersion` bumps.
+      _(state: verified)_
+      `check: pwsh ./tests/Test-KindDetection.ps1 -FailOnError`
+- [x] **Lifecycle/conclusion consistency contract (steering extension 3, Rung 1).**
+      `lifecycleState` and `conclusion` are two verdicts over the same signals;
+      they never disagree without saying why. A contract test enumerates the
+      allowed pairs and the explanation each exception must carry; a
+      contradiction with no explanation fails it. Runs before M4b because a
+      contradiction it finds changes how applicability is written.
+      _(state: verified)_
+      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert lifecycle-consistency -FailOnError`
+- [x] **3.7 / M4b — limiting foundation by kind applicability.** The limiting
+      foundation is chosen only among the domains that apply to the repository's
+      kind; a domain `foundation-domains.json` marks not-applicable for that kind
+      renders its configured reason instead of a status. Seven of nine trial
+      repositories sharing `planning`-weak + `structure`-weak is the observation
+      that raised this, not the target: the check asserts properties, never a
+      distribution. _(state: verified)_
+      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert applicability -FailOnError`
+- [x] **3.7 / M4c — next-action routing by the kind of gap.** `planning` limits
+      57 of 59 repositories, so routing on the domain alone gives the portfolio one
+      action — and that action, the repair preview, refuses missing, prose, empty and
+      complete roadmaps. Route on the planning domain's case (no roadmap, prose
+      roadmap, parse error, below contract-ready, complete below contract-ready),
+      each to its own runnable preview, configured in `foundation-domains.json`
+      `actionsByCase`. No one-click egress: an action that reaches an AI provider
+      sends nothing until the operator confirms the provider and the file, and
+      nothing for a repository marked private scope in Settings. The check asserts
+      properties and that the cohort routes to more than one action — never a
+      ratio of repositories. _(state: verified)_
+      `check: pwsh ./tests/Test-FoundationConclusions.ps1 -Cohort evidence/trials/release-3.7/cohort.json -Assert action-routing -FailOnError`
+- [x] **Validator R024 — a built or verified check is a step CI runs.** 3.7 M4b
+      was called built on `-Assert applicability`, and the suite never ran it.
+      `Test-RoadmapStructure` fails a built or verified milestone whose `check:`
+      no CI step runs with every one of its arguments, `-FailOnError` included.
+      CI means the canonical suite, the scripts its npm gates run, and workflow
+      `run:` lines. _(state: verified)_
+      `check: pwsh ./tests/Test-RoadmapCheckRunsInCi.ps1 -FailOnError`
+
+Verified 2026-09-14, each gate exiting 0 in CI on its PR head:
+
+| Milestone | PR | Head | CI run | Gate |
+| --- | --- | --- | --- | --- |
+| M4a follow-through | #297 | `e447795` | 34833725263 | `Kind detection` |
+| Lifecycle/conclusion consistency | #298 | `1e94a77` | 34908725867 | `Lifecycle consistency` |
+| M4b | #299 | `484d93e` | 34908728788 | `Applicability` |
+| M4c | #301 | `58240fe` | 34923391918 | `Action routing` |
+| Validator R024 | #302 | `ae2e515` | 34923393620 | `Check runs in CI` |
+
+#300, #301 and #302 merged into the branches they were stacked on and reached `main` through #303. D-020 (#300, run 34908732169) had no milestone of its own: `archived-ignore`
+resolves to the lifecycle state `curated-out`. The live index reflects kind
+signals only after OQ-12. Verified means the CI check is green, not operator
+sign-off (D-018).

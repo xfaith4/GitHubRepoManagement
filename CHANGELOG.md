@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-14 — Roadmap after the 3.7 model stack: five milestones archived, remaining order set
+
+The M4a follow-through (#297), the lifecycle/conclusion consistency contract
+(#298), M4b (#299), M4c (#301) and validator R024 (#302) went green in CI on
+their PR heads. They move to `verified` and are archived in
+`docs/history/completed-releases.md` with the head and CI run for each.
+Current focus now reads, in order: the accept/reject ledger, M5 prep, the
+portfolio brief, one manifest walk, Lane 0.19, D-001.
+
+- **Ledger before M5.** The first staged preview's accept or reject is captured.
+- **Brief before manifest walk.** The brief is a Rung 1 deliverable a reader acts
+  on; the manifest walk is internal consistency.
+- **M5 prep.** Previews now stage under the gitignored `output/`, and the tracked
+  record keeps only the action, route, hash and state. As first written, it
+  would have committed previews built from cohort repositories into this public
+  repository. An AI-routed preview stages as a confirmation request.
+- **"Adjust and decide".** Its check no longer asserts ratios over the cohort
+  (`-MaxSharedLimitingPair 0.5 -MaxSameAction 0.5`), which steering §6 forbids.
+  It now asserts the decision record: every exposed false positive is fixed as
+  an `observedOn` rule or recorded with its reason, and the go/no-go is recorded
+  with its numbers.
+- **Release 3.7 text.** It records that the three first-pass false positives were
+  fixed before measurement.
+- **Dependency map.** Now reflects the ledger, M5 prep's soft wait on OQ-12, and
+  the brief.
 ## 2026-09-14 — A built or verified check is a step CI runs (validator R024)
 
 3.7 M4b was called built on `-Assert applicability`, and the suite never ran it.
