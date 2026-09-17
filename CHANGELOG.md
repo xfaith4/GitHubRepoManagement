@@ -47,7 +47,12 @@ inline, so every page load held every route: 28 s with nothing changed and
   the index read or write, or stops starting the worker. The inline-scan
   baseline drops from 18 to 14. The api-host smoke waits for the worker's
   scan before it checks scan counts, forced-refresh reasons and the
-  scan-budget log line.
+  scan-budget log line. The contract suite requests one scan during setup
+  and waits for it before its tests run. Its scan root is the workspace,
+  which a CI clone uses anyway. On a cold host,
+  `GET /api/operations/repos` answers 409 until the first scan writes an
+  index; Lane 0.21's "a finished scan reaches the page" item now covers
+  that.
 
 ## 2026-09-15 — Four decisions ruled: D-006, D-012, D-021, D-022
 

@@ -1944,7 +1944,10 @@ keeps one scan in flight. A forced refresh that arrives mid-scan is queued.
       01:09 AM · 64.0s scan · 9m ago". When scan status moves to `completed`, the
       page refetches the snapshot, assessment and status. The failed
       background-refresh path retries at that point instead of logging the same
-      warning twice. _(state: planned)_
+      warning twice. Since the assessment moved to the worker, a host with no
+      index answers `GET /api/operations/repos` with 409 until the first scan
+      lands. The page shows that as waiting for the first scan and refetches
+      when the scan finishes. _(state: planned)_
       `check: npx vitest run frontend/lib/scanCompletionRefresh.test.ts`
 - [ ] **"Auto-scan off" means no scan on load.** The page showed Auto-scan off
       and started a background re-scan on load anyway. With auto-scan off it

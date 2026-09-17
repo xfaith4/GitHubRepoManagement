@@ -129,6 +129,22 @@ BeforeAll {
     [Environment]::SetEnvironmentVariable('REPO_MGMT_CACHE_ROOT', (Join-Path $script:LogRoot 'contract-cache'))
     $null = New-Item -ItemType Directory -Path (Join-Path $script:LogRoot 'contract-runner-control') -Force
 
+    # Lane 0.21: the host's first assessment comes from the background worker,
+    # so this suite scans something. The operator's settings as they are,
+    # except that the scan root is this workspace -- which is what a CI clone
+    # falls back to anyway. Otherwise a local run scans the operator's whole
+    # portfolio cold (289 s on 2026-09-16) before the first test can read an
+    # index. Resolved before the override is set, so this reads the tracked file.
+    . (Join-Path $script:WorkspaceRoot 'backend\modules\common\Config.SettingsPath.ps1')
+    $contractSettingsSource = Get-PortalSettingsPath -WorkspaceRoot $script:WorkspaceRoot
+    $contractSettings = if (Test-Path -LiteralPath $contractSettingsSource) { Get-Content -LiteralPath $contractSettingsSource -Raw | ConvertFrom-Json -AsHashtable } else { @{ schemaVersion = 'v1' } }
+    if (-not $contractSettings.ContainsKey('inventory') -or $contractSettings.inventory -isnot [System.Collections.IDictionary]) { $contractSettings.inventory = @{} }
+    $contractSettings.inventory.localRoots = @($script:WorkspaceRoot)
+    $script:ContractSettingsPath = Join-Path $script:LogRoot 'contract-settings.json'
+    Set-Content -LiteralPath $script:ContractSettingsPath -Value ($contractSettings | ConvertTo-Json -Depth 20) -Encoding UTF8
+    $script:IsolationPrevious['REPO_MGMT_SETTINGS_PATH'] = [Environment]::GetEnvironmentVariable('REPO_MGMT_SETTINGS_PATH')
+    [Environment]::SetEnvironmentVariable('REPO_MGMT_SETTINGS_PATH', $script:ContractSettingsPath)
+
     $script:HostPowerShell = [powershell]::Create()
     $null = $script:HostPowerShell.AddScript({
         param($ScriptPath, $Root, $Port, $LogPath, $StopPath)
@@ -137,6 +153,33 @@ BeforeAll {
     $script:HostAsyncResult = $script:HostPowerShell.BeginInvoke()
 
     Wait-ContractApiHostReady -PowerShellInstance $script:HostPowerShell
+
+    # Lane 0.21: a cold host answers the assessment at once and scans in the
+    # background, and /api/operations/repos is 409 until that scan writes an
+    # index. Ask for the scan and wait for it, so the suite asserts on a host
+    # in its ordinary state rather than racing its first scan (CI, 2026-09-16:
+    # the timezone test read 409 from operations/repos 1.6 s in).
+    $null = Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/assessment'
+    $firstScanDeadline = (Get-Date).AddSeconds(240)
+    $firstScanSettled = $false
+    $firstScanState = ''
+    while ((Get-Date) -lt $firstScanDeadline) {
+        $firstScanState = [string](Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/scan/status').Json.data.state
+        if ($firstScanState -in @('failed', 'aborted')) {
+            throw "The contract host's first background scan ended '$firstScanState'. LogPath=$($script:HostLogPath)"
+        }
+        if ($firstScanState -ne 'running') {
+            $served = (Invoke-ContractApiRequest -Method GET -Path '/api/portfolio/assessment').Json.data
+            if ($null -ne $served -and -not [bool]$served.refreshing -and [string]$served.cacheSource -ne 'awaiting-first-scan') {
+                $firstScanSettled = $true
+                break
+            }
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $firstScanSettled) {
+        throw "The contract host's first background scan did not settle within 240 s (last state '$firstScanState'). LogPath=$($script:HostLogPath)"
+    }
 }
 
 AfterAll {
