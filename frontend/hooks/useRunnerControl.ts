@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getRunnerPresence, startRunner, stopRunner } from '../services/apiClient';
+import { usePollLoop } from './usePollLoop';
 import {
   resolveRunnerPresence,
   runnerStartCommand,
@@ -73,9 +74,9 @@ export function useRunnerControl(): RunnerControlState {
   // inside a loop that closed over its own render.
   const latest = useRef<RunnerPresencePayload | null>(null);
 
-  const read = useCallback(async (): Promise<RunnerPresencePayload | null> => {
+  const read = useCallback(async (signal?: AbortSignal): Promise<RunnerPresencePayload | null> => {
     try {
-      const data = await getRunnerPresence();
+      const data = await getRunnerPresence({ signal });
       if (!cancelled.current) { setPayload(data); setReadAtMs(Date.now()); setLoaded(true); }
       latest.current = data;
       return data;
@@ -88,14 +89,10 @@ export function useRunnerControl(): RunnerControlState {
 
   useEffect(() => {
     cancelled.current = false;
-    // Deferred by a tick rather than called straight from the effect body.
-    // `read` only sets state after an await, but the lint rule cannot see past
-    // the call and reads it as a synchronous setState; a zero-delay timer keeps
-    // the first read immediate and keeps the effect body honest.
-    const first = setTimeout(() => { void read(); }, 0);
-    const timer = setInterval(() => { void read(); }, POLL_MS);
-    return () => { cancelled.current = true; clearTimeout(first); clearInterval(timer); };
-  }, [read]);
+    return () => { cancelled.current = true; };
+  }, []);
+
+  usePollLoop((signal) => read(signal), { intervalMs: POLL_MS });
 
   const start = useCallback(async () => {
     setAction('starting');

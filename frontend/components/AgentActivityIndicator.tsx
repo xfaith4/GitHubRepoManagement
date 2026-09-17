@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { getAgentRuns } from '../services/apiClient';
+import { usePollLoop } from '../hooks/usePollLoop';
 import AgentRunSheet from './AgentRunSheet';
 
 // Release 2.5 Phase 2 — always-visible agent-activity indicator. Shows within
@@ -16,26 +17,21 @@ function AgentActivityIndicator() {
   // phone.
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const res = await getAgentRuns({ limit: 100 });
-        if (cancelled) return;
-        const activeRuns = res.items.filter(r => ACTIVE_STATUSES.includes(String(r.status).toLowerCase()));
-        setActiveCount(activeRuns.length);
-        // Release 3.5 milestone 6 — "6 active" must say six WHAT. The title
-        // names the runs; the label names the noun.
-        setActiveSummary(activeRuns.slice(0, 5).map(r => `${String((r as { repoName?: string }).repoName ?? 'unknown repo')}: ${String(r.status)}`).join('; '));
-        setLoaded(true);
-      } catch {
-        if (!cancelled) setLoaded(true);
-      }
-    };
-    poll();
-    const timer = setInterval(poll, 30000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, []);
+  usePollLoop(async (signal) => {
+    try {
+      const res = await getAgentRuns({ limit: 100 }, { signal });
+      if (signal.aborted) return;
+      const activeRuns = res.items.filter(r => ACTIVE_STATUSES.includes(String(r.status).toLowerCase()));
+      setActiveCount(activeRuns.length);
+      // Release 3.5 milestone 6 — "6 active" must say six WHAT. The title
+      // names the runs; the label names the noun.
+      setActiveSummary(activeRuns.slice(0, 5).map(r => `${String((r as { repoName?: string }).repoName ?? 'unknown repo')}: ${String(r.status)}`).join('; '));
+      setLoaded(true);
+    } catch (error) {
+      if (!signal.aborted) setLoaded(true);
+      throw error; // the helper backs off; the pill keeps its last answer
+    }
+  }, { intervalMs: 30_000 });
 
   const isActive = activeCount > 0;
   const label = isActive ? `${activeCount} agent run${activeCount === 1 ? '' : 's'}` : 'Agents idle';

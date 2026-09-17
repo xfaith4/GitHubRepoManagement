@@ -1094,27 +1094,33 @@ function Send-HttpContent {
         [Parameter(Mandatory = $true)]
         [int]$StatusCode,
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [byte[]]$BodyBytes,
         [Parameter()]
         [string]$ContentType = 'application/octet-stream',
         [Parameter()]
         [string]$StatusText = 'OK',
         [Parameter()]
-        [string]$CorrelationId
+        [string]$CorrelationId,
+        [Parameter()]
+        [string[]]$ExtraHeaders = @()
     )
 
-    $headers = @(
-        "HTTP/1.1 $StatusCode $StatusText",
-        "Content-Type: $ContentType",
-        "Content-Length: $($BodyBytes.Length)",
-        'Connection: close',
-        ("Access-Control-Allow-Origin: {0}" -f $(if ($script:CorsAllowOrigin) { $script:CorsAllowOrigin } else { '*' })),
-        'Access-Control-Allow-Methods: GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers: Content-Type, Authorization, X-Api-Key',
-        $(if ($CorrelationId) { "X-Correlation-Id: $CorrelationId" } else { '' }),
-        '',
-        ''
-    ) -join "`r`n"
+    # Built as a list, as Send-HttpJson does: a nested array or an empty
+    # element inside an array literal would join into a malformed header line.
+    $headerLines = [System.Collections.Generic.List[string]]::new()
+    $headerLines.Add("HTTP/1.1 $StatusCode $StatusText")
+    $headerLines.Add("Content-Type: $ContentType")
+    $headerLines.Add("Content-Length: $($BodyBytes.Length)")
+    $headerLines.Add('Connection: close')
+    $headerLines.Add("Access-Control-Allow-Origin: {0}" -f $(if ($script:CorsAllowOrigin) { $script:CorsAllowOrigin } else { '*' }))
+    $headerLines.Add('Access-Control-Allow-Methods: GET, POST, OPTIONS')
+    $headerLines.Add('Access-Control-Allow-Headers: Content-Type, Authorization, X-Api-Key')
+    foreach ($h in $ExtraHeaders) { if (-not [string]::IsNullOrWhiteSpace($h)) { $headerLines.Add($h) } }
+    if ($CorrelationId) { $headerLines.Add("X-Correlation-Id: $CorrelationId") }
+    $headerLines.Add('')
+    $headerLines.Add('')
+    $headers = $headerLines -join "`r`n"
 
     $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($headers)
     $Stream.Write($headerBytes, 0, $headerBytes.Length)
@@ -12128,13 +12134,35 @@ try {
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Write-HostLog ("[TRACE] agent-runs.list correlationId={0} done count={1}" -f $correlationId, @($runs).Count)
-                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+
+                    # Lane 0.21 — this list is polled, and one page load fetched
+                    # the same 147 KB seven times. The body is hashed into an
+                    # ETag and `Cache-Control: no-cache` makes the browser
+                    # revalidate, so an unchanged ledger answers 304 with no
+                    # body. The payload is unchanged; only its transport is.
+                    $agentRunsBody = @{
                         success = $true
                         data    = @{
                             items    = @($runs)
                             count    = @($runs).Count
                             byStatus = $byStatus
                         }
+                    } | ConvertTo-Json -Depth 12
+                    $agentRunsBytes = [System.Text.Encoding]::UTF8.GetBytes($agentRunsBody)
+                    $agentRunsSha = [System.Security.Cryptography.SHA1]::Create()
+                    try {
+                        $agentRunsEtag = '"' + (($agentRunsSha.ComputeHash($agentRunsBytes) | ForEach-Object { $_.ToString('x2') }) -join '') + '"'
+                    }
+                    finally { $agentRunsSha.Dispose() }
+                    $agentRunsHeaders = @("ETag: $agentRunsEtag", 'Cache-Control: no-cache', 'Access-Control-Allow-Credentials: true')
+                    $agentRunsIfNoneMatch = if ($req.Headers.ContainsKey('if-none-match')) { [string]$req.Headers['if-none-match'] } else { '' }
+                    $agentRunsMatched = @($agentRunsIfNoneMatch.Split(',') | ForEach-Object { $_.Trim() }) -contains $agentRunsEtag
+                    if ($agentRunsMatched) {
+                        Write-HostLog ("[TRACE] agent-runs.list correlationId={0} not modified etag={1}" -f $correlationId, $agentRunsEtag)
+                        Send-HttpContent -Stream $req.Stream -StatusCode 304 -StatusText 'Not Modified' -BodyBytes ([byte[]]@()) -ContentType 'application/json; charset=utf-8' -CorrelationId $correlationId -ExtraHeaders $agentRunsHeaders
+                    }
+                    else {
+                        Send-HttpContent -Stream $req.Stream -StatusCode 200 -BodyBytes $agentRunsBytes -ContentType 'application/json; charset=utf-8' -CorrelationId $correlationId -ExtraHeaders $agentRunsHeaders
                     }
                 }
                 'GET /api/ai/docs/templates' {

@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { getPortalVersion } from '../services/apiClient';
+import { usePollLoop } from '../hooks/usePollLoop';
 import { resolveBuildStamp, type PortalVersionPayload } from '../lib/buildStamp';
 
 /**
@@ -20,16 +21,10 @@ const POLL_MS = 60_000;
 function BuildStampIndicator() {
   const [api, setApi] = useState<PortalVersionPayload | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      const data = await getPortalVersion();
-      if (!cancelled) setApi(data);
-    };
-    void poll();
-    const timer = setInterval(poll, POLL_MS);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, []);
+  usePollLoop(async (signal) => {
+    const data = await getPortalVersion({ signal });
+    if (!signal.aborted) setApi(data);
+  }, { intervalMs: POLL_MS });
 
   const view = resolveBuildStamp(
     typeof __BUILD_COMMIT__ === 'string' ? __BUILD_COMMIT__ : null,

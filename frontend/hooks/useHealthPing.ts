@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { usePollLoop } from './usePollLoop';
 
 export type BackendHealth = 'connecting' | 'online' | 'offline';
 
@@ -26,32 +27,20 @@ export function useHealthPing(intervalMs = 15_000): BackendHealth {
   const initialised = useRef(false);
 
   useEffect(() => {
-    if (USE_MOCK_API) {
-      setHealth('online');
-      return;
+    if (USE_MOCK_API) setHealth('online');
+  }, []);
+
+  usePollLoop(async (signal) => {
+    try {
+      const res = await fetch(HEALTH_URL, { method: 'GET', signal });
+      setHealth(res.ok ? 'online' : 'offline');
+    } catch {
+      // A timed-out or refused ping is the disconnect this hook exists to show.
+      setHealth('offline');
+    } finally {
+      if (!initialised.current) initialised.current = true;
     }
-
-    let cancelled = false;
-
-    const ping = async () => {
-      try {
-        const res = await fetch(HEALTH_URL, { method: 'GET' });
-        if (cancelled) return;
-        setHealth(res.ok ? 'online' : 'offline');
-      } catch {
-        if (!cancelled) setHealth('offline');
-      } finally {
-        if (!initialised.current) initialised.current = true;
-      }
-    };
-
-    ping();
-    const id = setInterval(ping, intervalMs);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [intervalMs]);
+  }, { enabled: !USE_MOCK_API, intervalMs, timeoutMs: 5_000 });
 
   return health;
 }
