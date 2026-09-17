@@ -12,6 +12,12 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root, and smoke fixtures
+# already in the operator's ledger never count against their budget.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+. (Join-Path $PSScriptRoot '..\common\Fixture.Records.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 function _BudgetField {
@@ -236,7 +242,7 @@ function Get-AgentBudgetUsageSnapshot {
         [Parameter(Mandatory = $true)][hashtable]$BudgetConfig
     )
 
-    $runsDir = Join-Path $WorkspaceRoot 'output\agent-runs\runs'
+    $runsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\agent-runs\runs'
     $defaultAgentRunUnits = [double]$BudgetConfig.unitWeights.agentRun
     $byRepo = @{}
     $totalUnitsConsumed = 0.0
@@ -250,6 +256,10 @@ function Get-AgentBudgetUsageSnapshot {
             try {
                 $run = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $runFile.FullName -Raw -Encoding UTF8)
             } catch {
+                continue
+            }
+
+            if (Test-FixtureRecord -Record $run) {
                 continue
             }
 

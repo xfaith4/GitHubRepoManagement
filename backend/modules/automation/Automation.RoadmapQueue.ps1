@@ -37,6 +37,10 @@
 # the relocation, and the two long-standing PSScriptAnalyzer findings they carry
 # (plural noun, ShouldProcess) would have moved from "existing debt" to "new".
 
+# Lane 0.22: the queue's default follows the output root, so a gate that moves
+# all of output\ moves the queue with it. REPO_MGMT_QUEUE_PATH still wins.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 function Get-RoadmapQueuePath {
     <#
     .SYNOPSIS
@@ -59,7 +63,7 @@ function Get-RoadmapQueuePath {
     $override = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_QUEUE_PATH')
     if (-not [string]::IsNullOrWhiteSpace($override)) { return $override }
 
-    Join-Path $WorkspaceRoot 'output\roadmap-task-queue.jsonl'
+    Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-queue.jsonl'
 }
 
 function Get-RoadmapDispatchTargets {

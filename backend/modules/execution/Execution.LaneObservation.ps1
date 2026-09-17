@@ -41,6 +41,12 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root, and smoke-fixture
+# agent runs already in the operator's ledger never stand in for a lane's run.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+. (Join-Path $PSScriptRoot '..\common\Fixture.Records.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 $script:LaneObservationRunsRelDir = 'output\roadmap-task-history\runs'
@@ -462,10 +468,11 @@ function Get-LaneObservationMap {
 
     $agentRunsByDispatchId = @{}
     if ($dispatchIds.Count -gt 0) {
-        $agentRunsDir = Join-Path $WorkspaceRoot $script:LaneObservationAgentRunsRelDir
+        $agentRunsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:LaneObservationAgentRunsRelDir
         foreach ($file in @(Get-ChildItem -LiteralPath $agentRunsDir -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
             $record = _LaneObs_ReadJson -Path $file.FullName
             if ($null -eq $record) { continue }
+            if (Test-FixtureRecord -Record $record) { continue }
             $recordDispatchId = _LaneObs_Str -Obj $record -Name 'dispatchRunId'
             if (-not (_LaneObs_HasText $recordDispatchId)) { continue }
             if ($dispatchIds -notcontains $recordDispatchId) { continue }
@@ -485,7 +492,7 @@ function Get-LaneObservationMap {
         }
     }
 
-    $runsDir = Join-Path $WorkspaceRoot $script:LaneObservationRunsRelDir
+    $runsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:LaneObservationRunsRelDir
     foreach ($entry in $running) {
         $repoName = _LaneObs_Str -Obj $entry -Name 'repoName'
         if (-not (_LaneObs_HasText $repoName)) { continue }

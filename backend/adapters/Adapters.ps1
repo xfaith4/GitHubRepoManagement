@@ -15,6 +15,8 @@ if (-not (Get-Command Invoke-BoundedGitCommand -ErrorAction SilentlyContinue)) {
 # api-host's module list, so it cannot assume the function is already in scope.
 if (-not (Get-Command Get-PortalSettingsPath -ErrorAction SilentlyContinue)) {
     . (Join-Path $PSScriptRoot '..\modules\common\Config.SettingsPath.ps1')
+# Lane 0.22: the adapters' default output directories follow the output root.
+. (Join-Path $PSScriptRoot '..\modules\common\Config.OutputRoot.ps1')
 }
 
 # ---------------------------------------------------------------------------
@@ -305,7 +307,7 @@ function Invoke-ReconcileAdapter {
         . (Join-Path $PSScriptRoot '..\modules\common\Logging.ps1')
 
         if (-not $OutDir) {
-            $OutDir = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'output\reconcile-adapter'
+            $OutDir = Resolve-OutputPath -WorkspaceRoot (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) -RelativePath 'output\reconcile-adapter'
         }
 
         Write-StructuredLog -Level Info -Component adapter.reconcile -Operation $operation -CorrelationId $correlationId -Message 'Starting reconcile adapter call' -Details @{ LocalRoots = $LocalRoots; GitHubOwner = $GitHubOwner; OutDir = $OutDir } -LogPath $LogPath
@@ -375,7 +377,7 @@ function Invoke-DocReviewAdapter {
         . (Join-Path $PSScriptRoot '..\modules\common\Logging.ps1')
 
         if (-not $OutDir) {
-            $OutDir = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'output\docreview-adapter'
+            $OutDir = Resolve-OutputPath -WorkspaceRoot (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) -RelativePath 'output\docreview-adapter'
         }
         $inventoryDir = Join-Path $OutDir 'inventory'
         $queueDir = Join-Path $OutDir 'queue'

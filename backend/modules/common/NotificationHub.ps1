@@ -28,6 +28,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot 'Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
@@ -43,12 +47,12 @@ $script:SupportedEvents    = @('scan.completed', 'repair.applied', 'execution.fa
 
 function _GetWebhooksPath {
     param([string]$WorkspaceRoot)
-    return Join-Path $WorkspaceRoot $script:WebhooksFile
+    return Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:WebhooksFile
 }
 
 function _EnsureOutputDir {
     param([string]$WorkspaceRoot)
-    $dir = Join-Path $WorkspaceRoot 'output'
+    $dir = Get-OutputRoot -WorkspaceRoot $WorkspaceRoot
     New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue | Out-Null
 }
 

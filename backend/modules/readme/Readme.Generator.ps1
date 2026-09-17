@@ -15,6 +15,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 $script:ReadmeGenerationHistoryDir = 'output\readme-generation-history'
@@ -354,12 +358,12 @@ function Write-ReadmeGenerationHistoryEntry {
         [Parameter(Mandatory)]$Entry
     )
 
-    $historyDir = Join-Path $WorkspaceRoot $script:ReadmeGenerationHistoryDir
+    $historyDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:ReadmeGenerationHistoryDir
     if (-not (Test-Path -LiteralPath $historyDir)) {
         New-Item -ItemType Directory -Path $historyDir -Force | Out-Null
     }
 
-    $historyPath = Join-Path $WorkspaceRoot $script:ReadmeGenerationHistoryLog
+    $historyPath = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:ReadmeGenerationHistoryLog
     $json = $Entry | ConvertTo-Json -Depth 10 -Compress
     Add-Content -LiteralPath $historyPath -Value $json -Encoding UTF8
 }
@@ -382,7 +386,7 @@ function Get-ReadmeGenerationHistory {
     if ($Limit -lt 1)   { $Limit = 1 }
     if ($Limit -gt 100) { $Limit = 100 }
 
-    $historyPath = Join-Path $WorkspaceRoot $script:ReadmeGenerationHistoryLog
+    $historyPath = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:ReadmeGenerationHistoryLog
     if (-not (Test-Path -LiteralPath $historyPath)) {
         return @()
     }

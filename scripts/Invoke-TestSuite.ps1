@@ -341,6 +341,11 @@ Invoke-ScriptGate -Name 'Applicability' -ScriptPath (Join-Path $WorkspaceRoot 't
 # 3.7 M4c - the milestone's own check line.
 Invoke-ScriptGate -Name 'Action routing' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'action-routing', '-FailOnError')
 
+# Lane 0.22, 2026-09-16 - the milestone's own check line. Every output\ path goes
+# through the output root, every host-starting gate isolates it, and the smoke
+# fixtures already in the operator's ledgers stay out of the operational views.
+Invoke-ScriptGate -Name 'Fixture isolation' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FixtureIsolation.ps1') -ScriptArgs @('-FailOnError')
+
 # Validator R024 - a built or verified milestone's check is a step CI runs; the
 # milestone's own check line. The rule itself also runs inside the lint below.
 Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError')

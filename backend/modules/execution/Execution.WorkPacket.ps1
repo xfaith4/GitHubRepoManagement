@@ -36,6 +36,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # Bump only for a breaking shape change, and only alongside a reader that can
@@ -333,7 +337,7 @@ function Get-WorkPacketPath {
         [Parameter(Mandatory)][string]$WorkspaceRoot,
         [Parameter(Mandatory)][string]$TaskId
     )
-    return (Join-Path $WorkspaceRoot ('output\work-packets\{0}.workpacket.json' -f $TaskId))
+    return (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath ('output\work-packets\{0}.workpacket.json' -f $TaskId))
 }
 
 <#
@@ -652,7 +656,7 @@ function Get-ExecutionResultPath {
         [Parameter(Mandatory)][string]$WorkspaceRoot,
         [Parameter(Mandatory)][string]$TaskId
     )
-    return (Join-Path $WorkspaceRoot ('output\roadmap-task-history\runs\{0}.result.json' -f $TaskId))
+    return (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath ('output\roadmap-task-history\runs\{0}.result.json' -f $TaskId))
 }
 
 <#

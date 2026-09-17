@@ -20,6 +20,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
@@ -39,8 +43,8 @@ $script:HistoryLog       = 'output/readme-standardization-history/standardizatio
 function _EnsureOutputDirs {
     param([string]$WorkspaceRoot)
     $dirs = @(
-        (Join-Path $WorkspaceRoot $script:HistoryDir),
-        (Join-Path $WorkspaceRoot $script:BackupDir)
+        (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:HistoryDir),
+        (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:BackupDir)
     )
     foreach ($dir in $dirs) {
         New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue | Out-Null
@@ -290,7 +294,7 @@ function Invoke-ApplyReadmeStandardization {
         try {
             $timestamp    = (Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
             $backupName   = "README.$RepoName.$timestamp.md"
-            $backupDest   = Join-Path $RepoPath $script:BackupDir $backupName
+            $backupDest   = Join-Path (Resolve-OutputPath -WorkspaceRoot $RepoPath -RelativePath $script:BackupDir) $backupName
             Copy-Item -LiteralPath $readmePath -Destination $backupDest -Force
             $backedUpPath  = $backupDest
             $backupSuccess = $true
@@ -314,7 +318,7 @@ function Invoke-ApplyReadmeStandardization {
 
     # ---- Append history entry ----
     try {
-        $historyPath = Join-Path $RepoPath $script:HistoryLog
+        $historyPath = Resolve-OutputPath -WorkspaceRoot $RepoPath -RelativePath $script:HistoryLog
         $entry = [pscustomobject]@{
             previewId   = $PreviewId
             repoName    = $RepoName

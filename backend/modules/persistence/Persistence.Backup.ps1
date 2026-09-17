@@ -32,11 +32,14 @@
 
 Set-StrictMode -Version Latest
 
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 function Get-AppDbBackupDir {
     [CmdletBinding()]
     [OutputType([string])]
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
-    return Join-Path $WorkspaceRoot 'output\backups\app-db'
+    return Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\backups\app-db'
 }
 
 function Test-AppDbBackup {
@@ -115,7 +118,7 @@ function New-AppDbBackup {
     }
 
     if ([string]::IsNullOrWhiteSpace($BackupDir)) { $BackupDir = Get-AppDbBackupDir -WorkspaceRoot $WorkspaceRoot }
-    $outputRoot = [System.IO.Path]::GetFullPath((Join-Path $WorkspaceRoot 'output'))
+    $outputRoot = [System.IO.Path]::GetFullPath((Get-OutputRoot -WorkspaceRoot $WorkspaceRoot))
     $backupDirFull = [System.IO.Path]::GetFullPath($BackupDir)
     if (-not $backupDirFull.StartsWith($outputRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw ("Backup dir '{0}' resolves outside {1}; backups stay inside output\." -f $BackupDir, $outputRoot)
