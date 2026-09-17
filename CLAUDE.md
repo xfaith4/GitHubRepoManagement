@@ -21,6 +21,11 @@
   unmerged at once; a third item is built on its branch and its PR waits
   for a slot. Neither authorization extends
   to other repositories, where the merge is the operator's call.
+- Roadmap work runs as `claude --agent roadmap-lead` (Fable). The lead
+  delegates to two Haiku helpers, `roadmap-scout` (read-only discovery) and
+  `roadmap-builder` (mechanical edits); all three are defined in
+  `.claude/agents/`. It must be the main session, because a subagent cannot
+  delegate. The item fields they read are defined in `ROADMAP.md` §3.
 - A scheduled wakeup must carry its own verification command inline, because
   the wakeup prompt is the only text guaranteed to be in context when it
   fires. Write it as an end-state to verify, never as a list of steps.

@@ -13,119 +13,549 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-09-14
+**Last updated:** 2026-09-17
 
-Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
-as is every completed milestone from the releases and lanes still open below.
-Their full text lives in
+Releases 0.4 through 2.6, 2.8, 3.0 and 3.8 are **engineering-complete and
+archived**, as is every completed milestone from the releases and lanes still
+open below. Their full text lives in
 [`docs/history/completed-releases.md`](docs/history/completed-releases.md).
 
 **This file carries open work only.** Every checkbox in it is something still
 to do — if an item is `[x]` here it is a mistake, not a record (rule restored
 by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 
-**Current focus (next agent actions), in order.** Every item here is agent-closable;
-the operator queue is a separate file. Take the first `[ ]` and open a PR.
+**Current focus (next agent actions), in order.** Every item here is
+agent-closable; the operator queue is a separate file. Take the first `[ ]`
+that carries no `(depends: …)` list and open a PR. Every item uses the fields
+defined in §3. The lead agent's runbook is
+[`.claude/agents/roadmap-lead.md`](.claude/agents/roadmap-lead.md).
 
-- [ ] **Lane 0.22 — test fixtures never reach live state.** 175 of 192 live
-      agent-run records are the api-host smoke's `dispatch-success-smoke`. They
-      are most of the green "100 agent runs" badge, and a smoke fixture leads
-      the packaged work queue. The smoke writes the real agent-run ledger, the
-      packaging queue, work packets, run summaries and `app.db`. Isolate those
-      roots as `REPO_MGMT_INDEX_ROOT` did for the index, and keep the records
-      already written out of every operational view. Built on
-      `lane-022-fixture-isolation`: `REPO_MGMT_OUTPUT_ROOT` moves all of
-      `output\`, and the listed fixtures are hidden when the operator's own
-      root is read. _(state: built)_
+- [ ] [[L22-FIX]] **Lane 0.22 — test fixtures never reach live state.** _(state: built)_
+      **Why:** 175 of 192 live agent-run records were the api-host smoke's
+      `dispatch-success-smoke`, and 251 of 257 packaged items were
+      `smoke-packaging-repo`. The smoke wrote the real agent-run ledger, the
+      packaging queue, work packets, run summaries and `app.db`.
+      **Built:** on `lane-022-fixture-isolation`, stacked on #309.
+      `REPO_MGMT_OUTPUT_ROOT` moves all of `output\`, every host-starting
+      gate sets it, and the named fixtures are hidden when the operator's own
+      root is read. Every local gate passed, and a full api-host smoke run
+      left the live ledgers unchanged.
+      **Next:** when #309 merges, rebase onto `origin/main`, open the PR, and
+      archive this item once its check is green in CI on the PR head.
+      **PR:** review — it wires a suite gate; it waits for a free slot.
       `check: pwsh ./tests/Test-FixtureIsolation.ps1 -FailOnError`
-- [ ] **Lane 0.22 — one dispatch-eligibility rule, enforced everywhere.** The
-      Dispatch Board read "Ready" for repositories Today holds for uncommitted
-      changes, for a curated-out archived repository, for one whose own detail
-      reads "blocked", and for folders not in the index. One server-side rule
-      answers `{ ok, reasons[] }`. The board lists only eligible items and
+- [ ] [[L22-ELIG]] **Lane 0.22 — one dispatch-eligibility rule, enforced everywhere.** _(state: planned)_
+      **Why:** the Dispatch Board read "Ready" for repositories that Today
+      holds for uncommitted changes, for a curated-out archived repository,
+      for one whose own detail reads "blocked", and for folders not in the
+      index.
+      **Do:** one server-side function answers `{ ok, reasons[] }` per
+      repository from the index, curation, dispatch blockers and the hold
+      conditions Today uses (computed client-side today, in
+      `frontend/lib/repoHolds.ts`). The board lists only eligible items and
       collapses the rest into "N held (why)". Every Dispatch control is
-      disabled with its reason when `ok` is false. _(state: planned)_
+      disabled with its reason when `ok` is false.
+      **Done when:** each of the four cases above answers `ok: false` with a
+      named reason; an eligible fixture answers `ok: true`; the board and the
+      repository detail read the same answer.
+      **Start at:** `backend/modules/execution/Execution.Ledger.ps1`
+      (`dispatchReadiness`, `Get-ExecutionQueueSummary`),
+      `backend/modules/portfolio/Portfolio.Curation.ps1`,
+      `frontend/lib/repoHolds.ts`, `frontend/components/ExecutionQueuePanel.tsx`,
+      `frontend/components/OperationsWorkspaceView.tsx` (Dispatch Readiness,
+      Dispatch Blockers).
+      **Not:** a second copy of the rule in the frontend; it renders
+      `reasons[]`.
+      **Split:** scout — every place that computes or shows readiness, holds
+      or blockers; lead — the rule and its test; builder — repoint each
+      consumer at the rule.
+      **PR:** review — a suite gate, and it changes what a verdict says.
       `check: pwsh ./tests/Test-DispatchEligibility.ps1 -FailOnError`
-- [ ] **D-012 — the permission envelope binds.** For every adapter, a post-run
-      diff touching any `forbiddenPaths` entry (`.github/workflows/**`) fails the
-      packet by name and the branch is not pushed; provider-native sandboxing is
-      a second layer, never the only one. An agent that needs CI changed writes
-      the proposal to `.github/workflows-proposed/` and names it as waiting. A
-      packet that needs the network declares an allowlist the owner approves;
-      `network false` is never loosened silently. _(state: planned)_
+- [ ] [[D012-ENV]] **D-012 — the permission envelope binds.** _(state: planned)_
+      **Do:** after every adapter run and before push, diff the branch
+      against its base. A path matching the packet's `forbiddenPaths`
+      (`.github/workflows/**`) fails the packet by name, and the branch is
+      not pushed. An agent that needs CI changed writes the proposal to
+      `.github/workflows-proposed/`, and the run names it as waiting. A
+      packet that needs the network declares an allowlist the owner
+      approves; `network: false` is never loosened without it.
+      **Done when:** a fixture run that touches `.github/workflows/ci.yml`
+      fails by name and is not pushed; the same change under
+      `.github/workflows-proposed/` passes and is reported as waiting; a
+      packet without an allowlist cannot turn the network on.
+      **Start at:** `scripts/Invoke-RoadmapTaskRunner.ps1`
+      (`Resolve-PostImplementationTransition`, `Invoke-RunnerBranchPush`),
+      `backend/modules/execution/Execution.WorkPacket.ps1` (`forbiddenPaths`),
+      `backend/modules/agent-adapters/`, `backend/config/agent-providers.json`.
+      **Not:** relying on a provider's own sandbox. It is a second layer,
+      never the only one.
+      **Split:** scout — every push path and every adapter's permission
+      flags; lead — the diff check and its test.
+      **PR:** review — a suite gate, config and agent permissions.
       `check: pwsh ./tests/Test-PermissionEnvelope.ps1 -FailOnError`
-- [ ] **Accept/reject ledger (steering extension 1, Rung 1).** Every next action
-      and top value item is a prediction; every response to one — accept,
-      reject, edit — is a label. Capture each with the prediction it answers and
-      the index SHA and `modelVersion` it was drawn under, so the leverage
-      panel's "not captured" figure becomes a computed one and the scorer's
-      weights (D-013) have evidence to be revisited against. _(state: planned)_
+- [ ] [[T37-LEDGER]] **Accept/reject ledger (steering extension 1, Rung 1).** _(state: planned)_
+      **Why:** every next action and top value item is a prediction, and no
+      response to one is recorded. The leverage panel therefore shows "not
+      captured", and the D-013 weights have no evidence to be revisited
+      against.
+      **Do:** an append-only ledger under the output root
+      (`Resolve-OutputPath`). Each accept, reject or edit is stored with the
+      prediction it answers and the index SHA and `modelVersion` that
+      prediction was drawn under. The leverage panel computes its "not
+      captured" figure from the ledger.
+      **Done when:** a recorded response reads back with all three keys; a
+      response to an unknown prediction is refused by name; the leverage
+      payload reports the metric as available once one response exists.
+      **Start at:** `backend/modules/portfolio/Portfolio.Leverage.ps1`
+      (`Get-PortfolioLeverage`, its `available = $false` metrics),
+      `backend/modules/portfolio/Portfolio.Conclusion.ps1`
+      (`Get-PortfolioConclusionsPayload`, `_PC_NextActionFor`),
+      `backend/modules/common/Config.OutputRoot.ps1`.
+      **Split:** scout — every surface that shows a next action or a top
+      value item; lead — the ledger, its route and its test.
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-DecisionLedger.ps1 -FailOnError`
-- [ ] **3.7 / M5 prep — previews staged, not applied.** For each `strengthen`
-      repository in the cohort, generate the preview its next action produces and
-      stage it under the gitignored `output/trials/release-3.7/previews/`. The
-      tracked record in `evidence/trials/release-3.7/` holds only the action, route,
-      preview hash and state, never repository text, because this repository is
-      public. An AI-routed preview is staged as a confirmation request naming the
-      provider and the file; the agent sends nothing. The operator approves from
-      the queue, and each response lands in the ledger above. _(state: planned)_
-      `check: pwsh ./tests/Test-TrialPreviews.ps1 -Cohort evidence/trials/release-3.7/cohort.json -RequireAll`
-- [ ] **Portfolio brief and conclusion diff (steering extension 5, Rung 1).**
-      Diff two conclusion payloads by index SHA and render the movement as prose
-      with the evidence chain under every claim — one exported file a reader who
-      has never seen the product can act on. Deterministic; any narration is
-      constrained to the evidence lines and marked as narration.
-      _(state: planned)_
+- [ ] [[T37-PREV]] **3.7 / M5 prep — previews staged, not applied.** (depends: T37-LEDGER) _(state: planned)_
+      **Do:** for each `strengthen` repository in the cohort, generate the
+      preview its next action produces and stage it under the gitignored
+      `output/trials/release-3.7/previews/`. The tracked record in
+      `evidence/trials/release-3.7/` holds only the action, route, preview
+      hash and state, never repository text, because this repository is
+      public. An AI-routed preview is staged as a confirmation request that
+      names the provider and the file; the agent sends nothing. Responses
+      land in the `T37-LEDGER` ledger.
+      **Done when:** every `strengthen` repository in `cohort.json` has a
+      staged preview or a named reason for having none; no tracked file
+      holds repository text; no AI route was called.
+      **Start at:** `evidence/trials/release-3.7/cohort.json` and its
+      `README.md`, `backend/config/foundation-domains.json`
+      (`actionsByCase`, the preview each kind of gap routes to).
+      **Not:** waiting for OQ-12. If the live index predates it, stage
+      against the current index, record its `modelVersion`, and restage
+      once OQ-12 is logged.
+      **Split:** scout — the `strengthen` repositories and their next-action
+      routes from `cohort.json`; lead — staging, the record and the
+      no-repository-text guard.
+      **PR:** review — a suite gate and trial evidence.
+      `check: pwsh ./tests/Test-TrialPreviews.ps1 -Cohort evidence/trials/release-3.7/cohort.json -RequireAll -FailOnError`
+- [ ] [[T37-BRIEF]] **Portfolio brief and conclusion diff (steering extension 5, Rung 1).** _(state: planned)_
+      **Do:** diff two conclusion payloads by index SHA and render the
+      movement as prose with the evidence chain under every claim: one
+      exported file that a reader who has never seen the product can act
+      on. Deterministic; any narration is limited to the evidence lines and
+      marked as narration.
+      **Done when:** two fixture payloads produce the same brief on every
+      run; every claim cites the evidence line it rests on; an unchanged pair
+      produces a brief that says nothing moved.
+      **Start at:** `backend/modules/portfolio/Portfolio.Conclusion.ps1`
+      (`Get-PortfolioConclusionsPayload`; each conclusion carries
+      `modelVersion` and the index SHA).
+      **Split:** lead alone; a scout may collect two real payloads to model
+      the fixtures on.
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-PortfolioBrief.ps1 -FailOnError`
-- [ ] **One manifest walk (steering extension 4).** Repo type, the technology
-      profile and kind signals are three walkers over the same files. One scan
-      produces all three views, so they cannot drift and a checkout is read once.
-      _(state: planned)_
+- [ ] [[MANIFEST]] **One manifest walk (steering extension 4).** _(state: planned)_
+      **Why:** repository type, the technology profile and kind signals are
+      separate walkers over the same files, so they can drift, and a
+      checkout is read more than once.
+      **Do:** one scan produces all three views.
+      **Done when:** a fixture repository is read once, and all three views
+      match what today's walkers produce for it.
+      **Start at:** `backend/modules/portfolio/Portfolio.Assessment.ps1`
+      (`_DetectRepoTypeForStructure`, `Get-RepoTechnologyProfile`),
+      `backend/modules/roadmap/Roadmap.Evaluator.ps1` (`_DetectRepoType`, a
+      second type detector), `backend/modules/portfolio/Portfolio.KindSignals.ps1`
+      (`Get-RepoKindSignalProfile`).
+      **Not:** changing any view's output. This is a refactor with a parity
+      test.
+      **Split:** scout — every caller of the four functions; lead — the
+      walker and the parity test.
+      **PR:** review — a suite gate, and every kind verdict reads it.
       `check: pwsh ./tests/Test-ManifestWalk.ps1 -FailOnError`
-- [ ] **Lane 0.19 — surface the operator queue in the console.**
-      `operatorOnlyItemCount` is produced and read nowhere. Render
-      `docs/governance/operator-queue.md` as a Verify tab so parked work is
-      visible somewhere other than this file. _(state: planned)_
-      `check: pwsh ./tests/Test-ApiHostSmoke.ps1 -Route /api/operator-queue`
-- [ ] **3.8 / D-001 — dependency notion.** Optional, single-repo, acyclic,
-      keyed on stable item ids, gating dispatch eligibility. Schema + parser +
-      cycle check. Does not wait on the trial: it changes what the contract
-      *can express*, not what runs. _(state: planned)_
+- [ ] [[D001-DEPS]] **D-001 — dependencies gate eligibility everywhere.** (depends: L22-ELIG) _(state: planned)_
+      **Already built** (Lane 0.18, archived): the `[[id]]` and
+      `(depends: …)` notation, the unknown-id and cycle findings
+      (ROADMAP-013/014), `Get-NextEligibleRoadmapItem`, and the execution
+      contract's `dependencies` check. Confirm all of that before writing
+      code.
+      **Do:** add `dependsOn` to the item definition in
+      `standards/roadmap/roadmap-contract.schema.json` and its
+      `spec/roadmap-contract/` copy (the sync gate covers both). Make an
+      incomplete dependency one of `L22-ELIG`'s `reasons[]`, so ranking,
+      packaging and the board all skip a blocked item.
+      **Done when:** a fixture roadmap with `[[A]]` open and
+      `[[B]] (depends: A)` never ranks, packages or offers B; a roadmap
+      without the notation ranks exactly as before; the schema accepts an
+      item that carries `dependsOn`.
+      **Start at:** `backend/modules/roadmap/Roadmap.Dependencies.ps1`,
+      `backend/modules/roadmap/Roadmap.ExecutionContract.ps1`,
+      `backend/modules/portfolio/Portfolio.ValueScorer.ps1`,
+      `backend/modules/automation/Automation.RoadmapPackaging.ps1`
+      (`Get-PackagedItemQueue`).
+      **PR:** review — a suite gate and the managed-roadmap contract.
       `check: pwsh ./tests/Test-RoadmapDependencies.ps1 -FailOnError`
-- [ ] **D-022 (1) — one lifecycle the operator sees.** Needs plan → Plan needs
-      approval → Ready for agents → Agent working → In review → Healthy /
-      Archived, with flags beside it (Uncommitted changes, CI failing, Behind
-      remote, Docs gap). The three steering conclusions stay the model's output;
-      the consistency table maps every operator state to the conclusion it
-      agrees with. L-levels and hold codes become detail. Amends steering in the
-      same PR. Decided first because the next three render these states.
-      _(state: planned)_
+- [ ] [[L21-POLL]] **Lane 0.21 — polls never pile up behind a slow host.** _(state: planned)_
+      **Why:** `/api/agent-runs` returned the same 147 KB seven times in one
+      load.
+      **Do:** one poll helper. The next poll starts only when the previous
+      one settles (a `setTimeout` chain, not `setInterval`); each call has an
+      `AbortController` timeout; the interval backs off while calls are slow;
+      polling pauses while `document.hidden`. `/api/agent-runs` answers with
+      an ETag or a `since=` cursor.
+      **Done when:** every poll site uses the helper, and the test finds the
+      sites itself rather than listing them; a slow fake host never has two
+      calls in flight; a hidden document makes no calls.
+      **Start at:** `frontend/components/Dashboard.tsx` (its poll timers and
+      the `getPortfolioScanStatus` loop), `frontend/services/apiClient.ts`
+      (existing `AbortController` use).
+      **Split:** scout — list every `setInterval` and polling `setTimeout` in
+      `frontend/`; lead — the helper and its test; builder — move each site
+      onto the helper.
+      **PR:** engineering; the `since=` cursor is a small API change inside
+      the same PR.
+      `check: npx vitest run frontend/lib/pollLoop.test.ts`
+- [ ] [[L21-SCANDONE]] **Lane 0.21 — a finished scan reaches the page.** _(state: planned)_
+      **Why:** the scan ended at 05:17:15 and the snapshot regenerated at
+      05:19:05, but the header still read "Last scan 01:09 AM · 64.0s scan ·
+      9m ago".
+      **Do:** when scan status moves to `completed`, the page refetches the
+      snapshot, the assessment and status. A failed background refresh
+      retries at that point instead of logging the same warning twice. A
+      host with no index answers `GET /api/operations/repos` with 409 until
+      the first scan lands; the page shows that as waiting for the first scan
+      and refetches when the scan finishes.
+      **Done when:** a `completed` status triggers exactly one refetch of each
+      of the three; a 409 renders the waiting state, not an error.
+      **Start at:** `frontend/components/Dashboard.tsx` (the
+      `getPortfolioScanStatus` poll, which today refreshes only operations
+      repos), `frontend/components/PortfolioSummarySection.tsx` ("Last
+      scan").
+      **PR:** engineering.
+      `check: npx vitest run frontend/lib/scanCompletionRefresh.test.ts`
+- [ ] [[L21-AUTOSCAN]] **Lane 0.21 — "Auto-scan off" means no scan on load.** _(state: planned)_
+      **Why:** the page showed Auto-scan off and started a background
+      re-scan on load anyway.
+      **Do:** with auto-scan off, the page serves the cached index and offers
+      the scan. With it on, the startup re-scan is labelled as one.
+      **Done when:** the startup policy starts no scan when auto-scan is off
+      and starts a labelled one when it is on.
+      **Start at:** `frontend/components/Dashboard.tsx` (`scanSchedule.enabled`,
+      `startPortfolioScan`). Since #309 the assessment route can also start
+      the worker (`scanRequested` in its payload); find out which of the two
+      is the load-time scan before changing either.
+      **Split:** lead alone: one policy function and its test.
+      **PR:** engineering, unless the fix lands in the host.
+      `check: npx vitest run frontend/lib/startupRefreshPolicy.test.ts`
+- [ ] [[L21-LAZY]] **Lane 0.21 — hidden tabs cost nothing at startup.** _(state: planned)_
+      **Why:** sixteen calls fire in parallel on load, including
+      `operations/repos` (548 KB), `automation/packages` (374 KB) and
+      `roadmap/index` (56 KB) for tabs that are not open.
+      **Do:** those three load when their tab opens. Startup marks each phase
+      (auth, bootstrap, snapshot, scan start and end) with
+      `performance.mark` and writes one `console.debug` line, so a slow
+      reload explains itself.
+      **Done when:** a startup on Today makes none of the three calls;
+      opening each tab makes its call once; the phase marks appear in order.
+      **Start at:** `frontend/components/Dashboard.tsx` (the startup effects
+      that call `getOperationsRepos` and `getRoadmapIndex`).
+      **Split:** scout — every call fired on mount and the tab that uses its
+      result; lead — the loading change and its test.
+      **PR:** engineering.
+      `check: npx vitest run frontend/lib/startupPhases.test.ts`
+- [ ] [[L21-TIME]] **Lane 0.21 — every wire timestamp is ISO 8601 UTC.** _(state: planned)_
+      **Why:** scan status returned `09/15/2026 05:13:42`, culture-formatted
+      with no zone, and `generatedAt` in `repos.index.json` has the same
+      shape. PowerShell 7 turns ISO strings into `DateTime` on read, and
+      `[string]` then formats them in the machine's culture.
+      **Do:** every writer emits `.ToUniversalTime().ToString('o')`. A
+      tripwire reads the raw JSON of each route payload (never
+      `ConvertFrom-Json` output, which hides the defect) and fails on any
+      timestamp without a zone.
+      **Done when:** the tripwire finds its own targets, fails on a planted
+      culture-formatted value, and passes on the tree.
+      **Start at:** `Get-PortfolioScanState` and the scan-status route in
+      `backend/api-host/Start-RepoManagementApiHost.ps1`;
+      `Save-PortfolioIndexArtifacts` in
+      `backend/modules/portfolio/Portfolio.Assessment.ps1` (`generatedAt`);
+      `tools/Test-PortfolioTimestamp.ps1`, the existing raw-wire checker.
+      **Split:** scout — every serialized field whose name ends in `At`,
+      `Time` or `Date`, with its writer; builder — convert each writer the
+      lead confirms; lead — the tripwire.
+      **PR:** review — a suite gate.
+      `check: pwsh ./tests/Test-WireTimestamps.ps1 -FailOnError`
+- [ ] [[L21-FIRST]] **Lane 0.21 — the first screen is honest and short.** _(state: planned)_
+      **Why:** before the snapshot arrived, counts read "Sample data source"
+      with zeros. Today's "Blocking a lane" ran the page to 23,641 px:
+      Portfolio-Forge had four cards, and `roadmap-no-checklist` appeared
+      nine times.
+      **Do:** counts show placeholders until the snapshot arrives. "Blocking
+      a lane" shows one card per repository with its reasons as tags. Below
+      about 900 px, ranking rows move "Rank basis" into an expandable row,
+      and header badges move into a menu instead of wrapping. Each tab's code
+      loads on demand (`import()`), off the 858 KB first bundle.
+      **Done when:** a repository with four holds renders one card with four
+      tags; no zero renders before the snapshot; each tab is its own chunk in
+      `npm run build`.
+      **Start at:** `frontend/components/TodayView.tsx` ("Blocking a lane",
+      `HoldCard`), `frontend/components/Dashboard.tsx` ("Sample data
+      source"), `frontend/components/DashboardViewTabs.tsx` (`VIEW_META`).
+      **PR:** engineering.
+      `check: npx vitest run frontend/components/TodayView.test.tsx`
+- [ ] [[L22-WORK]] **Lane 0.22 — only actionable roadmap lines become work.** _(state: planned)_
+      **Why:** "Ready" candidates included "Code is implemented", "Monorepo
+      structure created", "Work one bounded slice at a time.", a "(Deferred)
+      … Not needed for v1" line and truncated fragments. One item completed
+      and was re-assigned 17 seconds later.
+      **Do:** before ranking, classify each candidate `actionable |
+      done-statement | deferred | guidance | fragment`. Only `actionable` is
+      ranked, queued or offered for dispatch, and each repository shows
+      "Excluded (n)" with the reason for each line. A run that completes
+      writes its item back as done, and the same item hash cannot be
+      dispatched again inside a cooldown unless the operator overrides.
+      **Done when:** each quoted example classifies as its kind; a completed
+      item is not re-offered inside the cooldown; an override works and is
+      recorded.
+      **Start at:** `backend/modules/portfolio/Portfolio.ValueScorer.ps1`,
+      `backend/modules/automation/Automation.RoadmapPackaging.ps1`,
+      `backend/modules/roadmap/Roadmap.WriteBack.ps1`.
+      **Not:** committing lines from other repositories as fixtures; this
+      repository is public. Write synthetic fixtures modelled on the quoted
+      examples.
+      **PR:** review — a suite gate, and it changes which work the product
+      offers.
+      `check: pwsh ./tests/Test-WorkItemQuality.ps1 -FailOnError`
+- [ ] [[L22-STUCK]] **Lane 0.22 — stuck work is detected, not noticed.** _(state: planned)_
+      **Why:** the runner heartbeat was 27.6 h old (shown as "99293.3s"), a
+      lane had run 1,655 minutes, and a run dispatched six days earlier had
+      no branch and no PR. None of it reached Today.
+      **Do:** each state has a limit. Stuck means: a runner heartbeat older
+      than N minutes while approved work waits; a lane past its limit; a
+      dispatch with no branch after 24 h; an approval that never reached the
+      queue; a scan stuck in one phase. Each surfaces once, on Today, with
+      its remedy (start runner, poll GitHub, re-enqueue or discard, cancel and
+      requeue). Durations read "27h", never "99293.3s" or "1655m".
+      **Done when:** each of the five fixtures is reported once with its
+      remedy; a healthy fixture reports nothing; the three quoted durations
+      render in hours.
+      **Start at:** `backend/modules/execution/Execution.LaneObservation.ps1`
+      (the D-007 patience thresholds), the `GET /api/roadmap/runner` route in
+      `backend/api-host/Start-RepoManagementApiHost.ps1`.
+      **Not:** failing, cancelling or completing anything automatically. A
+      stuck verdict is a signal (D-007), and the operator still clicks to
+      complete a lane (D-009); the card shows the merge verdict and the
+      matching action. The assessment asked for completion on merge
+      evidence, which would reverse D-009; that is the owner's call, so file
+      it in `open-decisions.md` rather than build it.
+      **PR:** review — a suite gate.
+      `check: pwsh ./tests/Test-StuckWork.ps1 -FailOnError`
+- [ ] [[L22-SNAP]] **Lane 0.22 — one snapshot, one denominator, honest zeros.** _(state: planned)_
+      **Why:** one session read 0, 59, 72, 71 and 1 as the repository count.
+      After a reload, Today said "No repositories are indexed yet" while
+      Operations said "Indexed entries: 59", and the Operation Log said "Scan
+      complete. No repositories found." and then "Operation completed
+      successfully."
+      **Do:** every count reads the same snapshot: generated-at, discovered,
+      in scope, excluded, scanned and failed. A scan that finds 0
+      repositories is a warning, never "completed successfully", and the
+      last good snapshot stays on screen labelled with its time. An
+      unmeasured value renders "—" with its reason, never 0. The Grid's
+      empty state never asks for a workspace path that is already set.
+      **Done when:** every count surface renders from one snapshot fixture
+      and agrees; a zero-repository scan renders a warning and keeps the
+      prior snapshot; an unmeasured field renders "—".
+      **Start at:** `frontend/services/apiClient.ts` (`getPortfolioSnapshot`),
+      `frontend/components/PortfolioSummarySection.tsx`,
+      `frontend/lib/todayRanking.ts` ("No repositories are indexed yet"),
+      `frontend/components/OperationsWorkspaceView.tsx` ("Indexed entries"),
+      `frontend/components/Dashboard.tsx` ("No repositories found"),
+      `frontend/components/LogPanel.tsx`.
+      **Split:** scout — every rendered repository count and the field it
+      reads; lead — the shared selector and its test; builder — repoint each
+      surface.
+      **PR:** engineering.
+      `check: npx vitest run frontend/lib/portfolioSnapshot.test.ts`
+- [ ] [[L22-CTRL]] **Lane 0.22 — a control does what its label says.** _(state: planned)_
+      **Do:** a "Preview…" next action opens the preview, not the generic Run
+      Evaluation modal. Header popovers close on Escape and outside click. A
+      disabled control, including the Local/GitHub switch during a scan,
+      says why. The "Runner stalled … Use Start runner" banner carries the
+      button. Settings never shows "Checking…" or an empty provider list
+      indefinitely: it times out into a stated error.
+      **Done when:** each of the five behaviours has a component test.
+      **Start at:** `frontend/components/Dashboard.tsx` (its `onRunAction`
+      opens `RepoEvaluationModal`), `frontend/components/RunnerHealthIndicator.tsx`,
+      `frontend/components/SettingsModal.tsx` ("Checking…"),
+      `frontend/hooks/useDialogDismiss.ts` (Escape and outside click).
+      **Split:** builder — wire the popovers to the existing hook; lead —
+      the rest.
+      **PR:** engineering.
+      `check: npx vitest run frontend/components/HeaderPopovers.test.tsx`
+- [ ] [[L22-LABEL]] **Lane 0.22 — labels match what they count.** _(state: planned)_
+      **Do:** "N need you" counts repositories, not holds × codes (it read 63
+      for 59 repositories). "Blocking a lane" appears only where work is
+      under way and stopped. L0-Absent is never shown for a repository whose
+      roadmap exists (one read L0-Absent, "No roadmap file present", while
+      its roadmap scored 55). Help's "first pass" names tabs that exist.
+      "Insufficiently understood" shows its cause in plain words, for example
+      that the roadmap is prose, not a checklist.
+      **Done when:** each of the five has a unit test on the function that
+      produces the label.
+      **Start at:** `frontend/lib/repoHolds.ts` (`describeHoldCount`),
+      `frontend/components/TodayView.tsx`, `frontend/lib/glossary.ts`
+      (L0-Absent), `frontend/components/OutcomeCard.tsx`,
+      `frontend/components/HelpModal.tsx` ("first pass"),
+      `frontend/lib/foundationConclusion.ts`.
+      **Not:** hiding a wrong level in the UI. If the audit assigns L0-Absent
+      to a repository whose roadmap exists, fix the audit; that part is a
+      review PR.
+      **PR:** engineering.
+      `check: npx vitest run frontend/lib/glossary.test.ts`
+- [ ] [[L22-TREND]] **Lane 0.22 — Insights reports a gap as a gap.** _(state: planned)_
+      **Do:** a missing or failed snapshot breaks the trend line instead of
+      plotting 0%, and a delta's colour follows its direction (a −32.3% badge
+      rendered green). Raw keys (`DifferentialChangedCount`,
+      `differential-noop`, `awaiting-first-scan`) move behind a "Scan
+      diagnostics" disclosure. Release-number copy ("Release 2.3 scaffold")
+      leaves the UI. "Failing Actions" agrees with repository detail. Team
+      Activity is scoped to the owner or removed.
+      **Done when:** a series with a gap renders a break; a negative delta
+      renders in the negative colour; no raw key renders outside the
+      disclosure.
+      **Start at:** `frontend/lib/portfolioTrendView.ts`,
+      `frontend/components/InsightsView.tsx` ("Release 2.3 scaffold"),
+      `frontend/components/ChangeHistoryPanel.tsx` (Team Activity).
+      **Split:** scout — every place a raw key or a release number renders;
+      lead — the rest.
+      **PR:** engineering.
+      `check: npx vitest run frontend/lib/portfolioTrendView.test.ts`
+- [ ] [[L22-DETAIL]] **Lane 0.22 — repository detail agrees with itself.** (depends: L22-ELIG) _(state: planned)_
+      **Why:** README 95 sat next to "README file not found", and "blocked"
+      sat above "Dispatch Blockers (0)".
+      **Do:** each panel shows loading, unavailable or error, never a stale
+      score beside "not found". Raw errors ("No operations repo record found
+      for repoId …") become operator language with a Retry. Three conditions
+      become flags: failing CI, a default branch pointing at an agent
+      branch, and two local repositories on one remote.
+      **Done when:** each panel's states render from fixtures, and neither
+      quoted contradiction can render.
+      **Start at:** `frontend/components/OperationsWorkspaceView.tsx` (README
+      score, Dispatch Readiness, Dispatch Blockers); `duplicateIdentities`
+      from `Group-RepoByRemoteIdentity`
+      (`backend/modules/portfolio/Portfolio.Scope.ps1`) for the one-remote
+      flag.
+      **PR:** engineering.
+      `check: npx vitest run frontend/components/OperationsWorkspaceView.test.tsx`
+- [ ] [[L22-GRID]] **Lane 0.22 — nothing unfinished in production, and filters stay visible.** _(state: planned)_
+      **Do:** remove the "Clone PLANNED" and "Archive PLANNED" controls.
+      Active filters show as removable chips, and "Clear filters" also clears
+      the ones under Advanced. A Doc Readiness row carries one primary action
+      plus an overflow menu, not eight buttons. The Dependencies tab (a
+      technology inventory, which developers read as package dependencies)
+      is renamed or folded into repository detail.
+      **Done when:** no rendered control carries a planned marker; each
+      active filter renders a chip; "Clear filters" empties the Advanced set;
+      a Doc Readiness row has one primary button.
+      **Start at:** `frontend/components/ActionBar.tsx` (the planned
+      controls), `frontend/components/RepoGrid.tsx` ("Clear filters", the
+      Advanced filters), `frontend/components/WorkQueueView.tsx` (Doc
+      Readiness rows).
+      **Not:** restructuring the tabs; D-022 (3) does that. Make the smallest
+      honest change.
+      **PR:** engineering.
+      `check: npx vitest run frontend/components/RepoGrid.test.tsx`
+- [ ] [[D022-1]] **D-022 (1) — one lifecycle the operator sees.** (depends: L21-POLL, L21-SCANDONE, L21-AUTOSCAN, L21-LAZY, L21-TIME, L21-FIRST, L22-FIX, L22-ELIG, L22-WORK, L22-STUCK, L22-SNAP, L22-CTRL, L22-LABEL, L22-TREND, L22-DETAIL, L22-GRID) _(state: planned)_
+      **Why first:** D-022 (2) to (4) render these states. D-022's
+      sequencing holds it until Lanes 0.21 and 0.22 are finished, so nothing
+      is built into the new shape while it still shows a known false state.
+      **Do:** Needs plan → Plan needs approval → Ready for agents → Agent
+      working → In review → Healthy / Archived, with flags beside it
+      (Uncommitted changes, CI failing, Behind remote, Docs gap). The three
+      steering conclusions stay the model's output; the consistency table
+      maps every operator state to the conclusion it agrees with. L-levels
+      and hold codes become detail. Amend `docs/governance/steering.md` in
+      the same PR.
+      **Done when:** every repository in a fixture index resolves to exactly
+      one operator state; every state maps to an agreeing conclusion; a
+      disagreement without an explanation fails.
+      **Start at:** `_ResolveLifecycleState` in
+      `backend/modules/portfolio/Portfolio.Assessment.ps1`, the D-020
+      consistency table, `tests/Test-FoundationConclusions.ps1`
+      (`-Assert lifecycle-consistency`), D-020 and D-022 in
+      `docs/governance/open-decisions.md`.
+      **PR:** review — it amends steering.
       `check: pwsh ./tests/Test-OperatorLifecycle.ps1 -FailOnError`
-- [ ] **D-022 (2) — Today as an exception inbox.** A system banner only when
-      something is abnormal; decisions grouped by type with bulk actions; actions
-      only the operator can take; stuck work with remedies; the next five
-      eligible items; a digest; everything else collapsed to counts. KPIs:
-      Decisions waiting · Stuck · Ready for agents. First to build.
-      _(state: planned)_
+- [ ] [[D022-2]] **D-022 (2) — Today as an exception inbox.** (depends: D022-1) _(state: planned)_
+      **Do:** a system banner only when something is abnormal; decisions
+      grouped by type, with bulk actions; actions only the operator can take;
+      stuck work with its remedies (from `L22-STUCK`); the next five eligible
+      items (from `L22-ELIG`); a digest; everything else collapsed to counts.
+      KPIs: Decisions waiting · Stuck · Ready for agents. The first D-022
+      surface to build.
+      **Done when:** a healthy fixture renders no banner; each section
+      renders from fixtures; each KPI counts what its name says.
+      **Start at:** `frontend/components/TodayView.tsx`,
+      `frontend/lib/todayRanking.ts`.
+      **Not:** a banner on a healthy landing.
+      **PR:** engineering.
       `check: npx vitest run frontend/components/TodayInbox.test.tsx`
-- [ ] **D-022 (3) — four destinations.** Today · Portfolio (Grid + Operations,
-      Doc Readiness as a filter, technology as a column) · Work · Trends, plus a
-      System drawer, Settings, Help and the source switch. One repository drawer
-      (Overview · Plan · Work · History) reachable from every repository name.
-      Lane 0.19's operator queue lives in Today or the System drawer, not a tab.
-      _(state: planned)_
+- [ ] [[D022-3]] **D-022 (3) — four destinations.** (depends: D022-1, D022-2) _(state: planned)_
+      **Do:** Today · Portfolio (Grid + Operations, Doc Readiness as a
+      filter, technology as a column) · Work · Trends, plus a System drawer,
+      Settings, Help and the source switch. One repository drawer (Overview ·
+      Plan · Work · History) opens from every repository name.
+      **Done when:** navigation renders exactly the four destinations and the
+      utilities; every rendered repository name opens the drawer.
+      **Start at:** `frontend/components/DashboardViewTabs.tsx` (`VIEW_META`),
+      `frontend/App.tsx`, `frontend/components/Dashboard.tsx` (`DASH-SPLIT`
+      makes this cheaper).
+      **Split:** scout — every place a repository name renders; lead —
+      navigation and the drawer; builder — wire each name to the drawer.
+      **PR:** engineering.
       `check: npx vitest run frontend/components/AppNavigation.test.tsx`
-- [ ] **D-022 (4) — one Work pipeline.** Proposed → Approved → Queued → Running
-      → In review → Done, plus a Needs-attention lane; the trace is each card's
-      detail and its broken-link diagnosis is the card's status; one "Send to
-      agent" with a preview and a provider choice. Lanes retire as an operator
-      concept; the lane count is a Settings knob if anything. _(state: planned)_
+- [ ] [[D022-4]] **D-022 (4) — one Work pipeline.** (depends: D022-1, D022-3) _(state: planned)_
+      **Do:** Proposed → Approved → Queued → Running → In review → Done, plus
+      a Needs-attention lane. The trace is each card's detail, and its
+      broken-link diagnosis is the card's status. One "Send to agent" with a
+      preview and a provider choice. Lanes retire as an operator concept; the
+      lane count is a Settings knob if anything.
+      **Done when:** every run and packaged item in a fixture lands in
+      exactly one column; a broken trace link shows as the card's status;
+      only the Work destination offers "Send to agent" (D-008).
+      **Start at:** `frontend/components/ExecutionQueuePanel.tsx`,
+      `frontend/components/WorkItemTraceModal.tsx`,
+      `frontend/components/CopilotTaskPreviewModal.tsx`,
+      `frontend/lib/packagedItems.ts`.
+      **PR:** engineering.
       `check: npx vitest run frontend/components/WorkPipeline.test.tsx`
-- [ ] **D-022 (5) — proposals with the operator upstream.** The operator picks N
-      repositories and triggers "Generate proposals" with a cost preview and the
-      egress confirmation; the review queue shows a side-by-side diff with
-      keyboard approve, reject and skip, and each response lands in the ledger.
-      Nothing is generated in the background. _(state: planned)_
+- [ ] [[L19-VERIFY]] **Lane 0.19 — the operator queue is visible in the console.** (depends: D022-2) _(state: planned)_
+      **Why:** `operatorOnlyItemCount` is produced per repository and read
+      nowhere, and `docs/governance/operator-queue.md` is visible only in
+      this repository.
+      **Do:** a route returns the queue's rows (Id, Needs, Action, Ratchets),
+      parsed from the file, and Today renders them as its group of actions
+      only the operator can take (D-022 (2)). Per D-022 (3) it is never a tab
+      of its own.
+      **Done when:** the route returns every row of a fixture queue, and an
+      empty list rather than an error when the queue is empty; Today renders
+      the rows.
+      **Start at:** `docs/governance/operator-queue.md` (the table),
+      `scripts/Add-OperatorVerification.ps1` (the writer, D-016). A new
+      route also has to pass the route census and the deadline tiers.
+      **PR:** review — a suite gate.
+      `check: pwsh ./tests/Test-OperatorQueueRoute.ps1 -FailOnError`
+- [ ] [[D022-5]] **D-022 (5) — proposals with the operator upstream.** (depends: D022-2, T37-LEDGER) _(state: planned)_
+      **Do:** the operator picks N repositories and triggers "Generate
+      proposals" with a cost preview and the egress confirmation. The review
+      queue shows a side-by-side diff with keyboard approve, reject and skip,
+      and each response lands in the `T37-LEDGER` ledger.
+      **Done when:** no proposal is generated without the trigger and the
+      confirmation; a private-scope repository is never sent; each keyboard
+      response writes one ledger row.
+      **Start at:** the preview-first AI routes, the private-scope setting
+      (M4c's no-one-click-egress rule), `frontend/components/DocReviewModal.tsx`.
+      **Not:** background generation (the 2026-09-14 no-one-click-egress
+      ruling).
+      **PR:** review — a suite gate and AI egress.
       `check: pwsh ./tests/Test-ProposalBatch.ps1 -FailOnError`
 
 **Forward arc.** Releases 3.0-3.5 describe the finished product: dispatch that
@@ -133,7 +563,7 @@ runs, the loop closing legibly and without a hand-off, numbers an operator can
 act on, an 80+ repo portfolio that feels immediate, unattended operation.
 Release 3.6 extends it to "every repository ends with an explainable
 conclusion"; Release 3.7 makes the product prove, on ten real repositories,
-that it returns more time than it takes. Release 3.8 makes the execution layer
+that it returns more time than it takes. Release 3.8 made the execution layer
 provider-aware, so that proof is not capped by one agent's subscription.
 
 ---
@@ -231,11 +661,37 @@ and `[x]` means the item leaves this file for the archive in the same PR.
 promotion boundary — merge to the protected default branch on an operator-approved
 verified head SHA — is unchanged and lives in §8; it gates *merge*, not *the next item*.
 
-**Milestone format.** One bullet, action-first, with the check on its own line:
+**Milestone format.** One bullet, action-first. The first line holds a stable
+`[[ID]]`, the bold title, any `(depends: ID, ID)` list and the state clause,
+because the roadmap parser reads the id, the dependencies and the state from
+that line (D-001 notation, `backend/modules/roadmap/Roadmap.Parser.ps1`).
+Fields follow on indented lines, and the `check:` is the last line.
+`L21-POLL` in Current focus is a complete example.
 
-- [ ] Resolve repository kind for `library`, `firmware`, `application`, `experiment`
-      from the index, not just `archived`. _(state: planned)_
-      `check: pwsh ./tests/Test-KindDetection.ps1 -FailOnError`
+| Field | What an agent does with it |
+| --- | --- |
+| `[[ID]]` | Names the item in branches, commits, handoffs and delegation prompts. Never reused. |
+| `(depends: …)` | The item is not eligible while any listed id is still in this file. Archiving an item removes its id from every list in the same PR; an id that names nothing fails the module smoke. |
+| **Why** | The observed evidence. The first failing test reproduces it. |
+| **Do** | The change. |
+| **Done when** | What the `check:` must assert. Write these assertions first and show them failing. |
+| **Start at** | Entry points that existed when the item was written. Confirm them first; they are hints, not the scope. |
+| **Not** | The boundary: what must not change. |
+| **Built**, **Already built**, **Verify first**, **Next** | What already exists, what to confirm before writing code, and the step that remains. |
+| **Split** | Which parts a fast helper can take (scout: read-only discovery; builder: mechanical edits to named files) and which the lead keeps. |
+| **PR** | `engineering` merges on a green check. `review` (config, a CI gate, `docs/governance/`, or what a verdict says) waits for the owner, two at most at a time (D-019). |
+| `check:` | The one command that decides the item. |
+
+An item without **Split** is small enough for the lead alone. A **Done when**
+the `check:` already passes today is not proof: verify the stated condition
+directly.
+
+**The next eligible item, computed.** The product's own selector returns the
+first open item in document order whose dependencies are met:
+
+```powershell
+pwsh -NoProfile -Command '. ./backend/modules/roadmap/Roadmap.Dependencies.ps1; . ./backend/modules/roadmap/Roadmap.Parser.ps1; (Invoke-ParseRoadmapContent -Content (Get-Content ./ROADMAP.md -Raw)).nextPendingItem'
+```
 
 **Checkbox rule.** `[x]` = `verified`. An item whose code is merged but whose field
 proof is unrecorded is `[x]` here and open in the operator queue — two ledgers, no
@@ -280,7 +736,8 @@ its own `check:` and the human half is appended to the operator queue. The valid
 | 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
 | 3.6       | Every Repository Gets an Outcome                                         | `done` — closed 2026-09-14 (D-018 PR 2); see archive. Field proof: OQ-1. Its two non-blockers live on as Current focus M4a and the 2.9 trend accrual |
 | **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
-| **3.8**   | **Provider-Aware Execution**                                             | **`planned`** 2026-09-06 — Codex/Claude/Copilot behind one provider-neutral task contract  |
+| 3.8       | Provider-Aware Execution                                                 | `done` 2026-09-17 — engineering closed and archived; follow-ons `D012-ENV`, `CHECKRUN`     |
+| **3.9**   | **Adaptive Routing**                                                     | **`planned`** 2026-09-08 — routes on evidence; waits for the 3.7 decision (`T37-DECIDE`)   |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
@@ -306,12 +763,13 @@ eligibility. The cohort is unblocked too; see the D-006 note under Release 3.7.
    exposed — kind detection (M4a and its follow-through), limiting foundation
    by kind applicability (M4b), next action by the kind of gap (M4c) — and the
    lifecycle/conclusion consistency contract were verified 2026-09-14 and
-   archived. What remains, in order: the accept/reject ledger, so responses
-   to previews are captured from the first one; M5 prep, staging the
-   previews; the portfolio brief; measured execution; the rollout decision.
-   3.7 needs Ben for the approvals, not for the engineering. Every release
-   from 1.x through 3.6 is engineering-closed; new work is still proposed as a
-   release with its own contract, never appended to a closed one.
+   archived. What remains, in order: `T37-LEDGER`, so responses to previews
+   are captured from the first one; `T37-PREV`, staging the previews;
+   `T37-BRIEF`; measured execution (`T37-EXEC`); the rollout decision
+   (`T37-DECIDE`). 3.7 needs the owner for the approvals (OQ-3), not for the
+   engineering. Every release from 1.x through 3.6, and 3.8, is
+   engineering-closed; new work is still proposed as a release with its own
+   contract, never appended to a closed one.
 2. **Release 2.9 — the active release.** Its engineering half closed
    2026-08-26 (archived); what remains is the operator half, batched and
    waiting on Ben's presence at the machine.
@@ -330,30 +788,29 @@ eligibility. The cohort is unblocked too; see the D-006 note under Release 3.7.
    condition was met; both engineering items shipped the same day (archived),
    and the physical-Android proof rides the operator batch above.
 
-**Where Release 3.8 sits — after the trial, not before it.** The value trial
-measures the delivery loop as it exists; Release 3.8 changes what runs inside
-that loop. Defining it now (2026-09-06, from the
-[execution-governance spec](docs/governance/Agent-Execution-Governance.md)) is
-deliberate: the trial's false positives and bad recommendations then land
-against a named target instead of an unwritten one. Two of its dependencies are
-already satisfiable in parallel — D-001's dependency notion and D-003's
-`Checks: Read` grant — and both are listed in the map below.
+**Release 3.8 closed 2026-09-17 (engineering; archived).** Its work packet,
+capacity ledger, provider routing, push-and-approve binding, remediation and
+event vocabulary run today, so the value trial measures the loop with them in
+it. Two follow-ons stay open as their own items: `D012-ENV` (the permission
+envelope binds) and `CHECKRUN` (check-run detail; the D-003 grant itself is
+OQ-5). **Release 3.9 waits for the trial decision** (`T37-DECIDE`): it routes
+on evidence, and only executed work produces that evidence.
 
 **Dependency map (agent-closable work only; operator rows live in
-[`operator-queue.md`](docs/governance/operator-queue.md)):**
+[`operator-queue.md`](docs/governance/operator-queue.md)).** The
+`(depends: …)` lists on the items are authoritative; this table explains them.
 
-| Open item                                 | Depends on                                             | Type               |
-| ----------------------------------------- | ------------------------------------------------------ | ------------------ |
-| 3.7 accept/reject ledger                  | nothing                                                | none               |
-| 3.7 M5 previews staged                    | the ledger; OQ-12 (live index carries kind signals)    | soft — sequencing  |
-| 3.7 portfolio brief                       | nothing — two conclusion payloads already exist        | none               |
-| 3.7 measured execution + rollout decision | operator approvals (queue item OQ-3)                   | **operator queue** |
-| One manifest walk                         | nothing                                                | none               |
-| 3.8 D-001 dependency notion               | nothing                                                | none               |
-| 3.8 provider-aware scheduler              | 3.7 rollout decision; D-003 grant (OQ-5)               | soft — sequencing  |
-| Lane 0.19 verify tab                      | nothing                                                | none               |
-| Lane 0.5 tab disclosure                   | product decision — `open-decisions.md`                 | hard — design      |
-| 2.9 trend accrual                         | calendar time                                          | time-gated         |
+| Open item                                   | Depends on                                                  | Type               |
+| ------------------------------------------- | ----------------------------------------------------------- | ------------------ |
+| `T37-LEDGER`, `T37-BRIEF`, `MANIFEST`       | nothing                                                     | none               |
+| `T37-PREV` previews staged                  | `T37-LEDGER`; OQ-12 (live index carries kind signals)       | soft — sequencing  |
+| `T37-EXEC`, `T37-DECIDE`                    | `T37-PREV`; the owner's approvals (OQ-3)                    | **operator queue** |
+| `D001-DEPS` dependencies gate eligibility   | `L22-ELIG`, which owns the one eligibility rule             | hard — code        |
+| `D022-1` to `D022-5`                        | every open Lane 0.21 and 0.22 item (D-022 sequencing)       | hard — decided     |
+| `L19-VERIFY` operator queue in the console  | `D022-2`: it renders in Today, never as a tab (D-022)       | hard — decided     |
+| Release 3.9 (`T39-*`)                       | `T37-DECIDE`                                                | soft — sequencing  |
+| `CHECKRUN` check-run detail                 | nothing (recorded fixtures); the live grant is OQ-5         | none               |
+| 2.9 trend accrual                           | calendar time                                               | time-gated         |
 
 ---
 
@@ -377,8 +834,8 @@ machine. The engineering half is closed: the three foundations-first items
 (the two readiness gates that disagreed about the same repo, the two routes
 that named one concept two ways, the L1/L2 repair path) closed 2026-08-26
 ([evidence](evidence/verified/release-2.9-foundations-closed-2026-08-26.md));
-the two mobile engineering items shipped 2026-08-19. Engineering attention
-moves to Release 3.6.
+the two mobile engineering items shipped 2026-08-19. Engineering attention is
+on Current focus.
 
 ---
 
@@ -431,42 +888,21 @@ operator's device on the LAN.
 
 - Touch ergonomics (device-keyed ~44px floor + `DefinitionHint`) and the tap-through agent-run list (`AgentRunSheet`) — both `smoke-tested` 2026-08-19; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 
-**Field proof — one elevated (SYSTEM) session covers all three:**
-
-- [ ] Deploy the Release 2.7 Phase D freeze prevention to the live service —
-      only the install remains. **Measured 2026-08-20:** the running service
-      is missing **4 of 52** declared GET routes (it predates Release 3.5);
-      one elevated command upgrades it
-      (`Install-RepoManagementService.ps1 -Action Repair`) and
-      [`Test-LiveServiceCurrency.ps1`](scripts/Test-LiveServiceCurrency.ps1)
-      proves whether it landed rather than trusting a health check. What
-      exists:
-      [`Install-RepoManagementService.ps1`](scripts/Install-RepoManagementService.ps1),
-      [`Install-PortalWatchdog.ps1`](scripts/service/Install-PortalWatchdog.ps1),
-      [`Watch-PortalHealth.ps1`](scripts/service/Watch-PortalHealth.ps1),
-      covered by the module smoke's installer and watchdog gates. _(state:
-      smoke-tested → needs an elevated Windows install)_
-      `check: pwsh ./scripts/Test-LiveServiceCurrency.ps1`
-
-**Field proof — one authenticated operator session covers all three:**
+**Field proof is operator work, and it lives in the queue.** The live service
+install is OQ-4, the real `gh agent-task` run through the runner is OQ-6, and
+the device proof is OQ-7. Their agent halves are
+[archived](docs/history/completed-releases.md#closed-2026-09-17-archived-from-roadmapmd-before-the-agent-ready-rewrite);
+no engineering milestone is open in this release.
 
 - One real `claude` run through the runner — `operator-verified`, proven three times (PRs #140/#142, scheduled 2026-08-18); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-- [ ] One real **copilot** entry through the runner — `gh agent-task create`
-      reaches a live task, URL in the run summary. Closes the Release 3.0
-      residual. _(state: built. Requires `gh auth login` and **no**
-      `GH_TOKEN`/`GITHUB_TOKEN` set; gh ignores stored OAuth when one is.)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - Release 3.1's scheduled-trigger loop proof — `operator-verified` 2026-08-18 ([evidence](evidence/verified/scheduled-loop-proof-2026-08-18.md)); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-
-**Field proof — credential / calendar:**
-
 - Release 2.1 operator sign-off — `operator-verified` 2026-08-18 against the live `output/app.db`; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-- [ ] Let the Release 2.3 Phase 2 trend windows accrue: `GET /api/portfolio/trend`
-      reports a real 7-day, then 90-day, window. _(state: 7-day closed by
-      accrual 2026-08-18, `availableDays: 20`, verified live; 90-day filling
-      (20/90) — keep
-      [`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1) running.)_
-      `check: pwsh ./scripts/Invoke-DailyEvidence.ps1`
+
+**Trend accrual is calendar time, not a milestone** (kind 4 in
+[`kinds-of-work.md`](docs/governance/kinds-of-work.md)). `GET
+/api/portfolio/trend` has reported a real 7-day window since 2026-08-18, and
+the 90-day window fills as long as
+[`Invoke-DailyEvidence.ps1`](scripts/Invoke-DailyEvidence.ps1) keeps running.
 
 #### Acceptance criteria
 
@@ -514,10 +950,12 @@ half depends on none of these.
   path — were **resequenced 2026-08-23** to the top of the engineering
   milestones above. They are the release's current focus, not its residue.
 - Runner stop marker (`Stop-RoadmapTaskRunner.ps1`) and the smoke's queue isolation (`Get-RoadmapQueuePath` + `REPO_MGMT_QUEUE_PATH`) — both **fixed 2026-08-20**; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
-- [ ] **[non-blocker]** `Dashboard.tsx` is ~1,750 lines of hooks and handlers
-      above the return; Release 3.5 deferred the Operations panels' full
-      stale-keeps-last-good rendering to this refactor. _(inherited 2.7 →
-      3.2 → 3.3 → here)_
+- [ ] [[DASH-SPLIT]] **[non-blocker]** Split `frontend/components/Dashboard.tsx` (2,084 lines, mostly hooks and handlers above the return). _(state: planned)_
+      Release 3.5 deferred the Operations panels' full stale-keeps-last-good
+      rendering to this refactor (inherited 2.7 → 3.2 → 3.3 → here).
+      Extract the data hooks by destination, so `D022-3` has seams to cut
+      along. Behaviour stays identical, and `npx vitest run frontend` stays
+      green. **PR:** engineering.
 - The intermittent `L0-Absent` packaging failure — **root-caused and fixed 2026-08-19 (PR #167)**, `Wait-ForPortfolioIndex -RequireAuditedMaturity`; [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 
 ---
@@ -613,20 +1051,31 @@ carries `modelVersion` and the index SHA it was drawn under.
 
 **Still open:**
 
-- [ ] **Execute at least five improvements** through preview → approve →
-      execute → validate, recording operator minutes, agent first-pass
-      result, and whether the repository is materially stronger afterwards —
-      appropriate-as-is or archive counts as a conclusion outcome, not automatically
-      as one of the five improvements. Each counted improvement needs an
-      independently checked acceptance criterion and before/after evidence;
-      merge evidence alone is insufficient. _(state: planned)_
-      `check: pwsh ./tests/Test-TrialExecution.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MinCountedImprovements 5`
-- [ ] **Adjust and decide** — every false positive or bad recommendation the
-      executed improvements expose is either fixed as a rule change carrying
-      `observedOn` or recorded with its reason, and the go/no-go for the full
-      rollout is recorded with the leverage numbers behind it. The check asserts
-      that record, never a distribution over the cohort (steering §6).
-      _(state: planned)_
+- [ ] [[T37-EXEC]] **Execute at least five improvements.** (depends: T37-PREV) _(state: planned)_
+      **Do:** for each preview the owner approves (OQ-3 records the
+      approvals and the minutes), run the product's own execute → validate
+      path, and record per repository in `cohort.json`: operator minutes,
+      the agent's first-pass result, an independently checked acceptance
+      criterion, before/after evidence, and whether the repository is
+      materially stronger afterwards. Appropriate-as-is or archive is a
+      conclusion outcome, not one of the five.
+      **Done when:** five repositories carry a counted improvement with every
+      field above. Merge evidence alone never counts.
+      **Not:** waiting idle for approvals. Build the recorder and the check
+      against fixtures, leave the item `built`, and take the next item.
+      **PR:** review — a suite gate and trial evidence.
+      `check: pwsh ./tests/Test-TrialExecution.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MinCountedImprovements 5 -FailOnError`
+- [ ] [[T37-DECIDE]] **Adjust and decide.** (depends: T37-EXEC) _(state: planned)_
+      **Do:** fix every false positive or bad recommendation the executed
+      improvements expose as a rule change carrying `observedOn`, or record
+      it with its reason. Write the rollout record: the leverage numbers and
+      a go/no-go recommendation. The go/no-go itself is the owner's call;
+      file it in `docs/governance/open-decisions.md` with the recommendation
+      as the stated default.
+      **Done when:** the record exists with its numbers and names its
+      decision entry. The check asserts that record, never a distribution
+      over the cohort (steering §6).
+      **PR:** review — governance and trial evidence.
       `check: pwsh ./tests/Test-TrialDecision.ps1 -Cohort evidence/trials/release-3.7/cohort.json -FailOnError`
 
 #### Acceptance criteria
@@ -663,291 +1112,14 @@ repositories and records the tenth category as having no cohort member.
 
 ---
 
-### Release 3.8 — Provider-Aware Execution
-
-**Status:** done — all six engineering milestones and Lane 0.18 items
-complete 2026-09-11. The design authority is
-[`docs/governance/Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md);
-this block carries only milestones and gates. It supersedes the 2026-07-07
-decisions in [`docs/execution-orchestrator-design.md`](docs/execution-orchestrator-design.md),
-whose P0 is the only part ever built. Follows Release 3.7 — the value trial
-measures the loop that exists, and this release changes what runs inside it.
-
-**Goal:** the work contract becomes provider-neutral and the scheduler becomes
-provider-aware. A task carries objective, scope, acceptance criteria,
-verification and a permission envelope, and says nothing about which agent runs
-it; the orchestrator chooses between Codex, Claude Code and GitHub Copilot on
-eligibility and remaining subscription capacity, records why, and returns work
-to the queue — never fails it — when a provider is exhausted.
-
-#### Product outcomes
-
-- Roadmap work keeps moving when one provider hits a limit, because
-  `CAPACITY_WAIT` is a normal operating state rather than a failed run.
-- No subscription is unexpectedly exhausted by ordinary roadmap work: each
-  provider keeps a configured reserve only remediation may consume.
-- The operator approves a **verified head SHA**, not a pull request number, and
-  execution below that line needs no per-step attendance.
-
-#### Engineering milestones
-
-- [ ] **Give a task a provider-neutral contract and a structured result.** A
-      `WorkPacket` (objective, scope paths, acceptance criteria, verification
-      commands, permission envelope) persisted outside the commit-eligible tree,
-      which each adapter renders into its own prompt.
-      [`Roadmap.Dispatcher.ps1`](backend/modules/roadmap/Roadmap.Dispatcher.ps1)
-      builds prose today and nothing reads a result back. A run producing no
-      structured `ExecutionResult` fails by name instead of reaching
-      `awaiting-review`. _(state: built 2026-09-07 — H38-01 WorkPacket schema v1
-      under output/work-packets/; H38-02 dispatch and approval both save one and
-      carry workPacketPath; H38-03 ExecutionResult schema v1, a headless run with
-      no/invalid result is failed by name; H38-04 Adapter.Claude.ps1 parses
-      stream-json, session_id and usage recorded on the run's result.json;
-      H38-05 ConvertTo-WorkPacketPrompt renders the packet with criteria
-      verbatim, enforcement waits on D-012)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Persist capacity per provider, in the provider's own unit.** Named
-      windows with `remainingRatio`, `resetAt` and a confidence rank; reserves
-      and ranking weights live in `backend/config/`, not in code.
-      [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1) keeps the
-      portfolio work-unit quota and gains no token conversion it cannot source.
-      A limit re-queues the task with workspace, branch, attempt and session
-      intact. _(state: built 2026-09-07 — H38-07 added
-      agent-providers.json (schemaVersion v1) and Get-AgentProviderConfig;
-      ranking weights and tieBreak are the decided D-013 values; corrected the
-      same day — `providers.<name>.supported` replaces `enabled`, a repository fact
-      CI can verify, because whether a provider is installed and funded is
-      per-installation state detected at runtime and shown in Settings, never
-      committed on every operator's behalf; H38-08
-      Execution.ProviderCapacity.ps1 — one record per provider under
-      output/provider-capacity/, native units preserved, confidence from the
-      spec's six-source ladder, and a merge that refuses to let a worse source
-      overwrite a better one; H38-09 Resolve-ProviderCapacityVerdict applies the
-      D-011 reserves (15% short, 20% weekly, decided 2026-09-07 and no longer
-      provisional; remediation may use the weekly reserve; operator override
-      recorded in the reason) — enforcement stays OFF because the per-task cost
-      estimate is still a guess, so verdicts are recorded and refuse nobody;
-      H38-10 a matched limit signal writes status=queued with capacityWait and
-      sets the provider's cooldownUntil — branch, attempt and session survive,
-      and the run does not commit; before this a limit fell through to
-      verify-commit-push and called an exhausted subscription ready for
-      review; H38-11 Test-RunnerClaimAllowed — no claim during cooldown or with
-      the one local slot busy, an unknown target refused by name rather than run
-      as claude, auto deferred to the router; a running summary counts only
-      while the heartbeat pid is live, and startup marks orphans
-      failed/orphaned with branch and session kept; H38-12 usage observations
-      accumulate as rank-4 evidence without ever moving a window ratio — token
-      telemetry is not subscription capacity — and GET /api/providers reports
-      the record, the verdict and its reason per provider; H38-13 closed the
-      milestone — six module-smoke sections green in one run, capacity and
-      cooldown documented in local-task-runner.md, and the delivery-loop
-      addendum names where a wait is persisted)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Route between providers, and add the Codex adapter.** One registry
-      replaces the `claude`/`copilot` pair hardcoded in
-      [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1),
-      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) and
-      `frontend/types.ts`, and reconciles the third vocabulary
-      (`operator-runner`) the approval route writes. Eligibility then ranking,
-      selection reason recorded, presence counts derived from the registry
-      rather than naming providers. _(state: built 2026-09-08 —
-      H38-14 Execution.ProviderRegistry.ps1 is the one token list (claude,
-      codex, copilot, auto); the queue module and the runner delegate to it,
-      and the two ValidateSet attributes that cannot are gated against it so
-      drift fails a smoke rather than rejecting a valid provider unnoticed;
-      Invoke-QueuedTask now refuses a known token it has no branch for, so the
-      wider vocabulary cannot run Claude Code in codex's place; H38-15
-      seven-function adapter contract gated per supported provider, naming
-      every missing function at once; Adapter.Copilot.ps1 holds the three moved
-      runner functions unchanged, asserted byte-identical, and a cloud dispatch
-      now writes an ExecutionResult like every other provider; H38-15b provider
-      availability detected per installation (PATH probe, and deliberately no
-      authentication — proving an account works would spend its quota) and
-      surfaced in GET /setup/prerequisites, which the setup wizard already
-      renders, plus GET /api/providers; the operator opt-out lives in an
-      untracked installation.local.json that a gate refuses to let become
-      tracked; H38-16 Adapter.Codex.ps1 from a synthetic codex exec --json
-      transcript, with the thread id and the terminal turn matched exactly
-      rather than by pattern — item.id and item.completed both match the loose
-      forms and mean something else entirely; the runner runs codex tasks
-      through the same branch, launch, parse, verify and commit path, with the
-      provider held in a variable at every launch and ledger site so a codex
-      run is never recorded, rested or billed as a claude one; H38-17
-      Resolve-ProviderSelection is eligibility THEN ranking with the reason
-      recorded — every Stage 1 condition is kept per candidate whether it
-      passed or failed and the first failure becomes ineligibleBecause, so a
-      provider that is never chosen is explainable without reading a log;
-      Stage 2 weights eight factors each normalised to [0,1] and a tie names
-      the rule that broke it. An unenforced capacity verdict is recorded as
-      advisory and does not exclude, because D-011 left the per-task estimate
-      provisional and refusing work on a guessed cost would block real
-      execution on an unmeasured number. The runner resolves `auto` at CLAIM
-      time, not enqueue time, since capacity and cooldowns move in between,
-      and writes selectedProvider and selectionReason onto the run summary;
-      with no eligible provider the entry stays queued rather than failing.
-      dispatch.autoEnabled and defaultTarget are now true/auto (D-013), and
-      the config tripwire inverted to guard that rather than disappearing;
-      H38-18 dispatch/execute takes a target (default from config, auto
-      refused when the config disables it), approval reports the real token,
-      backlog is counted per registry token — queuedClaude/queuedCopilot
-      unchanged; H38-19 ProviderToken union, queuedByProvider on the presence
-      payload, preview names the intended provider; H38-19b Settings shows each
-      provider as available, not installed, switched off or not in this build,
-      and the opt-out writes per-machine state that is never committed.)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
-      SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
-      opens the pull request and monitors CI on a cadence without holding an
-      execution slot — which also closes Lane 0.17's open "nothing refreshes the
-      board" non-blocker. A head change after verification invalidates
-      `READY_FOR_OPERATOR`. Merge stays an explicit operator action.
-      _(state: built 2026-09-08 — H38-21 `Resolve-PostImplementationTransition`
-      and `Invoke-RunnerBranchPush` in
-      [`scripts/Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
-      push after a complete, verified result (`autoPush` per provider, default on
-      for local providers); awaiting-review survives at off or on push failure,
-      and the default branch is refused before git is asked. H38-22
-      `Invoke-DeliveryReconciliation` and `POST /api/delivery/reconcile` in
-      [`backend/api-host/Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
-      open pending PRs with the host's token and refresh CI; the runner calls it
-      every fourth poll. H38-23 `Invoke-AgentRunRefresh` in
-      [`backend/modules/agent-runs/AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1)
-      records `prHeadSha` and `verifiedHeadSha` only when CI passed on that exact
-      head; a moved head clears it and emits `run.head-moved`. H38-24
-      `POST /api/agent-runs/{id}/approve` stores `operatorApproval` bound to
-      `verifiedHeadSha`, and `Get-MergeReadinessEvaluation` in
-      [`backend/modules/agent-runs/MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1)
-      refuses `no-verified-head`, `no-operator-approval` and
-      `head-moved-since-approval`. H38-25 the merge control in
-      [`frontend/components/OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
-      shows and approves the verified SHA and disables on head drift. H38-24b
-      risk-based independent review in
-      [`backend/modules/execution/Execution.ReviewPolicy.ps1`](backend/modules/execution/Execution.ReviewPolicy.ps1)
-      — high risk requires a different provider, medium risk requires one on
-      four named triggers, and the reviewer is never the implementer. All six
-      are gated in
-      [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1)
-      and [`OperationsWorkspaceView.test.tsx`](frontend/components/OperationsWorkspaceView.test.tsx))_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Remediate from evidence, and hand off between providers.** Attempt and
-      remediation counts survive a restart; a CI failure builds a
-      `RemediationPacket`, resumes the original session where capacity allows,
-      and otherwise transfers a `HandoffPacket` of durable evidence to another
-      eligible provider. No provider depends on another's conversation.
-      _(state: built 2026-09-09 — H38-27 `attempt` and `remediationCount` live on the run summary, written with the claim so a crash cannot lose them, and `Write-RemediationAttempt` in
-      [`backend/modules/execution/Execution.WorkPacket.ps1`](backend/modules/execution/Execution.WorkPacket.ps1)
-      persists the incremented count before it evaluates the cap; an
-      unwritable summary throws rather than returning a verdict. H38-28b
-      provider and model are separate fields across registry, capacity and
-      routing records, with a pre-packet record's model marked inferred rather
-      than observed; every provider declares `unknown` explicitly, because no
-      model identifier is determinable without running a CLI (R12); H38-28
-      `New-RemediationPacket` carries the CI failures as acceptance criteria
-      and the prior session/provider, with the original criteria surviving
-      verbatim as a superset; H38-29 `Resolve-RemediationRoute` resumes the
-      original session when it exists, the provider supports it and
-      remediation capacity allows, and `Resolve-RemediationLaunch` evaluates
-      the cap first so a halted attempt never builds an argument vector;
-      H38-30 `New-HandoffPacket` carries only durable evidence — a
-      `priorResult` holding a transcript is refused by name and by length —
-      and a switch excludes the previous provider through the router's new
-      `-Exclude` and starts a fresh session; H38-31 the reconcile tick enqueues
-      one remediation per failing CI run, idempotent on the Actions run URL,
-      cap checked first, target read from `dispatch.defaultTarget` rather than
-      any literal — the host enqueues and never executes, so resume-versus-
-      handoff stays a claim-time decision made against the capacity that is
-      true then)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Normalize execution events onto the Dispatch Board.** Provider output
-      converts to the canonical `execution.*` vocabulary, reconciled with
-      [`roadmap-events.md`](standards/roadmap/roadmap-events.md) so exactly one
-      is canonical. New states arrive as a mapped dimension in
-      [`status-vocabulary.md`](docs/reference/status-vocabulary.md), keeping the
-      Release 3.5 rule that no two dimensions share a word. Per D-008 this is
-      the one surface that dispatches. _(state: built 2026-09-11 —
-      H38-34 `Execution.Events.ps1` defines the 14-type canonical
-      `execution.*` vocabulary; `New-ExecutionEvent` rejects unknown types so a
-      producer typo fails immediately; `Test-ExecutionEvent` validates all
-      required envelope fields; `Get-DeliveryState` maps run-summary and
-      lane-verdict strings to the ALL_CAPS delivery states from the spec,
-      returns `$null` for unknown inputs, and is case-insensitive.
-      `docs/reference/status-vocabulary.md` now documents the sixth dimension
-      with its full state progression; the ALL_CAPS invariant is gated in the
-      smoke so no delivery state word can collide with the five existing
-      dimensions. `roadmap-events.md` is complementary and non-overlapping:
-      `execution.*` events are per-agent-run step events; `roadmap-events.jsonl`
-      is phase-level lifecycle history.)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Amendments from the execution strategy — the three that are cheap now
-      and expensive later.** Absorbed into
-      [`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
-      on 2026-09-08. These three are in 3.8 **only** because a packet that has
-      not been written yet is their natural home; deferring them means reopening
-      work that has already shipped. Everything else the strategy adds is
-      Release 3.9. **(a)** Cost, duration and first-pass telemetry join the
-      canonical `execution.*` vocabulary as it is defined, not after — adding
-      them later is a second vocabulary migration through the reconciliation
-      that follows it, and no run executed before then can be costed
-      retroactively. **(b)** Provider and model become separate fields before
-      the resume path encodes provider-only session assumptions. **(c)**
-      Risk-based independent review enters the approval flow while that flow is
-      being built, rather than reopening the approve-binds-to-SHA contract and
-      its frontend afterwards. _(state: built 2026-09-11 —
-      **(a)** H38-35: `New-ExecutionCompletedPayload` adds `startTime`,
-      `completionTime`, `durationSeconds`, `cost` (with unit), `firstPassSuccess`,
-      `inputTokens`, `outputTokens`, and `attemptCount` to the
-      `execution.completed` event payload; duration is computed from timestamps
-      when both are present, cost is `$null` when no unit-cost is measurable
-      (subscription allowances carry no per-token price), and the payload
-      attaches to a full `execution.completed` event via `New-ExecutionEvent`.
-      **(b)** Delivered 2026-09-08 as H38-28b. **(c)** Delivered 2026-09-08 as
-      H38-24b.)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-
-#### Acceptance criteria
-
-- A task contract carries no provider-specific execution assumption unless the
-  task genuinely requires a provider-specific capability.
-- A provider at a hard limit is not dispatched; exhaustion re-queues the task
-  rather than failing it, and the task resumes after the window resets.
-- Capacity is persisted per provider in its native unit with no invented token
-  conversion, and survives a restart along with attempt count, session id,
-  cooldown and verified SHA.
-- Provider selection records its reason; a run records the provider, session id
-  and usage it actually consumed.
-- Operator approval names a verified head SHA, and a head change after
-  verification invalidates readiness.
-
-#### Out of scope
-
-- Concurrency above one local execution slot, raised only after capacity
-  accounting, session persistence, CI reconciliation and restart recovery are
-  proven.
-- Automatic merge. The promotion boundary stays an explicit operator action.
-
-**Validation plan:** module smoke covers the pure decision tables — eligibility,
-ranking, capacity arithmetic, handoff construction — offline, in the shape
-`Resolve-LaneObservation` already uses; api-host smoke covers the routes; every
-new gate is proven red against a violating fixture before it is trusted.
-
-**Risks:** an adapter that quietly widens the packet's scope or permission
-envelope (the contract forbids it and a gate asserts it); equating provider
-token telemetry with remaining subscription allowance; reserves set so high that
-ordinary work starves.
-
-**Dependencies:** D-001 for the dependency clause of eligibility; D-003's
-`Checks: Read` grant for check-run-level CI evidence; Release 3.7's trial for
-the measured baseline this release changes.
-
----
-
 ### Release 3.9 — Adaptive Routing
 
 **Status:** planned — defined 2026-09-08. Design authority is
 [`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md),
 which absorbed Ben's _Multi-Provider Agent Execution Strategy_ the same day.
 Follows Release 3.8, and cannot precede it: every milestone here consumes
-telemetry that 3.8 is what starts recording.
+telemetry that 3.8 is what starts recording. It also waits for `T37-DECIDE`:
+the evidence it routes on comes from executed work.
 
 **Goal:** Release 3.8 routes on _capacity_. This release routes on _evidence_.
 The router learns which provider actually completes this repository's workload,
@@ -966,43 +1138,62 @@ answer is deterministic.
 
 #### Engineering milestones
 
-- [ ] **Classify a task before choosing anything to run it.** A task profile —
-      type, complexity, risk, context scope, whether verification exists, whether
-      the work is deterministic — attached at qualification and carried on the
-      WorkPacket. Today `suitability` scores 1.0 when the packet's
-      `preferredProvider` matches the candidate and 0.5 otherwise, which echoes a
-      preference someone already stated rather than deriving one from the task,
-      so the initial routing policy has nothing to attach to. _(state: planned)_
+- [ ] [[T39-PROFILE]] **Classify a task before choosing anything to run it.** (depends: T37-DECIDE) _(state: planned)_
+      **Why:** `suitability` scores 1.0 when the packet's `preferredProvider`
+      matches the candidate and 0.5 otherwise, which repeats a preference
+      someone already stated instead of deriving one from the task.
+      **Do:** a task profile (type, complexity, risk, context scope, whether
+      verification exists, whether the work is deterministic), attached at
+      qualification and carried on the WorkPacket.
+      **Done when:** a profile is derived without reading
+      `preferredProvider`, and the same task always yields the same profile.
+      **Start at:** `backend/modules/execution/Execution.WorkPacket.ps1`,
+      `Resolve-ProviderSelection` in
+      `backend/modules/execution/Execution.ProviderRouter.ps1`.
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-TaskProfile.ps1 -FailOnError`
-- [ ] **`NO_AGENT`: the deterministic tier is a routing outcome, not the absence
-      of one.** Branch state, CI status, file existence, repository metrics,
-      schema validation, mergeability and configured policy evaluation are
-      answered by application logic and recorded as a selection like any other.
-      _(state: planned)_
+- [ ] [[T39-NOAGENT]] **`NO_AGENT`: the deterministic tier is a routing outcome, not the absence of one.** (depends: T39-PROFILE) _(state: planned)_
+      **Do:** in `Resolve-ProviderSelection`, branch state, CI status, file
+      existence, repository metrics, schema validation, mergeability and
+      policy evaluation are answered by application logic and recorded as a
+      selection like any other.
+      **Done when:** a deterministic fixture task completes without an agent,
+      and its routing record reads `NO_AGENT`.
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-NoAgentTier.ps1 -FailOnError`
-- [ ] **A cost estimator that can eventually enforce.** `effective_cost` =
-      metered cost + quota pressure + retry + expected failure, with pricing
-      configurable or discovered rather than embedded. Enforcement stays off
-      until both the reserves and the per-task consumption estimate are
-      non-provisional — D-011 left the estimate a guess, and refusing dispatches
-      on a guessed number blocks real work for an unmeasured reason.
-      _(state: planned)_
+- [ ] [[T39-COST]] **A cost estimator that can eventually enforce.** (depends: T37-DECIDE) _(state: planned)_
+      **Do:** `effective_cost` = metered cost + quota pressure + retry +
+      expected failure; pricing is configured or discovered, never embedded.
+      **Done when:** the estimate is reproducible from fixtures, and no
+      dispatch is refused on it.
+      **Not:** enforcement, until the reserves and the per-task estimate are
+      both non-provisional (D-011 left the estimate a guess).
+      **PR:** review — a suite gate and config.
       `check: pwsh ./tests/Test-CostEstimator.ps1 -FailOnError`
-- [ ] **A performance store keyed by what actually varies.** Rolling first-pass
-      rate, eventual success, cost and duration per success, remediation count,
-      human-intervention rate and CI failure rate, broken down by
-      `provider × model × taskType × complexity`. The router reads
-      `provider × repository` success ratio today, which cannot distinguish a
-      provider that is excellent at documentation and poor at one coding
-      workload. _(state: planned)_
+- [ ] [[T39-PERF]] **A performance store keyed by what actually varies.** (depends: T39-PROFILE) _(state: planned)_
+      **Why:** a `provider × repository` success ratio cannot tell a provider
+      that is good at documentation from one that is poor at coding work.
+      **Do:** rolling first-pass rate, eventual success, cost and duration per
+      success, remediation count, human-intervention rate and CI failure
+      rate, broken down by `provider × model × taskType × complexity`.
+      **Done when:** a slice with history returns every metric; a slice
+      without history reads "unmeasured", never "bad".
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-PerformanceStore.ps1 -FailOnError`
-- [ ] **Evidence overrides the cold-start prior.** Once a task class has enough
-      history, the empirical result wins over the configured preference, and the
-      routing record says which of the two decided it. _(state: planned)_
+- [ ] [[T39-EVIDENCE]] **Evidence overrides the cold-start prior.** (depends: T39-PERF) _(state: planned)_
+      **Do:** once a task class has enough history, the empirical result
+      wins over the configured preference, and the routing record says which
+      of the two decided.
+      **Done when:** fixture history that contradicts the configured
+      preference changes the selection, and the record names the evidence.
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-EvidenceOverridesPrior.ps1 -FailOnError`
-- [ ] **Report the metric the release exists to move.** Verified tasks ÷ total
-      agent cost, with throughput and first-pass rate beside it, on
-      `GET /api/providers` and the Dispatch Board. _(state: planned)_
+- [ ] [[T39-RATE]] **Report the metric the release exists to move.** (depends: T39-COST, T39-PERF) _(state: planned)_
+      **Do:** verified tasks ÷ total agent cost, with throughput and
+      first-pass rate, on `GET /api/providers` and the Dispatch Board.
+      **Done when:** the route and the board show the same three numbers from
+      one fixture.
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-VerifiedTaskRate.ps1 -FailOnError`
 
 #### Acceptance criteria
@@ -1050,18 +1241,22 @@ Completed cross-cutting items are in
 
 ### Lane 0.2 — Credential freshness
 
-- [ ] **Read check-run detail where it exists; keep `mergeStateStatus` as the
-      documented fallback.** _(state: planned)_
-      [`MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1)
-      reads `mergeable_state` from the Pulls API, which is why a `BLOCKED`
-      rollup cannot tell a required check still running from one that failed —
-      the ambiguity the merge loop works around by polling. With the grant in
-      place, prefer per-check conclusions and keep the proxy for a token
-      without the scope. Release 3.8's CI-failure evidence collection is the
-      consumer that wants the finer signal. Gate: a fixture with one pending
-      and one failed required check reports different blockers, and a token
-      lacking `Checks: Read` still evaluates through the proxy rather than
-      erroring.
+- [ ] [[CHECKRUN]] **Read check-run detail where it exists; keep `mergeStateStatus` as the fallback.** _(state: planned)_
+      **Why:** [`MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1)
+      reads `mergeable_state` from the Pulls API, so a `BLOCKED` rollup
+      cannot tell a required check still running from one that failed; the
+      merge loop works around that by polling. Release 3.8's CI-failure
+      evidence wants the finer signal. D-003 decided to grant
+      `Checks: Read`; the grant itself is OQ-5.
+      **Do:** prefer per-check conclusions, and keep the proxy for a token
+      without the scope.
+      **Done when:** a fixture with one pending and one failed required check
+      reports two different blockers; a token without `Checks: Read` still
+      evaluates through the proxy instead of erroring.
+      **Start at:** `Get-MergeReadinessEvaluation` in
+      `backend/modules/agent-runs/MergeReadiness.ps1`.
+      **Not:** calling GitHub from the test; use recorded responses.
+      **PR:** review — a suite gate and a merge verdict.
       `check: pwsh ./tests/Test-CheckRunDetail.ps1 -FailOnError`
 
 ### Lanes 0.3, 0.4 and 0.6 — closed entirely
@@ -1080,14 +1275,28 @@ fix made progress, not liveness or CPU, the contract, and taught the rule every
 tripwire here now follows: derive scope from a classifier or the AST, never a
 maintained list.
 
-- [ ] **Clear and harden the stale browser-persisted GitHub owner.** _(state:
-      planned — recorded 2026-08-10, not bundled into the watchdog fix)_ Every
-      scan queries GitHub for owner `Benjamin-Fuhr_genesys`, which 404s/422s
-      and adds failing round-trips to an already-long scan. It is **not** in
-      `settings.json` (correctly `xfaith4`) or any env var — the browser sends
-      it in the request body, and has since **2026-07-07** (116 occurrences in
-      the host log). Clear the persisted client value and stop a client-supplied
-      owner from silently overriding validated configuration.
+- [ ] [[OWNER]] **A client-supplied GitHub owner never silently overrides configuration.** _(state: planned)_
+      **Why:** from 2026-07-07, every scan queried GitHub for the owner
+      `Benjamin-Fuhr_genesys`, which answers 404 or 422 (116 occurrences in
+      the host log by 2026-08-10). It was not in `settings.json` (correctly
+      `xfaith4`) or any environment variable: the browser sent it in the
+      request body.
+      **Verify first:** the host now remembers an owner GitHub reported
+      absent (`Test-GitHubOwnerKnownAbsent`), which removes the repeated
+      round-trip but not the override. Read the current host log before
+      building.
+      **Do:** clear the persisted client value. A scan or status request
+      uses the configured owner whatever its body says. A settings save that
+      changes the owner validates it first.
+      **Done when:** a scan request carrying a different owner uses the
+      configured one and reports the mismatch; a settings save naming an
+      owner GitHub does not know is refused with the reason; the client no
+      longer sends a persisted owner with scans.
+      **Start at:** `POST /api/settings` (`githubUser` →
+      `reconcile.gitHubOwner`) in
+      `backend/api-host/Start-RepoManagementApiHost.ps1`,
+      `frontend/services/apiClient.ts` (`githubUser`).
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-OwnerCacheReset.ps1 -FailOnError`
 
 ### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
@@ -1104,22 +1313,26 @@ history; the 2026-08-08 survey found zero managed repos using the split layout,
 so the live risk is the repair path pushing 32 repos toward in-file history.
 Intent: **awareness, not enforcement.**
 
-- [ ] **Record whether a repo externalizes its completion history.**
-      _(state: planned)_ The contract carries `completedCount` as a required
-      field, and a split roadmap reports ~0 forever. No rule reads it today,
-      so nothing breaks — but nothing distinguishes "history archived to
-      `docs/history/`" from "history deleted", and any future consumer that
-      treats `completedCount` as progress would read a well-kept split repo as
-      inert. Add an explicit signal (e.g. `historyLocation` / `archiveRef`)
-      to [`roadmap-contract.schema.json`](standards/roadmap/roadmap-contract.schema.json),
-      set from a pointer link in the roadmap, and surface it in the audit
-      payload. **Decided 2026-09-06 (D-005): yes, as awareness metadata, not an
-      enforcement requirement.** The contract may state that history is
-      externalized and where it lives; it never requires a repository to
-      externalize history and prescribes no archive format. The purpose is
-      semantic accuracy for portfolio reporting, progress calculation and future
-      automation. The `spec/roadmap-contract` mirror moves with the schema, so
-      the sync gate is part of this item, not a follow-up.
+- [ ] [[HISTORY]] **Record whether a repository externalizes its completion history (D-005).** _(state: planned)_
+      **Why:** the contract requires `completedCount`, and a split roadmap
+      reports ~0 forever. Nothing tells "history archived to
+      `docs/history/`" from "history deleted", so a future consumer that
+      treats `completedCount` as progress would read a well-kept split
+      repository as inert.
+      **Do:** add an explicit field (for example `historyLocation` or
+      `archiveRef`) to
+      [`roadmap-contract.schema.json`](standards/roadmap/roadmap-contract.schema.json),
+      set it from a pointer link in the roadmap, and surface it in the audit
+      payload. The `spec/roadmap-contract/` mirror moves with the schema;
+      the sync gate is part of this item.
+      **Done when:** this repository's roadmap reports its archive location;
+      a roadmap without a pointer reports none; no score changes.
+      **Start at:** the schema and its mirror,
+      `backend/modules/roadmap/Roadmap.Parser.ps1`.
+      **Not:** enforcement. D-005 made this awareness metadata: no
+      repository is asked to externalize its history, and no archive format
+      is prescribed.
+      **PR:** review — a suite gate and the managed-roadmap contract.
       `check: pwsh ./tests/Test-ExternalizedHistory.ps1 -FailOnError`
 - Sanction the external-archive pattern in the standard — done (`ROADMAP_TEMPLATE.md` §6 "External archive option"); [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd).
 
@@ -1180,10 +1393,17 @@ the same commit: 8,852 lines changed, and a CR-stripped comparison of every
 file before and after found zero content differences. The index is now 412 LF
 files plus the two PNGs.
 
-- [ ] **[non-blocker]** The scheduled and operator dispatch paths reach the
-      queue through different writers with only one end-to-end test; the
-      behavioural divergence closed in 3.1, the coverage asymmetry remains.
-      _(state: planned)_
+- [ ] [[QUEUE-COVER]] **[non-blocker]** The scheduled and operator dispatch paths reach the queue through different writers, with one end-to-end test between them. _(state: planned)_
+      The behavioural divergence closed in 3.1; the coverage asymmetry
+      remains. Give the uncovered writer the same end-to-end module-smoke
+      case as the covered one. **PR:** engineering.
+- [ ] [[PHASE-DOGFOOD]] **[non-blocker]** `scripts/Invoke-PhaseProtocolTest.ps1` fails its dogfood case on this roadmap. _(state: planned)_
+      Found 2026-09-17: "live ROADMAP.md -> phase-plan tables carry protocol
+      columns" fails with `no-phase-plan, missing-protocol-columns` (1 of 21
+      cases), on the roadmap as it stood before the agent-ready rewrite and
+      after it. This file has no phase-plan table, and the script is not in
+      the suite, so nothing caught it. Drop the live case, or point it at a
+      fixture roadmap that has a phase plan. **PR:** engineering.
 
 **The gate work closed 2026-08-10 (PRs #102–#107) and is
 [archived](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd):**
@@ -1196,27 +1416,50 @@ controlled debt — **no blanket lint sweep.** Small, behaviorally coherent
 batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
 
 - E1 — ESLint `exhaustive-deps` review: [archived](docs/history/completed-releases.md#closed-2026-09-13-archived-from-roadmapmd).
-- [ ] **P2 — empty catch blocks (79 → 56), classify then fix.** Guardrail-aligned
-      ("never swallow silently"): each site becomes either an annotated
-      deliberate best-effort (narrowed catch + comment) or a surfaced
-      failure. Batch by module; multiple PRs. **Batch 1, the api host, done
-      2026-09-13:** all 23 sites were genuine best-effort — log mirrors and
-      trims, optional prompt context, per-line JSONL parsing, socket cleanup,
-      probes that may be absent or refused — and each now states its reason
-      beside a real statement (`$null = $_`). None warranted surfacing: every
-      one degrades to the honest answer (blank, null, skipped line) that its
-      caller already handles. **Batches 2 and 3, `backend/modules` (20) and
-      `scripts`/`tools` (21), done the same day** on the same finding: every
-      site best-effort, each now stating its reason. Ratchet locked at 420 (was
-      484; empty-catch 79 → 15). The 15 left sit outside the module tree. _(state: built)_
+- [ ] [[P2]] **P2 — empty catch blocks: classify and fix the last 15.** _(state: built)_
+      **Built:** batches 1 to 3 (the api host, `backend/modules`, and
+      `scripts`/`tools`, all 2026-09-13) turned 64 sites into annotated
+      best-effort catches, each stating its reason beside a real statement
+      (`$null = $_`); none needed surfacing, because each degrades to an
+      answer its caller already handles. The ratchet was locked at 420 (was
+      484). `PSAvoidUsingEmptyCatchBlock` stands at 15 in
+      `scripts/pssa-baseline.json`, all outside the module tree.
+      **Do:** make each of the 15 an annotated best-effort (a narrowed catch
+      with its reason) or a surfaced failure ("never swallow silently"), then
+      lower the baseline with `-UpdateBaseline`.
+      **Done when:** the rule's baseline is 0 and the lint gate passes. The
+      gate already passes today, so check the baseline value directly.
+      **Split:** scout — run PSScriptAnalyzer for this one rule and list the
+      15 sites with their surrounding lines; lead — classify each site;
+      builder — annotate the sites the lead marks as best-effort.
+      **PR:** engineering.
       `check: pwsh ./scripts/Invoke-LintGate.ps1`
-- [ ] **E2 — type the API client (`no-explicit-any`, 123, bulk in
-      `apiClient.ts`).** Per endpoint-group batches; the value is contract
-      drift caught at typecheck, not style. Lower the ratchet after each. _(state: planned)_
-      `check: npm --prefix frontend run lint`
-- [ ] **P3 — plaintext-password params (9).** Design review per surface
-      (SecureString vs env-var flow), coupled to the Lane 0.2 TLS work —
-      **not** mechanical remediation. _(state: planned)_
+- [ ] [[E2]] **E2 — type the API client (`no-explicit-any`, 123 at the last count, most in `apiClient.ts`).** _(state: planned)_
+      **Why:** the value is contract drift caught at typecheck, not style.
+      **Do:** batch by endpoint group. After each batch, lower
+      `--max-warnings` in `frontend/package.json` (153 on 2026-09-17) by the
+      number of warnings removed.
+      **Done when:** `frontend/services/apiClient.ts` has no explicit `any`,
+      and `npm run typecheck` and `npm run lint` pass at the lowered cap.
+      **Split:** scout — count `any` per endpoint group; builder — type one
+      group at a time against the payload shapes the lead names; lead —
+      check each batch's types against its route.
+      **PR:** engineering.
+      `check: npm run lint`
+- [ ] [[P3]] **P3 — plaintext-password parameters (9): a design review per surface.** _(state: planned)_
+      **Why:** `PSAvoidUsingPlainTextForPassword` stands at 9 in
+      `scripts/pssa-baseline.json`. Each is a credential flow, not a
+      mechanical fix.
+      **Do:** for each surface choose SecureString or an environment-variable
+      flow, coupled to the Lane 0.2 certificate work, and lower the baseline.
+      **Done when:** the rule's baseline is 0, or each remaining site has a
+      recorded reason in `docs/governance/open-decisions.md`.
+      **Start at:** `scripts/Install-RepoManagementService.ps1`
+      (`-PfxPassword`), `backend/modules/auth/SessionAuth.ps1`
+      (`Get-Pbkdf2Hash -Password`); a scout finds the other seven.
+      **Not:** renaming parameters to silence the rule, or writing a secret
+      to a log or a tracked file.
+      **PR:** review — credential handling.
       `check: pwsh ./scripts/Invoke-LintGate.ps1`
 - P4 — BOM/PS5.1 hazard: [archived](docs/history/completed-releases.md#closed-2026-09-14-archived-from-roadmapmd).
 - **Deliberately unscheduled (accepted debt, held at baseline):** the naming
@@ -1230,66 +1473,74 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
 
 ### Lane 0.10 — Scan-snapshot retention (found 2026-08-27)
 
-- [ ] **[non-blocker]** Give `output/index/scans/portfolio-scan-*.json` a
-      retention rule. `Save-PortfolioIndexArtifacts`
+- [ ] [[RETAIN]] **[non-blocker]** Give `output/index/scans/portfolio-scan-*.json` a retention rule. _(state: planned)_
+      `Save-PortfolioIndexArtifacts`
       ([`Portfolio.Assessment.ps1`](backend/modules/portfolio/Portfolio.Assessment.ps1))
-      writes one snapshot per scan and nothing reads or prunes them: 762
-      files / 103 MB had accumulated since 2026-05-11. The Release 3.3 ledger
-      retention ([`Ledger.Retention.ps1`](backend/modules/persistence/Ledger.Retention.ps1))
-      is code-declared over six JSONL ledgers and does not name this
-      directory. Either add it as a target (age-keyed by file time, since the
-      files are whole snapshots, not lines) or cap the directory at N newest
-      in the writer. Pruned by hand 2026-08-27 to the last seven days; the
-      gate is a module-smoke fixture that writes eight dated snapshots and
-      asserts the oldest is gone. _(state: planned)_
+      writes one snapshot per scan, and nothing reads or prunes them: 762
+      files and 103 MB had accumulated by 2026-08-27, when they were pruned
+      by hand to seven days. Either add the directory to
+      `Get-LedgerRetentionPolicy`
+      ([`Ledger.Retention.ps1`](backend/modules/persistence/Ledger.Retention.ps1)),
+      keyed on file age because each file is a whole snapshot, or keep the
+      newest N in the writer. Resolve the directory through the output root.
+      Gate: a module-smoke fixture writes eight dated snapshots and asserts
+      the oldest is gone. **PR:** engineering.
 
 ### Lane 0.12 — Two local clones of one repo collapse to one row, arbitrarily (found 2026-08-27)
 
-- [ ] **[non-blocker]** Two checkouts with **different folder names** that share
-      one remote still produce two portfolio rows.
+- [ ] [[CLONES]] **[non-blocker]** Two checkouts of one remote with different folder names still produce two portfolio rows. _(state: planned)_
       `GenesysCloud\Genesys.Core` and `GenesysCloud\Genesys.Core_AuditLogsApp`
-      are both clones of `github.com/xfaith4/Genesys.Core`, but the collision
-      unit above is the repository _name_, so they never collide and the
-      portfolio counts one GitHub repository twice. `Group-RepoByRemoteIdentity`
+      both clone `github.com/xfaith4/Genesys.Core`, but the collision unit is
+      the repository _name_, so they never collide and the portfolio counts
+      one GitHub repository twice. `Group-RepoByRemoteIdentity`
       ([`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1))
-      already identifies the pair by remote URL plus root-commit SHA and the
-      status response carries it as `duplicateIdentities`; the assessment still
-      does not read it. Deciding this needs a product judgement rather than
-      engineering time — `Genesys.Core_AuditLogsApp` carries its own
-      `docs/ROADMAP.md`, so collapsing the pair would discard a real plan.
-      _(state: planned)_
+      already pairs them by remote URL and root-commit SHA, and the status
+      response carries the pair as `duplicateIdentities`; the assessment
+      does not read it. **Decision first:** `Genesys.Core_AuditLogsApp` has
+      its own `docs/ROADMAP.md`, so collapsing the pair would discard a real
+      plan. Before writing code, record the question in `open-decisions.md`
+      with "keep both rows and flag the pair" as the default (`L22-DETAIL`
+      adds that flag).
 
-- [ ] **Classify a repository nested inside another as `nested`, not as its own
-      portfolio entry.** _(state: planned)_ Decided 2026-09-06 (D-002): the
-      portfolio represents managed projects, not merely every `.git` boundary
-      present on disk. `custom_SereneHarmonySite` is a working tree inside
-      `SereneHarmony_Site_Starter`, which is also one, and the scan counts both
-      — correctly, as the 70-versus-72 explanation in Lane 0.15 established.
-      Give `Get-RepoScopeClassification`
-      ([`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1))
-      a `nested` verdict beside `vendored` and `archived`, so a nested
-      repository is reported and never silently lost, with an explicit opt-in
-      promoting one to independently managed when it genuinely has its own
-      lifecycle. **The portfolio total falls by one when this lands** — record
-      that in the Release 3.7 trial evidence so it is not later read as scan
-      drift. Gate: a fixture with a repository inside a repository classifies
-      the inner one `nested` and drops it from the managed count, and the
-      opt-in promotes it back.
+- [ ] [[NESTED]] **Classify a repository nested inside another as `nested` (D-002).** _(state: planned)_
+      **Why:** the portfolio represents managed projects, not every `.git`
+      boundary on disk. `custom_SereneHarmonySite` is a working tree inside
+      `SereneHarmony_Site_Starter`, which is also one, and the scan counts
+      both.
+      **Do:** `Get-RepoScopeClassification` gains a `nested` verdict beside
+      `vendored` and `archived`. A nested repository is reported, never
+      silently dropped, and an explicit opt-in promotes one to independently
+      managed when it has its own lifecycle.
+      **Done when:** a fixture with a repository inside a repository
+      classifies the inner one `nested` and drops it from the managed count,
+      and the opt-in promotes it back.
+      **Start at:** `Get-RepoScopeClassification` in
+      [`Portfolio.Scope.ps1`](backend/modules/portfolio/Portfolio.Scope.ps1).
+      **Not:** an unexplained count change. The portfolio total falls by one
+      when this lands; record that in `evidence/trials/release-3.7/` so it
+      is not read as scan drift.
+      **PR:** review — a suite gate and a scope verdict.
       `check: pwsh ./tests/Test-NestedRepoClassification.ps1 -FailOnError`
 
 ### Lane 0.13 — Truthful uncertainty: the product could not tell "unreadable" from "not present" (found 2026-08-27)
 
-- [ ] **`estimatedSessionWorkUnits` is null for every managed repository.**
-      _(state: planned)_ Release 3.6's ranked `Today` landing surfaces effort
-      per row, and the field is populated only from `activePhasePlan`, which
-      **0 of 48** managed roadmaps carry (5 carry an `activeRelease`). The
-      effort column is therefore empty portfolio-wide, and `todayRanking`'s
-      cheaper-effort tiebreak never fires on real data. Either derive a
-      credible estimate from signals that do exist (pending item count, item
-      text, repo kind) or render the column as explicitly unmeasured — the
-      Release 3.6 leverage panel already sets that precedent with its two
-      `available: false` metrics. Decide which, with the nine repositories of
-      Release 3.7.
+- [ ] [[WORKUNITS]] **`estimatedSessionWorkUnits` is never silently null.** _(state: planned)_
+      **Why:** the field is filled only from `activePhasePlan`, which 0 of 48
+      managed roadmaps carry, so Today's effort column is empty across the
+      portfolio and `todayRanking`'s cheaper-effort tiebreak never fires on
+      real data.
+      **Do:** for each repository, either derive an estimate from signals
+      that exist (pending item count, item text, repository kind) and name
+      its basis, or mark the field unmeasured with a reason, as the leverage
+      panel does for its `available: false` metrics. Let the nine cohort
+      repositories show which signals are credible; where none is, the
+      field is unmeasured.
+      **Done when:** every managed repository carries a number with its basis
+      or `unmeasured` with a reason, and none is null.
+      **Start at:** `estimatedSessionWorkUnits` in
+      `backend/modules/automation/Automation.RoadmapPackaging.ps1`,
+      `frontend/lib/todayRanking.ts`.
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-SessionWorkUnits.ps1 -FailOnError`
 
 ---
@@ -1310,198 +1561,98 @@ lift to `#858fa3` (4.51:1 on the worst surface, from 3.03:1), the ARIA tablist
 on the seven views, and `Escape`-to-close plus a focus trap on the two dialogs
 that had neither.
 
-- [ ] **Collapse the ad-hoc button palette into a semantic token set.** The
-      audit counted **21 distinct button background colors** on one tab. They
-      are ad hoc, so no checker can currently tell a legitimate new one from an
-      accidental one — which is why the UI ratchet
-      ([`tools/Measure-UiRatchet.mjs`](tools/Measure-UiRatchet.mjs)) counts
-      unrestored `outline-none` but **not** button colors. That rule is a
-      consequence of this item, not a substitute for it. The Nocturne token
-      sheet ([`frontend/styles.css`](frontend/styles.css)) now supplies the
-      semantic set this item asked for — one accent plus three status hues —
-      so what remains is the enforcement, not the palette.
-      **Done means CI rejects a raw hex or a bare Tailwind color utility in a
-      button background** — at which point the second ratchet rule ships with
-      it. _(state: planned)_
+- [ ] [[BUTTONS]] **CI rejects an ad-hoc button colour.** _(state: planned)_
+      **Why:** the audit counted 21 distinct button background colours on one
+      tab, and no checker can tell a legitimate new one from an accidental
+      one. The Nocturne token sheet
+      ([`frontend/styles.css`](frontend/styles.css)) now supplies the
+      semantic set (one accent, three status hues), so what remains is
+      enforcement.
+      **Do:** move every button background onto the tokens, then add the
+      rule to [`tools/Measure-UiRatchet.mjs`](tools/Measure-UiRatchet.mjs): a
+      raw hex or a bare Tailwind colour utility in a button background fails.
+      **Done when:** the test fails on a planted `bg-blue-600` button and
+      passes on the tree.
+      **Split:** scout — every button background that is not a token, with
+      its file and line; lead — map each to a token; builder — apply the
+      mapping.
+      **PR:** review — it adds a ratchet rule.
       `check: npx vitest run frontend/lib/buttonTokens.test.ts`
 
-- [ ] **Resolve the Nocturne opacity ladder against WCAG AA.** The migration's
-      text hierarchy is opacity over `--color-text`
-      ([`frontend/styles.css`](frontend/styles.css)), and the top four rungs
-      clear AA comfortably (14.54:1, 9.21:1, 7.62:1, 5.19:1 on `--color-bg`).
-      The bottom three do not: 50% is 4.55:1, 45% is 3.91:1, 42% is 3.58:1 —
-      all below the 4.5:1 body-text floor, and all used at 10–11.5px where the
-      large-text exemption does not apply. 42% is where `unmeasured` renders,
-      which MIGRATION.md §5.1 makes load-bearing, so this cannot be fixed by
-      dropping the value. **Done means every rung used for body text clears
-      4.5:1 on both grounds, or the ones that cannot are moved off body text**,
-      with the measurement recorded. _(state: planned)_
+- [ ] [[CONTRAST]] **Every text-opacity rung used for body text clears WCAG AA.** _(state: planned)_
+      **Why:** the text hierarchy is opacity over `--color-text`. The top four
+      rungs pass on `--color-bg` (14.54, 9.21, 7.62 and 5.19 to 1), but 50%
+      is 4.55, 45% is 3.91 and 42% is 3.58, all used at 10–11.5 px, where the
+      large-text exemption does not apply. 42% is where `unmeasured`
+      renders, which MIGRATION.md §5.1 makes load-bearing.
+      **Do:** raise the failing rungs or move them off body text, and record
+      the measurements.
+      **Done when:** the test computes each rung's contrast on both grounds,
+      and every rung used for body text is at least 4.5 to 1.
+      **Start at:** the ladder note in `frontend/styles.css`, the
+      `text-text/45` and `text-text/50` uses under `frontend/components/`.
+      **Not:** dropping the `unmeasured` treatment.
+      **PR:** engineering.
       `check: npx vitest run frontend/lib/contrast.test.ts`
 
-- [ ] **Add breakpoints above 768px.** The console declares **two responsive
-      breakpoints, both under 768px**, so every viewport from a laptop to a
-      wide desktop renders one fixed desktop layout — the 310 interactive
-      controls the audit counted on a single tab are laid out for none of them
-      specifically. Define the wide tiers and prove them at 1280px and 1920px.
-      _(state: planned)_
+- [ ] [[BREAKPOINTS]] **Add breakpoints above 768 px.** _(state: planned)_
+      **Why:** `frontend/styles.css` declares two breakpoints, both below
+      768 px, and `frontend/tailwind.config.cjs` adds none, so every screen
+      from a laptop to a wide desktop gets one fixed layout (310 interactive
+      controls on a single tab).
+      **Do:** define the wide tiers and lay the densest tab out for them.
+      **Done when:** the test proves distinct layouts at 1280 px and
+      1920 px.
+      **PR:** engineering.
       `check: npx vitest run frontend/lib/breakpoints.test.ts`
 
-- [ ] **Write `settings.json` with a stable key order, and not at all when
-      nothing changed.** A running portal rewrites
+- [ ] [[SETTINGS]] **`settings.json` is written in a stable key order, and not at all when nothing changed.** _(state: planned)_
+      **Why:** a running portal rewrites
       [`backend/config/settings.json`](backend/config/settings.json) with the
-      keys reordered and **no value altered** — verified by comparing the two
-      revisions with keys sorted. The file is tracked, so the working tree
-      reads dirty in every session for a change nobody made, and eventually
-      someone stages it without diffing. This is the same class as the rest of
-      the audit: the system generating noise that trains its operator to
-      ignore signals. Serialize with a fixed key order and skip the write when
-      the content is unchanged. _(state: planned)_
+      keys reordered and no value changed. The file is tracked, so the tree
+      reads dirty in every session for a change nobody made, which trains
+      people to stage it without looking.
+      **Do:** serialize with a fixed key order, and skip the write when the
+      content is unchanged.
+      **Done when:** saving unchanged settings leaves the file's bytes and
+      modification time alone; saving a change writes the keys in the fixed
+      order.
+      **Start at:** the `POST /api/settings` handler in
+      `backend/api-host/Start-RepoManagementApiHost.ps1`
+      (`ConvertTo-Json -Depth 10` piped to `Set-Content`).
+      **Not:** hand-editing `settings.json` in the same PR; the fix is the
+      writer.
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-SettingsWriteOrder.ps1 -FailOnError`
 
-- [ ] **Adopt the dialog dismiss contract in the remaining 17 modals.**
-      [`useDialogDismiss`](frontend/hooks/useDialogDismiss.ts) now carries
-      `Escape`-to-close, a focus trap and focus restoration, proven by seven
-      tests, and is wired into `SettingsModal`,
-      `RepositoryImprovementWorkflowModal` and `HelpModal`. **Twenty modal components ship in
-      this console and exactly one handled `Escape` before this lane**
-      (`AgentRunSheet`, with its own inline implementation to be replaced by
-      the hook). Each remaining dialog is a two-line change: call the hook,
-      attach the ref to the panel. _(state: planned)_
+- [ ] [[DIALOGS]] **Every dialog uses the dismiss contract.** _(state: planned)_
+      **Why:** [`useDialogDismiss`](frontend/hooks/useDialogDismiss.ts)
+      provides Escape-to-close, a focus trap and focus restoration, and only
+      `SettingsModal`, `RepositoryImprovementWorkflowModal` and `HelpModal`
+      use it. On 2026-09-17, 18 more components matched a dialog pattern
+      without it, including `AgentRunSheet`, whose inline version the hook
+      replaces.
+      **Do:** in each dialog, call the hook and attach the ref to the panel.
+      **Done when:** the check finds the dialogs itself (`role="dialog"`,
+      `aria-modal`, a fixed full-screen overlay), never from a list, and
+      fails on any that does not call the hook.
+      **Split:** lead — the check, shown failing first; builder — the
+      two-line change, six components per batch, with
+      `npx vitest run frontend` after each batch.
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-DialogDismissAdoption.ps1 -FailOnError`
 
 ---
 
-### Lane 0.15 — The console contradicts itself (operator audit 2026-08-29)
+### Lanes 0.15, 0.17 and 0.18 — closed entirely
 
-**2026-09-05 implementation:** trial-facing fixes are connected in the working
-branch. Validation and live deployment boundaries are recorded in
-`evidence/verified/trial-truth-readiness-2026-09-05.md`; open checkboxes remain
-until the required proof is complete. The paragraphs below retain the original
-audit observations; their old line numbers are historical pointers.
-
-The audit's headline, and the reason it outranks every visual finding: once an
-operator catches the console disagreeing with itself on a number, they stop
-trusting all of it. Each item below was **confirmed in code**, not inferred
-from the screenshot.
-
-- [ ] **Give the six `Blocked` counts six names.** `Blocked` reads **1, 17 and
-      58** on three surfaces simultaneously, and all three are correct — they
-      count different things: queue items in `blocked` execution state
-      ([`ExecutionQueuePanel.tsx:27`](frontend/components/ExecutionQueuePanel.tsx#L27)),
-      repos blocked from dispatch for missing docs or a roadmap parse error
-      ([`PortfolioMissionSection.tsx:36`](frontend/components/PortfolioMissionSection.tsx#L36)),
-      merge blockers on a single PR
-      ([`OperationsWorkspaceView.tsx:2179`](frontend/components/OperationsWorkspaceView.tsx#L2179)),
-      plus a per-repo badge and a filter value in `RepoGrid`. Reconciling the
-      numbers is the wrong fix — they are different quantities wearing one
-      word. Name each, and state the denominator on the surface that shows it.
-      _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
-      `check: npx vitest run frontend`
-
-- [ ] **Stop the app switching data source without being asked.**
-      [`App.tsx:240`](frontend/App.tsx#L240) calls `setViewMode('github')` on a
-      successful GitHub fetch, and that fetch is reachable from inside the
-      Settings dialog via `onConnectGitHub` — so connecting a credential
-      silently changes which source the operator is _looking at_, and `Cancel`
-      cannot revert it because `viewMode` was never modal state. Connecting a
-      credential and choosing a view are different acts; the source toggle
-      already exists for the second. _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
-      `check: npx vitest run frontend`
-
-- [ ] **Show the Today rank basis instead of hiding it in a tooltip.** The
-      audit read a value-49 repo above a value-80 one as a sort bug; it is not.
-      `todayRanking` ranks conclusion, then curation, then whether a row offers
-      an action, and only then value
-      ([`todayRanking.ts:120-145`](frontend/lib/todayRanking.ts#L120-L145)), so
-      that order is correct and deliberate. The defect is that the `rankBasis`
-      audit trail the module already builds for exactly this question renders
-      **only as a `title=` tooltip**
-      ([`TodayView.tsx:187`](frontend/components/TodayView.tsx#L187)) — invisible,
-      hover-only, unreachable by keyboard. Do not change the comparator.
-      _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
-      `check: npx vitest run frontend`
-
-- [ ] **Fix the dead-end automation instruction.**
-      [`automationStatus.ts:100`](frontend/lib/automationStatus.ts#L100) tells
-      the operator _"Enable it in Settings to keep favorites assessed
-      automatically."_ The Settings dialog holds seven fields and none of them
-      is that toggle — nor packaging, auto-scan, lane concurrency, or the
-      scoring thresholds that drive every number in the product. Either build
-      the control or stop naming it. _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
-      `check: npx vitest run frontend`
-
-**Already fixed (2026-08-29) — the snapshot route answered 500 on every
-operator machine.** `Get-StatusFromCache` returns
-`{ hit, source, ageSeconds, cachedAt, response }` on every path: the payload is
-an API envelope under `response`, and the four other callers unwrap it that
-way. The snapshot route instead read `.entries` and `.scannedAt`, which is
-**`Get-RoadmapFromCache`'s** shape, so StrictMode threw the moment a status
-cache existed. All seven `/api/portfolio/snapshot` contract tests failed at
-their FIRST assertion (`StatusCode | Should -Be 200`), so every rule after it —
-including the timezone-basis and denominator invariants — never executed at
-all. CI passed because a fresh clone has no cache, `hit` is false, and the
-branch never ran: the gate was real but had **never once evaluated this path**.
-Fixed by unwrapping `response.data.repos` and taking the UTC `cachedAt` as the
-status basis. A regression test now writes a cache fixture so the branch runs
-on a fresh clone too, and asserts the fixture's own repo count so a key
-mismatch fails loudly instead of silently skipping — verified by re-injecting
-the bug and watching the guard alone go red.
-
-**Re-audit against a working snapshot (2026-08-29).** Run once the unifier
-actually returned 200, to test the prediction that these contradictions were
-consumers stamping their own values because `Build-PortfolioSnapshot` 500'd.
-The prediction was half right, and the half that was wrong matters more.
-
-**Collapsed, as predicted — the denominators.** They now form one stated chain
-rather than six free-floating numbers: `repoCount` **72** (`status-scan`),
-`inScopeRepoCount` **58** with `denominator: 72` declared on the metric,
-`staleRepoCount` and `dirtyRepoCount` both carrying `denominator: 58`. The 57
-is `blockedCount` — 57 of the 58 in-scope. So 72 → 58 → 57 is coherent and
-self-describing.
-
-**Did NOT collapse — Blocked.** Two live surfaces still report different
-numbers, and both are right: `/api/execution/metrics` says `blocked=17`
-(ledger **execution state**, alongside `idle=30 ready=20 complete=4`), while
-`/api/portfolio/assessment` says `blockedCount=57` (repos **blocked from
-dispatch**). The fallback theory is therefore dead for this one: these are two
-definitions sharing one word, and reconciling them is hand work, not a
-consequence of the fix.
-
-**Did NOT collapse — the clock bases.** Three remain, and the fix did not
-touch two of them: the snapshot emits UTC `Z`, `/api/execution/metrics` emits
-a local offset `-04:00`, and **`/api/portfolio/assessment` and
-`/api/operations/repos` emit `createdAt` as locale text with no basis at all**
-(`01/12/2026 05:25:34`, on the wire, unparsed). The "four hours fast" reading
-is explained by the first two: `...T08:56:29Z` and `...T04:56:29-04:00` are
-the SAME instant, so any surface rendering the UTC one as if it were local
-runs exactly four hours ahead.
-
-**A new discrepancy the guard surfaced — resolved 2026-09-04.** An independent
-filesystem walk found **70** working trees under the configured root at depth
-3 while the status cache reported **72**. The scan was right and the walk was
-wrong; both reasons are recorded on the closed item below.
-
-The re-audit's two live `Blocked` definitions are covered by the first naming
-item above; they are not a second implementation task.
-
-- [ ] **Give `/api/portfolio/assessment` and `/api/operations/repos` a
-      timezone basis.** Both serialize `createdAt` as locale text
-      (`01/12/2026 05:25:34`) with no `Z` and no offset — the only two
-      surfaces with no basis at all. This is what the existing contract
-      assertion was written to catch and cannot, because it skips any value
-      `ConvertFrom-Json` has already promoted to `[datetime]`. Fix the
-      serializer and the assertion together. _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
-      `check: pwsh ./scripts/Invoke-ApiContractTest.ps1`
-
-- [ ] **Close the timestamp-basis test's own blind spot.** The contract test
-      _"every timestamp field in key payloads carries an explicit timezone
-      basis"_ guards its check with `-and $value -is [string]`, and
-      PowerShell's `ConvertFrom-Json` silently promotes an ISO-8601 string to
-      `[datetime]`. Every timestamp that parses as a date is therefore skipped
-      by the very test that exists to check timestamps. Assert against the raw
-      response body instead, as the new cache-fixture test does.
-      _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
-      `check: pwsh ./scripts/Invoke-ApiContractTest.ps1`
+Archived 2026-09-17 with their prose
+([archive](docs/history/completed-releases.md#closed-2026-09-17-archived-from-roadmapmd-before-the-agent-ready-rewrite)).
+Kept as a named heading because Release 3.7 and the execution-order notes cite
+them: **0.15** the console contradicting itself (its field proof is OQ-11),
+**0.17** the dispatch console that could not dispatch, **0.18** the four
+execution mechanisms ported from RoadmapOrchestrator, delivered inside
+Release 3.8.
 
 ---
 
@@ -1513,230 +1664,12 @@ nothing at all. To an operator, dependencies are what the repositories run
 on: Node, Next.js, PostgreSQL, SQLite, Docker. The product had no answer to
 that question anywhere.
 
-- [ ] **[non-blocker]** Detect versions, not just presence — the inventory
-      says _which_ repos run Node, not which Node; a version column would
-      turn the panel into an upgrade-planning surface. Needs a per-manifest
-      version parse and a staleness policy for engines fields.
-      _(state: planned)_
-
----
-
-### Lane 0.17 — The dispatch console could not dispatch (operator evaluation 2026-08-30)
-
-An operator evaluation of the Copilot Execution Lanes tab found the page's
-one verb broken end to end: **Dispatch** opened a preview modal instead of
-assigning a lane, the modal had no dispatch action of its own, the packet
-build failed for a repo the queue itself called Ready, and the failure
-surfaced as the browser's bare _"Failed to fetch"_ because the host wrote
-the 500 to the wrong stream under TLS. Around the broken verb, the surface
-over-promised: five state tiles that count but cannot filter, a three-tab
-layout where "Top Candidates" duplicates rows 1–3 of "Ready Queue", and a
-tab name ("Copilot Execution Lanes") that claims execution monitoring the
-ledger does not do — states are manual bookkeeping derived from audit data,
-not observed agent activity.
-
-- [ ] **[non-blocker]** The api-host smoke fails on any machine where the
-      operator is actually running a runner. `Invoke-ApiHostSmokeTest.ps1:3754`
-      asserts `GET /api/roadmap/runner` reports **no** runner present, but the
-      route reads `output/roadmap-task-runner.heartbeat.json` from the real
-      workspace — so a live `Invoke-RoadmapTaskRunner.ps1` (the normal state
-      when work is being driven) makes the gate fail on an untouched tree.
-      Confirmed 2026-09-06: `origin/main` (f7452d4) fails at the same line with
-      the same message as a feature branch, with the operator's runner alive on
-      PID 8892. The isolation the smoke already applies to settings and the
-      queue ("queue isolated to `output/smoke/api-host/…`") is the shape of the
-      fix — the presence check needs the same fixture treatment, not a real
-      heartbeat read. Until then the gate is red for an environmental reason
-      and cannot distinguish a regression from a working runner.
-      _(state: planned)_
-- [ ] **[non-blocker]** The board reads observed state; nothing refreshes it on
-      a cadence. `Invoke-AgentRunAutoClose` advances open runs only when
-      someone loads Agent Runs, so a lane can sit on a `lastObservedAt` that is
-      hours old and be reported — correctly — as stuck for want of a poll
-      rather than want of progress. The verdict is honest either way (it says
-      when it last observed), but a board that refreshed its own runs would
-      distinguish "the agent stopped" from "nobody looked". Release 3.8's
-      fourth milestone owns the cadence — Repo Manager monitors CI without
-      holding an execution slot — so close this item there rather than building
-      a second poller. _(state: built 2026-09-08 — closed by Release 3.8
-      H38-22: the runner's poll loop calls POST /api/delivery/reconcile every
-      fourth poll, which runs Invoke-AgentRunAutoClose)_
-- [ ] **Restrict dispatch authority to the Dispatch Board.** _(state: built 2026-09-09 — H-07: the dispatch callback is passed only when the preview was opened from the `execution-queue` view; Work Queue and Operations previews offer `Open on Dispatch Board` in the same slot and keep the full preview unchanged; the origin is snapshotted at open time rather than read live, so a tab switch cannot change the operator's available actions mid-preview, and a surface added later inherits no dispatch authority by default; gated by four component tests, the decisive one proven red against the unchanged component; the board has no row-focus prop today so switching the view is the whole of the navigation)_
-      Decided 2026-09-06 (D-008), and it **reverses the default shipped the
-      same day** under D-010. `CopilotTaskPreviewModal` opens from the Dispatch
-      Board, the Work Queue and Operations, and
-      [`Dashboard.tsx`](frontend/components/Dashboard.tsx) passes its dispatch
-      callback unconditionally — so all three now queue real agent work and
-      spend quota, where before they only wrote a ledger row. Previewing a task
-      must not implicitly grant authority to consume agent budget. Work Queue
-      and Operations keep the full preview — readiness, estimated resource
-      requirement, intended provider — and navigate the operator to that task
-      on the board instead of invoking the dispatch endpoint themselves. This
-      also gives Release 3.8's capacity governor, provider selection and budget
-      impact one consistent surface to appear on before work begins. Gate:
-      component tests prove the dispatch action is present from the board and
-      absent from the two preview-only surfaces.
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **[non-blocker]** Archive this lane's eight closed items to
-      [`docs/history/completed-releases.md`](docs/history/completed-releases.md).
-      The roadmap's own rule is that this file carries open work only and an
-      `[x]` here is a mistake rather than a record; the lane has held eight
-      since 2026-08-30. Left in place deliberately on 2026-09-06 so the
-      execution-model pass stayed reviewable — a verbatim move of ~110 lines
-      does not belong in the same diff as a new release contract. It is the
-      larger half of `R010-FILE-LENGTH`, which has warned since the file passed
-      2,000 lines. _(state: planned)_
-
----
-
-### Lane 0.18 — Execution depth: four mechanisms RoadmapOrchestrator already solved (evaluated 2026-09-04)
-
-**Trial boundary (approved 2026-09-05):** independently verify acceptance
-criteria for each Release 3.7 improvement. The operator may perform and record
-that check through the existing workflow; this lane's new automated gate,
-carryover, cumulative sequence cap and dependency selector are not blanket
-prerequisites for the trial. Preserve existing merge gates.
-
-`RoadmapOrchestrator` (`xfaith4/RoadmapOrchestrator`, local at
-`F:\Development\20_Staging\AI Projects\RoadmapOrchestrator`) reaches the same
-end as this console from the opposite side. This product decides **what**
-deserves an agent across a portfolio and dispatches one item; that one takes a
-single target and drives a dependency-ordered roadmap to completion in a closed
-loop, gating every phase against the real repository. Its `README.md` states
-the split worth borrowing: phase selection is deterministic and lives in
-PowerShell, while execution and self-assessment are delegated to the model.
-Both products already refuse an agent's self-report —
-[`Roadmap.WriteBack.ps1`](backend/modules/roadmap/Roadmap.WriteBack.ps1)
-demands merge evidence, the orchestrator demands an independent gate — so these
-items extend a conviction this repo already holds rather than importing a
-foreign one.
-
-**Each item adds a step that does not exist today; none changes what a current
-surface already does.** Every acceptance line below names the unchanged
-behaviour explicitly, because that is the cheap half to get wrong.
-
-**Do not build on its `maintain_existing_app` pipeline.** `Get-Pipeline`
-(`orchestrator\Invoke-RoadmapOrchestrator.ps1`) names eleven agents,
-`agents\agent-library.json` defines eight, and `RepoContextBuilder`,
-`ReviewGate` and `PRPublisher` exist only as prose in `agents\agents-full.md`.
-`Invoke-Agent` returns failure for an unknown agent, so that pipeline halts on
-its first step. None of the items below depend on it.
-
-**The third-dispatch-target option is withdrawn — D-004, decided 2026-09-06.**
-GitHub Repo Manager is the orchestration authority, and a second closed-loop
-orchestrator beneath it would duplicate ownership of task selection, execution
-state, budgeting, remediation and completion. Mechanisms still come across —
-that is exactly what the items below are. If the tool is integrated later it
-participates through Release 3.8's provider-adapter contract, which is bounded
-by construction: an adapter translates packets and events, and makes no
-roadmap, merge or portfolio-priority decisions. **Three of the four items below
-are re-scoped into Release 3.8** rather than built standalone; each says how.
-
-- [ ] **Carry an amendment forward between dispatches.** Every dispatch starts
-      cold: what the last agent learned, or deliberately left undone, dies
-      unless it reaches the pull-request body, so the next prompt for the same
-      repository re-asks settled questions. Port the carryover channel from
-      `.orchestration\STATE_SCHEMA.md` — a `carryover[]` replaced wholesale
-      each run and injected into the next run's context by
-      `Invoke-PhasePipeline`. **Translate, do not copy:** there it lives in a
-      state file written by the very agent being judged, a weaker trust model
-      than this repo's append-only ledgers, so carryover belongs beside the run
-      that produced it in the agent-run ledger and is read by the dispatch
-      prompt builder. Acceptance: a second dispatch to the same repository
-      carries the prior run's unresolved note into its prompt; a repository
-      with no prior run produces exactly the prompt it produces today.
-      **Re-scoped 2026-09-06:** this is the `HandoffPacket`'s `priorResult` and
-      `remainingScope` in Release 3.8 — build it there, once, rather than as a
-      separate carryover channel that a cross-provider handoff would then have
-      to duplicate. _(state: built 2026-09-09 — delivered as Release 3.8 H38-30: `HandoffPacket.priorResult` and `remainingScope` carry the prior run's evidence into the next prompt, and a repository with no prior run renders the H38-05 prompt unchanged)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Check the acceptance criteria before a pull request is called ready.**
-      Dispatch prompts already carry acceptance criteria and nothing verifies
-      them; merge evidence answers "did this land", not "did it do what the
-      item asked". Port `Test-PhaseGate`
-      (`orchestrator\Invoke-RoadmapOrchestrator.ps1`): a separate read-only
-      pass that re-checks the named deliverables against the repository, with
-      an unparseable verdict treated as rejection rather than a pass. Its
-      refusal shape and read-only tool set transfer directly; its inputs do
-      not, so run it against the agent's branch and record the verdict in the
-      agent-run ledger. Acceptance: an item whose criteria are unmet reports
-      the failing criterion by name, and every existing merge gate keeps its
-      current strictness. **Re-scoped 2026-09-06:** this check is what gives
-      Release 3.8's `LOCAL_VERIFYING` state its meaning — without it
-      `IMPLEMENTATION_COMPLETE` asserts only that an agent stopped. Build it as
-      that gate. _(state: built 2026-09-11 — H38-36
-      `Execution.AcceptanceVerification.ps1` implements the LOCAL_VERIFYING
-      read-only pass: `Invoke-LocalAcceptanceVerification` checks each
-      acceptance criterion against its verification command via an injected
-      `CommandRunner` scriptblock (pure, offline-testable); a passing command
-      yields `passed`, a non-zero exit yields `failed`, a missing command yields
-      `skipped` (not `failed` — an environment lacking a tool must not block
-      valid work), and a `CommandRunner` exception is `skipped` not `failed`.
-      `Resolve-LocalVerifyingTransition` is the decision table: `failed` →
-      `remediation` (no push), `passed`/`skipped` → `implementation_complete`.
-      The gate exercises all six cases including mixed pass+fail (overall
-      `failed`) and the empty-criteria list (proceeds without error).)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Cap cumulative spend across a dispatch sequence.**
-      [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1)
-      evaluates one dispatch against a work-unit quota. The orchestrator's run
-      loop caps per agent, per gate and per roadmap, halts on the cap, and
-      persists banked cost **before** halting so the figure is never lost.
-      Port the cumulative cap and the persist-before-halt ordering; translate
-      the unit, since this product counts work units and captured token cost
-      rather than one headless price. Acceptance: a sequence that reaches the
-      cap stops with its spend recorded, and a single dispatch inside quota
-      behaves as it does today. **Re-scoped 2026-09-06:** the cumulative cap
-      becomes Release 3.8's per-provider reserve, which is the same
-      persist-before-halt ordering applied to the unit each provider actually
-      exposes; the work-unit quota stays the portfolio budget beside it. The
-      two measure different things and neither replaces the other.
-      _(state: built 2026-09-09 — delivered as Release 3.8 H38-09/H38-27: per-provider reserves in `agent-providers.json` and a remediation cap persisted before the halt; the work-unit quota in `BudgetLedger.ps1` is unchanged)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **Order work inside one repository's roadmap, and detect dead ends.**
-      [`Roadmap.DependencyTracker.ps1`](backend/modules/roadmap/Roadmap.DependencyTracker.ps1)
-      finds references _between_ repositories; nothing orders items _within_ a
-      roadmap, so an operator re-picks after every merge. Port `Get-NextPhase`
-      (`orchestrator\Invoke-RoadmapOrchestrator.ps1`): the first item whose
-      `depends_on` are all complete, plus its Phase 3 dead-end rule, where
-      incomplete-but-ineligible halts as blocked instead of reporting the
-      roadmap complete. **This is the one piece that transfers as code** — a
-      pure function over item ids and a completed set, liftable almost
-      verbatim into a module and covered by module smoke. It needs a
-      `depends_on` notion in this product's roadmap contract first, which is a
-      spec decision in `standards/roadmap` and `spec/roadmap-contract`, not a
-      code change. Acceptance: selection is deterministic for a given completed
-      set; a cycle or an unresolved id halts as blocked; a roadmap with no
-      dependency declarations ranks exactly as it does today.
-      **Unblocked 2026-09-06 (D-001):** dependencies are permitted, optional,
-      within one repository, acyclic, keyed on stable item ids, and they gate
-      dispatch eligibility. Less new notation than it looks —
-      [`ROADMAP_TEMPLATE.md`](standards/roadmap/ROADMAP_TEMPLATE.md) already
-      recommends `[[M3]]` ids and an inline `(depends: M3)` tag that nothing
-      reads; the schema and parser have to catch up with the authoring
-      convention. _(state: built 2026-09-07 — H-13a notation
-      parsed into item id/dependsOn and published on the parse result as an
-      additive `items` array, so the fifteen consumers of the existing
-      string lists are untouched; unknown-id and cycle findings are
-      FINDINGS (ROADMAP-013/014), never parse errors, so a roadmap carrying
-      either still reads normally everywhere else. The notation was not
-      merely unread: `[[M4]]` contains `[M4]`, so the tag extractor claimed
-      the inner pair, lowercased the id into allTags and left a stray `[]`
-      on the item text that reached the console, the queue and the dispatch
-      prompt. Both rules declare an applicabilityCondition and leave the
-      DENOMINATOR when a roadmap declares no dependencies — without that,
-      adding them moved an unrelated fixture from 64 to 67 and across the
-      L2/L3 boundary without a character of it changing. H-13b
-      Get-NextEligibleRoadmapItem then gates SELECTION on it: the next item
-      is the first ELIGIBLE one in document order, and complete and blocked
-      stay distinct verdicts because collapsing them into a null next item
-      makes a dead end look like a finished roadmap. A graph with an
-      unresolved id or a cycle refuses BY NAME rather than answering from an
-      input it cannot trust, and that refusal surfaces through the execution
-      contract checks where every other dispatch refusal already does. A
-      roadmap with no notation selects exactly what first-pending selected
-      before, asserted against this file.)_
-      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] [[VERSIONS]] **[non-blocker]** Detect versions, not just presence. _(state: planned)_
+      The technology inventory (`Get-RepoTechnologyProfile` in
+      `backend/modules/portfolio/Portfolio.Assessment.ps1`) says _which_
+      repositories run Node, not which Node; a version column would make the
+      panel an upgrade-planning surface. It needs a per-manifest version
+      parse and a staleness policy for `engines` fields. **PR:** engineering.
 
 ---
 
@@ -1765,12 +1698,9 @@ number does not. The parser matched one heading form, so the same four fields
 written under "Phase 2.5" produced `activeRelease = null` and failed three of
 four checks on content that was present.
 
-- [ ] [non-blocker] Surface the operator-only backlog as a verification queue in
-      the console. [`Add-OperatorVerification.ps1`](scripts/Add-OperatorVerification.ps1)
-      already records evidence against a verify queue for this repository; the
-      portfolio lane now produces `operatorOnlyItemCount` per repo but nothing
-      reads it yet, so parked work is correctly out of the dispatch queue and
-      not yet visible anywhere else.
+**Open item:** `L19-VERIFY` in Current focus. It absorbed this lane's
+non-blocker about surfacing the operator-only backlog, which asked for the
+same thing.
 
 ---
 
@@ -1925,54 +1855,9 @@ keeps one scan in flight. A forced refresh that arrives mid-scan is queued.
 `REPO_MGMT_CACHE_ROOT` isolates the scan caches and the worker lock, as
 `REPO_MGMT_INDEX_ROOT` does for the index.
 
-**Still open, in order of what the operator waits on:**
-
-- [ ] **Polls never pile up behind a slow host.** The next poll starts only
-      when the previous one settles (a `setTimeout` chain, not `setInterval`).
-      Each poll has an `AbortController` timeout, backs off while calls are slow,
-      and pauses while `document.hidden`. `/api/agent-runs` returned the same
-      147 KB seven times in one load; it answers with an ETag or a `since=`
-      cursor. _(state: planned)_
-      `check: npx vitest run frontend/lib/pollLoop.test.ts`
-- [ ] **A finished scan reaches the page.** The scan ended at 05:17:15 and the
-      snapshot regenerated at 05:19:05, but the header still read "Last scan
-      01:09 AM · 64.0s scan · 9m ago". When scan status moves to `completed`, the
-      page refetches the snapshot, assessment and status. The failed
-      background-refresh path retries at that point instead of logging the same
-      warning twice. Since the assessment moved to the worker, a host with no
-      index answers `GET /api/operations/repos` with 409 until the first scan
-      lands. The page shows that as waiting for the first scan and refetches
-      when the scan finishes. _(state: planned)_
-      `check: npx vitest run frontend/lib/scanCompletionRefresh.test.ts`
-- [ ] **"Auto-scan off" means no scan on load.** The page showed Auto-scan off
-      and started a background re-scan on load anyway. With auto-scan off it
-      serves the cached index and offers the scan; otherwise the re-scan is
-      labelled as such. _(state: planned)_
-      `check: npx vitest run frontend/lib/startupRefreshPolicy.test.ts`
-- [ ] **Hidden tabs cost nothing at startup.** Sixteen calls fire in parallel on
-      load. `operations/repos` (548 KB), `automation/packages` (374 KB) and
-      `roadmap/index` (56 KB) load when their tab opens. Startup marks each phase
-      (auth, bootstrap, snapshot, scan start and end) with `performance.mark`
-      and one `console.debug` line, so a slow reload explains itself.
-      _(state: planned)_
-      `check: npx vitest run frontend/lib/startupPhases.test.ts`
-- [ ] **Every wire timestamp is ISO 8601 UTC.** Scan status returned
-      `09/15/2026 05:13:42`, culture-formatted with no zone, and
-      `repos.index.json` `generatedAt` has the same shape. The snapshot emits
-      ISO 8601. PowerShell 7 turns ISO strings into `DateTime` on read, and
-      `[string]` then formats them in the machine's culture. Emit
-      `.ToUniversalTime().ToString('o')` at every writer, with a tripwire over
-      the route payloads. _(state: planned)_
-      `check: pwsh ./tests/Test-WireTimestamps.ps1 -FailOnError`
-- [ ] **The first screen is honest and short.** Before the snapshot arrives,
-      counts show placeholders, not "Sample data source" with zeros. Today's
-      "Blocking a lane" shows one card per repository with its reasons as tags:
-      the page ran 23,641 px, Portfolio-Forge had four cards, and
-      `roadmap-no-checklist` appeared nine times. Below about 900 px, ranking
-      rows move "Rank basis" into an expandable row, and header badges move
-      into a menu instead of wrapping. Each tab's code loads on demand
-      (`import()`), off the 858 KB first bundle. _(state: planned)_
-      `check: npx vitest run frontend/components/TodayView.test.tsx`
+**Open items**, in order of what the operator waits on, lead Current focus
+after the trial work: `L21-POLL`, `L21-SCANDONE`, `L21-AUTOSCAN`, `L21-LAZY`,
+`L21-TIME`, `L21-FIRST`.
 
 ### Lane 0.22 — The console disagrees with itself (UX assessment 2026-09-15)
 
@@ -2026,82 +1911,21 @@ broken link, the best diagnostic in the product); Leverage's "Not captured yet",
 which names missing measurements instead of showing zeros; the "Previews first;
 nothing is applied" copy and Private Scope; and Help's "Computed from" lines.
 
-**Open, in order.** The first two lead Current focus: test fixtures never reach
-live state, and one dispatch-eligibility rule. Then:
+**Open items** lead Current focus, in this order: `L22-FIX`, `L22-ELIG`
+(first, ahead of the trial work), then `L22-WORK`, `L22-STUCK`, `L22-SNAP`,
+`L22-CTRL`, `L22-LABEL`, `L22-TREND`, `L22-DETAIL`, `L22-GRID`. The
+non-blocker stays here:
 
-- [ ] **Only actionable roadmap lines become work.** Before ranking, each
-      candidate is classified `actionable | done-statement | deferred | guidance |
-      fragment`. Only `actionable` is ranked, queued or offered for dispatch, and
-      each repository shows "Excluded (n)" with the reason for each line. A run
-      that completes writes its item back as done, and the same item hash cannot
-      be dispatched again inside a cooldown unless the operator overrides.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-WorkItemQuality.ps1 -FailOnError`
-- [ ] **Stuck work is detected, not noticed.** Each state has a limit. A
-      runner heartbeat older than N minutes with approved work waiting is stuck,
-      and so is a lane running past its limit, a dispatch with no branch after
-      24 h, an approval that never reached the queue, or a scan stuck in one
-      phase. Each surfaces once, on Today, with its remedy (start runner, poll
-      GitHub, re-enqueue or discard, cancel and requeue). Durations read "27h",
-      never "99293.3s" or "1655m". A lane completes on merge evidence, as its
-      trace already states, not through a manual Complete button.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-StuckWork.ps1 -FailOnError`
-- [ ] **One snapshot, one denominator, honest zeros.** Every count reads the
-      same snapshot: generated-at, discovered, in scope, excluded, scanned and
-      failed. A scan that finds 0 repositories is a warning, never "completed
-      successfully", and the last good snapshot stays on screen labelled with its
-      time. An unmeasured value renders "—" with its reason, never 0. The Grid's
-      empty state never asks for a workspace path that is already set.
-      _(state: planned)_
-      `check: npx vitest run frontend/lib/portfolioSnapshot.test.ts`
-- [ ] **A control does what its label says.** A "Preview…" next action opens
-      the preview, not the generic Run Evaluation modal. Header popovers close
-      on Escape and outside click. A disabled control, including the
-      Local/GitHub switch during a scan, says why. The "Runner stalled … Use
-      Start runner" banner carries the button. Settings never shows "Checking…"
-      or an empty provider list indefinitely. _(state: planned)_
-      `check: npx vitest run frontend/components/HeaderPopovers.test.tsx`
-- [ ] **Labels match what they count.** "N need you" counts repositories, not
-      holds × codes (it read 63 for 59 repositories). "Blocking a lane" appears
-      only where work is under way and stopped. L0-Absent is never shown for a
-      repository whose roadmap exists; the glossary text and the audit
-      disagree. Help's "first pass" names tabs that exist. "Insufficiently
-      understood" shows its cause in plain words (the roadmap is prose, not a
-      checklist). _(state: planned)_
-      `check: npx vitest run frontend/lib/glossary.test.ts`
-- [ ] **Insights reports a gap as a gap.** A missing or failed snapshot breaks
-      the trend line instead of plotting 0%, and a delta's colour follows its
-      direction (a −32.3% badge rendered green). Raw keys
-      (`DifferentialChangedCount`, `differential-noop`, `awaiting-first-scan`)
-      move behind a "Scan diagnostics" disclosure. Release-number copy ("Release
-      2.3 scaffold") leaves the UI. "Failing Actions" agrees with repository
-      detail. Team Activity is scoped to the owner or removed. _(state: planned)_
-      `check: npx vitest run frontend/lib/portfolioTrendView.test.ts`
-- [ ] **Repository detail agrees with itself.** Each panel shows loading,
-      unavailable or error, never a stale score beside "not found" (README 95
-      next to "README file not found", "blocked" above "Dispatch Blockers (0)").
-      Raw errors ("No operations repo record found for repoId …") become operator
-      language with a Retry. Three conditions are flags: failing CI, a default
-      branch pointing at an agent branch, and two local repositories on one
-      remote. _(state: planned)_
-      `check: npx vitest run frontend/components/OperationsWorkspaceView.test.tsx`
-- [ ] **Nothing unfinished in production, and filters stay visible.** The
-      Grid's "Clone PLANNED" and "Archive PLANNED" controls are removed. Active
-      filters show as removable chips, and "Clear filters" clears the ones under
-      Advanced. A Doc Readiness row carries one primary action plus an overflow
-      menu, not eight buttons. The Dependencies tab (a technology inventory, read
-      by a developer as package dependencies) is renamed or folded into
-      repository detail. _(state: planned)_
-      `check: npx vitest run frontend/components/RepoGrid.test.tsx`
-- [ ] **[non-blocker] README standardization history is read where it is
-      written.** Found by the fixture-isolation sweep (2026-09-16). The apply
-      step treats the target repository as its workspace, so it writes backups
-      and `standardization-history.jsonl` under `output\` inside the managed
-      repository. The host reads that history from this workspace's `output\`,
-      so an applied change never shows in its history. Write both to the
-      workspace output root, and stop writing into the managed repository.
-      _(state: planned)_
+- [ ] [[README-HIST]] **[non-blocker] README standardization history is read where it is written.** _(state: planned)_
+      Found by the fixture-isolation sweep (2026-09-16). The apply step
+      treats the target repository as its workspace, so it writes backups and
+      `standardization-history.jsonl` under `output\` inside the managed
+      repository, while the host reads that history from this workspace's
+      output root, so an applied change never shows in its history. Write
+      both to the workspace output root, and stop writing into the managed
+      repository. Start at
+      `backend/modules/docstandardization/DocStandardization.Previewer.ps1`.
+      **PR:** review — a suite gate.
       `check: pwsh ./tests/Test-ReadmeStandardizationHistory.ps1 -FailOnError`
 
 ---

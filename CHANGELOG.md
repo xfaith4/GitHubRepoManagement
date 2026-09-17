@@ -2,6 +2,76 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-17 — The roadmap is written for a lead agent and two fast helpers
+
+Every open item in `ROADMAP.md` was reread and rewritten so that a lead agent
+can plan it and hand bounded parts to faster helpers without asking questions.
+Finished work was archived first, because an open box over finished code is
+the most expensive thing an agent can read.
+
+- **Every open item has an id, its dependencies and fields.**
+  - The first line carries `[[ID]]` and `(depends: …)`, the D-001 notation
+    the roadmap parser already reads.
+  - The indented fields are **Why**, **Do**, **Done when**, **Start at**,
+    **Not**, **Split** and **PR**, defined in §3 with the command that
+    returns the next eligible item.
+  - The parser reads all 56 open items with ids, no unknown ids and no
+    cycles, and returns `L22-FIX` as the next item.
+  - Every **Start at** path was checked to exist on the day it was written.
+- **Order is explicit.**
+  - D-022's five items now depend on every open Lane 0.21 and 0.22 item, as
+    the D-022 ruling sequenced them.
+  - Those lane items moved into Current focus ahead of D-022; their lane
+    sections keep the evidence and point at the ids.
+  - Release 3.9 waits for the 3.7 decision (`T37-DECIDE`), because it routes
+    on evidence only executed work produces.
+  - `L19-VERIFY` renders in Today, as D-022 (3) ruled, instead of the Verify
+    tab the item used to name.
+- **Verified work was archived** to `docs/history/completed-releases.md`,
+  moved verbatim and marked verified: CI Smoke is green on `main` (run
+  34942669543), and each item's code is there. The moved blocks:
+  - Release 3.8 as a whole. Its status already read "done", and validator
+    warning RQ008 flagged its seven open boxes.
+  - The six Lane 0.15 items; their field proof is OQ-11.
+  - The four Lane 0.18 items, which were delivered inside 3.8.
+  - Lane 0.17's dispatch-authority item, and its three resolved
+    non-blockers.
+- **Operator and calendar work left the checkboxes.**
+  - The Release 2.9 service install is OQ-4, and the real `gh agent-task`
+    run is OQ-6; their agent halves are archived.
+  - Trend accrual is a one-paragraph pointer (kind 4 in
+    `kinds-of-work.md`).
+- **Contradictions fixed in the text.**
+  - D-001's item now names only what is left; the parser, findings and
+    selector were built under Lane 0.18.
+  - `L22-STUCK` no longer asks for automatic lane completion, which would
+    reverse D-009; it says to file that question instead.
+  - The Lane 0.19 non-blocker was folded into `L19-VERIFY`.
+  - Its check pointed at a script that never existed; it now names
+    `tests/Test-OperatorQueueRoute.ps1`.
+  - E2's check is `npm run lint`, which validator R024 can match to CI.
+  - The §3 format example was itself an open checkbox that the parser counted
+    as work; the example is now a field table.
+- **New non-blocker `PHASE-DOGFOOD`.** `scripts/Invoke-PhaseProtocolTest.ps1`
+  fails its live-roadmap case (1 of 21) before and after this change. The
+  script is not in the suite.
+- **Agent definitions** in `.claude/agents/`, each loaded and answering in a
+  one-turn session:
+  - `roadmap-lead` (Fable): the loop, delegation rules and prompt templates,
+    validation order, and the traps this repository has paid for. Run it
+    with `claude --agent roadmap-lead`.
+  - `roadmap-scout` (Haiku): read-only discovery.
+  - `roadmap-builder` (Haiku): mechanical edits to named files.
+
+  `CLAUDE.md` points at them, and `AGENTS.md` (with its Copilot mirror)
+  names the new fields.
+- **Verified.**
+  - `Test-RoadmapStructure -FailOnError`: 0 errors. The warnings went from
+    4 to 2, and the file from 2,206 to 2,029 lines.
+  - `Test-RoadmapCheckRunsInCi -FailOnError` passes, with 2 built checks
+    held.
+  - `Add-OperatorVerification.ps1 -List` still parses the file.
+
 ## 2026-09-16 — Test fixtures never reach live state (Lane 0.22)
 
 On 2026-09-15, 175 of the operator's 192 agent-run records were the api-host

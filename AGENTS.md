@@ -33,7 +33,11 @@ common way an agent wastes a day. Two rules make it safe to act on:
    `RQ014-OPEN-ITEM-NO-ARTIFACT` in
    [`tools/Test-RoadmapStructure.ps1`](tools/Test-RoadmapStructure.ps1) fails
    any open item past `planned` that does not name a linked path, a backticked
-   file, or a command — so the artifact is always there to check.
+   file, or a command — so the artifact is always there to check. Each item's
+   first line also carries a stable `[[ID]]` and any `(depends: …)` ids, and
+   its indented fields (**Why**, **Do**, **Done when**, **Start at**, **Not**,
+   **Split**, **PR**) are defined in ROADMAP §3, together with the command
+   that returns the next eligible item.
 
 2. **A completed item may not be in `ROADMAP.md` at all.** On release closure
    the section moves verbatim to
