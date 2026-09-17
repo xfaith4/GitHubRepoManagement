@@ -27,15 +27,6 @@ by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 **Current focus (next agent actions), in order.** Every item here is agent-closable;
 the operator queue is a separate file. Take the first `[ ]` and open a PR.
 
-- [ ] **Lane 0.21 — the assessment route never holds the request thread.**
-      While a scan runs the portal stops answering: 60–72 s per page load,
-      3 m 33 s in the operator's timed reload. The fingerprint defect behind most
-      of it is fixed; the route's GitHub pass and changed-root scans still run
-      inline. Move them into the background worker, and have the route answer
-      from the index at once. Lane 0.21's other items follow it. Built on
-      `lane-021-assessment-worker`: the worker runs the assessment as phase 5
-      and the route serves its last result. _(state: built)_
-      `check: pwsh ./tests/Test-RequestThreadBudget.ps1 -Route /api/portfolio/assessment -MaxMs 2000 -FailOnError`
 - [ ] **Lane 0.22 — test fixtures never reach live state.** 175 of 192 live
       agent-run records are the api-host smoke's `dispatch-success-smoke`. They
       are most of the green "100 agent runs" badge, and a smoke fixture leads
@@ -1919,18 +1910,19 @@ never matched and was re-scanned on every load. That was 40 of 59, measured
 2026-09-15; on the same data the fix reuses 58, and the 59th has a new commit.
 Both sides now use `Get-PortfolioSourceCoverage`.
 
-**Still open, in order of what the operator waits on.** First, and leading
-Current focus: the assessment route never holds the request thread. With
-nothing changed, a differential load still ran `prepMs` 28 s inline (22:59
-2026-09-14): the route's own GitHub API pass (a workflow-run call and a Pages
-lookup per repository) plus scans of changed roots. That work moves into the
-background worker, as `GET /api/status` did on 2026-08-11. It is built
-(2026-09-16): `Invoke-PortfolioAssessmentScan` holds the former route body and
+**The assessment route no longer holds the request thread (verified
+2026-09-16, #309, archived).** With nothing changed, a differential load still
+ran `prepMs` 28 s inline (22:59 2026-09-14): the route's own GitHub API pass (a
+workflow-run call and a Pages lookup per repository) plus scans of changed
+roots. That work moved into the background worker, as `GET /api/status` did on
+2026-08-11. `Invoke-PortfolioAssessmentScan` holds the former route body, and
 only `scripts/Invoke-StatusCacheRefresh.ps1 -RunAssessment` calls it. The route
 serves `assessment-cache.json` under the index root, reports `refreshing`, and
 keeps one scan in flight. A forced refresh that arrives mid-scan is queued.
 `REPO_MGMT_CACHE_ROOT` isolates the scan caches and the worker lock, as
-`REPO_MGMT_INDEX_ROOT` does for the index. Then:
+`REPO_MGMT_INDEX_ROOT` does for the index.
+
+**Still open, in order of what the operator waits on:**
 
 - [ ] **Polls never pile up behind a slow host.** The next poll starts only
       when the previous one settles (a `setTimeout` chain, not `setInterval`).
