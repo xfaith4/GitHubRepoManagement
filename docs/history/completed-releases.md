@@ -6823,3 +6823,26 @@ Verified 2026-09-14, each gate exiting 0 in CI on its PR head:
 resolves to the lifecycle state `curated-out`. The live index reflects kind
 signals only after OQ-12. Verified means the CI check is green, not operator
 sign-off (D-018).
+
+## Lane 0.21 — verified milestones (lane still open; moved from ROADMAP.md under the §3 archive rule)
+
+- [x] **Polls never pile up behind a slow host.** The next poll starts only
+      when the previous one settles (a `setTimeout` chain, not `setInterval`).
+      Each poll has an `AbortController` timeout, backs off while calls are slow,
+      and pauses while `document.hidden`. `/api/agent-runs` returned the same
+      147 KB seven times in one load; it answers with an ETag or a `since=`
+      cursor. _(state: verified)_
+      **Built:** on `lane-021-poll-loop`. `frontend/lib/pollLoop.ts` is the
+      one helper (settle-then-wait chain, per-call abort, back-off, silence
+      while hidden) and `frontend/hooks/usePollLoop.ts` its React form; every
+      former `setInterval` and hand-rolled `setTimeout` chain in `frontend/`
+      runs on it, and the check scans the tree for any that does not.
+      `GET /api/agent-runs` answers an `ETag` with `Cache-Control: no-cache`
+      and 304 to a matching `If-None-Match`; the api-host smoke asserts it.
+      `check: npx vitest run frontend/lib/pollLoop.test.ts`
+
+Verified 2026-09-17, the gate exiting 0 in CI on the PR head:
+
+| Milestone | PR | Head | CI run | Gate |
+| --- | --- | --- | --- | --- |
+| Polls never pile up behind a slow host | #310 | `fab044f` | 35218569388 | `Frontend unit tests` |

@@ -1924,20 +1924,6 @@ nothing changed, a differential load still ran `prepMs` 28 s inline (22:59
 lookup per repository) plus scans of changed roots. That work moves into the
 background worker, as `GET /api/status` did on 2026-08-11. Then:
 
-- [ ] **Polls never pile up behind a slow host.** The next poll starts only
-      when the previous one settles (a `setTimeout` chain, not `setInterval`).
-      Each poll has an `AbortController` timeout, backs off while calls are slow,
-      and pauses while `document.hidden`. `/api/agent-runs` returned the same
-      147 KB seven times in one load; it answers with an ETag or a `since=`
-      cursor. _(state: built)_
-      **Built:** on `lane-021-poll-loop`. `frontend/lib/pollLoop.ts` is the
-      one helper (settle-then-wait chain, per-call abort, back-off, silence
-      while hidden) and `frontend/hooks/usePollLoop.ts` its React form; every
-      former `setInterval` and hand-rolled `setTimeout` chain in `frontend/`
-      runs on it, and the check scans the tree for any that does not.
-      `GET /api/agent-runs` answers an `ETag` with `Cache-Control: no-cache`
-      and 304 to a matching `If-None-Match`; the api-host smoke asserts it.
-      `check: npx vitest run frontend/lib/pollLoop.test.ts`
 - [ ] **A finished scan reaches the page.** The scan ended at 05:17:15 and the
       snapshot regenerated at 05:19:05, but the header still read "Last scan
       01:09 AM · 64.0s scan · 9m ago". When scan status moves to `completed`, the
