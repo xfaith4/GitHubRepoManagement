@@ -50,7 +50,7 @@ function Get-LiveLedgerFixtureRepoName {
     [OutputType([string])]
     param()
 
-    return $script:LiveLedgerFixtureRepoNames
+    foreach ($name in $script:LiveLedgerFixtureRepoNames) { [string]$name }
 }
 
 function Test-FixtureRecordFilterActive {
