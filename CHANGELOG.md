@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-17 — Lane 0.21: polls never pile up behind a slow host
+
+`/api/agent-runs` was fetched seven times in one page load, 147 KB each,
+because every poll in the frontend ran on `setInterval`, which fires whether
+or not the previous call has come back — so a slow host was made slower.
+
+- **One poll helper.** `frontend/lib/pollLoop.ts` (`startPollLoop`) runs a
+  settle-then-wait `setTimeout` chain: the next call starts only when the
+  last one has settled. Every call carries an `AbortSignal` that fires at a
+  per-call timeout; the gap doubles after a slow, timed-out or failed call up
+  to a cap and snaps back after a fast success; nothing is called while the
+  document is hidden, and the loop resumes on `visibilitychange`.
+  `frontend/hooks/usePollLoop.ts` is its React form (task read through a ref;
+  `enabled`; `runNow`).
+- **Every site moved.** The nine `setInterval` timers and the two hand-rolled
+  `setTimeout` chains (Dashboard, ScanProgressChip, AgentActivityIndicator,
+  BuildStampIndicator, App's relative-time ticker, `useBackendLog`,
+  `useHealthPing`, `useRunnerControl`) run on the helper, and the six
+  `apiClient` functions they call accept `{ signal }` so the abort reaches
+  `fetch`.
+- **`GET /api/agent-runs` revalidates.** The route hashes its body into an
+  `ETag`, sends `Cache-Control: no-cache`, and answers a matching
+  `If-None-Match` with 304 and no body. The payload is byte-identical; only
+  the transport changed. `Send-HttpContent` gained `-ExtraHeaders` and now
+  builds its header block as a list, so an empty correlation id no longer
+  emits a stray blank line.
+- **Verified by** `npx vitest run frontend/lib/pollLoop.test.ts`, which proves
+  each rule on a fake clock (one call in flight under a 5 s host, back-off
+  2× to the cap and reset, abort at the timeout, zero calls while hidden) and
+  then scans `frontend/` itself for any `setInterval` or self-rescheduling
+  `setTimeout` outside the helper — proved red on the unchanged tree against
+  exactly the sites above. The api-host smoke asserts the ETag and the 304.
+
 ## 2026-09-15 — Four decisions ruled: D-006, D-012, D-021, D-022
 
 The register's Open section is empty for the first time. Each ruling keeps its

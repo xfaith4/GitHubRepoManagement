@@ -9,6 +9,7 @@ import TransportSecurityIndicator from './components/TransportSecurityIndicator'
 import MobileRepoHealth from './components/MobileRepoHealth';
 import OrientationOverlay, { hasSeenOrientation } from './components/OrientationOverlay';
 import { getStatus, getGithubRepoInsights, getSetupStatus, getAuthStatus, logout, type AuthStatus } from './services/apiClient';
+import { usePollLoop } from './hooks/usePollLoop';
 import { type RepoStatus, type GithubInsightsMeta } from './types';
 import { HelpIcon, SettingsIcon } from './components/icons';
 
@@ -223,14 +224,12 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState]);
 
+  const relativeTimeTicker = usePollLoop(() => {
+    if (dataLastUpdated) setRelativeTime(formatRelativeTime(dataLastUpdated));
+  }, { enabled: Boolean(dataLastUpdated), intervalMs: 15_000 });
   useEffect(() => {
-    if (!dataLastUpdated) return;
-    setRelativeTime(formatRelativeTime(dataLastUpdated));
-    const timer = setInterval(() => {
-      setRelativeTime(formatRelativeTime(dataLastUpdated));
-    }, 15000);
-    return () => clearInterval(timer);
-  }, [dataLastUpdated]);
+    relativeTimeTicker.runNow();
+  }, [dataLastUpdated, relativeTimeTicker]);
 
   const handleDataSourceChange = async (username: string) => {
     setLoading(true);

@@ -1710,8 +1710,8 @@ export async function previewRoadmapCompletion(
 // Release 1.2 — Execution metrics, auto-scan schedule, dependency graph
 // ---------------------------------------------------------------------------
 
-export async function getExecutionMetrics(): Promise<ExecutionMetrics> {
-  const data = await fetchJson<any>(`${API_BASE_URL}/execution/metrics`);
+export async function getExecutionMetrics(init?: { signal?: AbortSignal }): Promise<ExecutionMetrics> {
+  const data = await fetchJson<any>(`${API_BASE_URL}/execution/metrics`, init);
   const d = data?.data ?? data ?? {};
   return {
     completedToday: Number(d.completedToday ?? 0),
@@ -1749,9 +1749,9 @@ export async function getScanSchedule(): Promise<ScanSchedule> {
  * 'unknown', and reporting "healthy" because the status call failed would be
  * the same false-green this surface exists to prevent.
  */
-export async function getAutomationStatus(): Promise<AutomationHealthPayload | null> {
+export async function getAutomationStatus(init?: { signal?: AbortSignal }): Promise<AutomationHealthPayload | null> {
   try {
-    const data = await fetchJson<any>(`${API_BASE_URL}/automation/status`);
+    const data = await fetchJson<any>(`${API_BASE_URL}/automation/status`, init);
     const d = data?.data ?? null;
     return d ? (d as AutomationHealthPayload) : null;
   } catch {
@@ -1790,13 +1790,14 @@ export async function getPortfolioSnapshot(): Promise<PortfolioSnapshot | null> 
  * has to follow it there instead of falling back to this page's origin.
  * Auth-exempt on the host, so this answers on the login screen too.
  */
-export async function getPortalVersion(): Promise<PortalVersionPayload | null> {
+export async function getPortalVersion(init?: { signal?: AbortSignal }): Promise<PortalVersionPayload | null> {
   try {
     const healthBase = API_BASE_URL.replace(/\/api\/?$/, '') + '/health';
     // The /health routes answer unwrapped; `data` is tolerated so a future
     // move behind the standard success envelope does not blank the chip.
     const body = await fetchJson<PortalVersionPayload & { data?: PortalVersionPayload }>(
       `${healthBase}/version`,
+      init
     );
     const d = body?.data ?? body ?? null;
     return d && typeof d === 'object' ? d : null;
@@ -1903,9 +1904,9 @@ export interface RunnerStopResult {
   reason?: string;
 }
 
-export async function getRunnerPresence(): Promise<RunnerPresencePayload | null> {
+export async function getRunnerPresence(init?: { signal?: AbortSignal }): Promise<RunnerPresencePayload | null> {
   try {
-    const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/runner`);
+    const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/runner`, init);
     const d = data?.data ?? null;
     return d ? (d as RunnerPresencePayload) : null;
   } catch {
@@ -2936,14 +2937,14 @@ export async function applyAiDocImprovement(request: AiDocImproveApplyRequest): 
 
 // --- Release 2.0: Agent run monitoring ---
 
-export async function getAgentRuns(options?: { status?: string; repoName?: string; limit?: number }): Promise<AgentRunsResult> {
+export async function getAgentRuns(options?: { status?: string; repoName?: string; limit?: number }, init?: { signal?: AbortSignal }): Promise<AgentRunsResult> {
   const params = new URLSearchParams();
   if (options?.status) params.set('status', options.status);
   if (options?.repoName) params.set('repoName', options.repoName);
   if (options?.limit) params.set('limit', String(options.limit));
   const qs = params.toString() ? `?${params.toString()}` : '';
 
-  const data = await fetchJson<any>(`${API_BASE_URL}/agent-runs${qs}`);
+  const data = await fetchJson<any>(`${API_BASE_URL}/agent-runs${qs}`, init);
   if (!data?.success) {
     throw new Error(data?.error?.message ?? data?.error ?? 'Failed to load agent runs.');
   }
@@ -3089,8 +3090,8 @@ function normalizeBackgroundScanStatus(raw: RawBackgroundScanStatus | null | und
   };
 }
 
-export async function getPortfolioScanStatus(): Promise<BackgroundScanStatus> {
-  const data = await fetchJson<{ success?: boolean; data?: RawBackgroundScanStatus | null }>(`${API_BASE_URL}/portfolio/scan/status`);
+export async function getPortfolioScanStatus(init?: { signal?: AbortSignal }): Promise<BackgroundScanStatus> {
+  const data = await fetchJson<{ success?: boolean; data?: RawBackgroundScanStatus | null }>(`${API_BASE_URL}/portfolio/scan/status`, init);
   return normalizeBackgroundScanStatus(data?.data);
 }
 

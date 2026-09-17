@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { usePollLoop } from './usePollLoop';
 
 export interface BackendLogEntry {
   ts: string;
@@ -42,34 +43,19 @@ export function useBackendLog(
       activeRef.current = true;
       reset();
     }
+  }, [enabled, reset]);
 
-    if (USE_MOCK_API) return;
-
-    let cancelled = false;
-
-    const poll = async () => {
-      try {
-        const url = `/api/log/tail?lines=100&since=${cursorRef.current}`;
-        const res = await fetch(url);
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        const incoming: BackendLogEntry[] = Array.isArray(data?.entries) ? data.entries : [];
-        if (incoming.length > 0 && !cancelled) {
-          setEntries(prev => [...prev, ...incoming]);
-          cursorRef.current = Date.now();
-        }
-      } catch {
-        // Backend offline — silently skip; health ping shows the disconnect
-      }
-    };
-
-    poll();
-    const id = setInterval(poll, pollIntervalMs);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [enabled, pollIntervalMs, reset]);
+  usePollLoop(async (signal) => {
+    const url = `/api/log/tail?lines=100&since=${cursorRef.current}`;
+    const res = await fetch(url, { signal });
+    if (!res.ok || signal.aborted) return;
+    const data = await res.json();
+    const incoming: BackendLogEntry[] = Array.isArray(data?.entries) ? data.entries : [];
+    if (incoming.length > 0 && !signal.aborted) {
+      setEntries(prev => [...prev, ...incoming]);
+      cursorRef.current = Date.now();
+    }
+  }, { enabled: enabled && !USE_MOCK_API, intervalMs: pollIntervalMs });
 
   return { entries, reset };
 }
