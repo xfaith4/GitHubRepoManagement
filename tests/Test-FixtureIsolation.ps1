@@ -147,6 +147,36 @@ foreach ($bypass in $bypasses) {
 }
 $notes.Add(("resolver: detector flagged {0} violating fixtures and passed {1} resolved forms; {2} file(s) swept, {3} bypass(es), {4} file and {5} line exemption(s)" -f ($violating.Count + 1), $resolved.Count, $sweepFiles.Count, $bypasses.Count, $fileExemptions.Count, $lineExemptions.Count))
 
+# The opposite mistake: the resolver handed a constant that is not under
+# output\. It throws at run time, and a caller that collects per-item errors
+# turns that into an empty result. The conversion that introduced this
+# resolver did exactly that to the AI template path (config, not output), and
+# the only symptom was "0 proposals".
+function Find-MisresolvedConstant {
+    param([string]$Text)
+    $outputConstants = @(Get-OutputConstantName -Text $Text)
+    @([regex]::Matches($Text, 'Resolve-OutputPath\b[^\r\n#]*-RelativePath\s+\$script:(?<name>\w+)') |
+        Where-Object { $outputConstants -notcontains $_.Groups['name'].Value } |
+        ForEach-Object { $_.Groups['name'].Value })
+}
+$misresolvedFixture = "`$script:TemplatesRelPath = 'backend\config\ai-doc-templates.json'`n`$p = Resolve-OutputPath -WorkspaceRoot `$WorkspaceRoot -RelativePath `$script:TemplatesRelPath"
+if (@(Find-MisresolvedConstant -Text $misresolvedFixture).Count -ne 1) {
+    $failures.Add('the misresolved-constant detector missed its fixture, so its sweep proves nothing')
+}
+$wellResolvedFixture = "`$script:LedgerRelDir = 'output\ledger'`n`$p = Resolve-OutputPath -WorkspaceRoot `$WorkspaceRoot -RelativePath `$script:LedgerRelDir"
+if (@(Find-MisresolvedConstant -Text $wellResolvedFixture).Count -ne 0) {
+    $failures.Add('the misresolved-constant detector flags an output\ constant')
+}
+$misresolvedCount = 0
+foreach ($file in $sweepFiles) {
+    $relative = $file.FullName.Substring($WorkspaceRoot.Length).TrimStart('\', '/')
+    foreach ($name in @(Find-MisresolvedConstant -Text (Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8))) {
+        $misresolvedCount++
+        $failures.Add("$relative passes `$script:$name to Resolve-OutputPath, but that constant is not an output\ path (declared elsewhere or pointing outside output\)")
+    }
+}
+$notes.Add(("resolver input: every `$script: constant given to Resolve-OutputPath is an output\ path ({0} misresolved)" -f $misresolvedCount))
+
 # ---------------------------------------------------------------------------
 # 2. redirect
 # ---------------------------------------------------------------------------
