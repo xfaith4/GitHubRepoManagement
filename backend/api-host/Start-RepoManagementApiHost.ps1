@@ -194,6 +194,10 @@ $script:RoadmapAuditCacheMemory = @{}
 $script:RoadmapAuditCacheDefaultTtlSeconds = 300
 
 $script:PortfolioAssessmentCacheMemory = @{}
+$script:PortfolioAssessmentCacheSchemaVersion = 1
+$script:ConvertFromJsonHasDateKind = (Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')
+# A forced refresh that arrives while the worker runs; started when it ends.
+$script:AssessmentRefreshPending = $null
 $script:PortfolioAssessmentCacheDefaultTtlSeconds = 180
 $script:ClientIoTimeoutMs = 15000
 $script:RequestTimeoutSeconds = Get-EffectiveRequestTimeoutSeconds `
@@ -2295,11 +2299,28 @@ function Get-StatusCacheTtlSeconds {
     return $ttl
 }
 
-function Get-StatusCacheFilePath {
-    $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
+function Get-ScanCacheDirectory {
+    <#
+    .SYNOPSIS
+        The directory holding the four scan caches and the background worker's
+        lock, progress and cancel files. Honours REPO_MGMT_CACHE_ROOT.
+    .DESCRIPTION
+        Lane 0.21, 2026-09-15: the twin of REPO_MGMT_INDEX_ROOT one level over.
+        A gate that boots its own host and kicks its own worker would otherwise
+        write the operator's status cache and hold the operator's scan lock,
+        so the live portal's refresh waits on a test's fixture scan. Every
+        cache path and the lock derive from here, so they move together.
+    #>
+    $override = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_CACHE_ROOT')
+    $cacheDir = if (-not [string]::IsNullOrWhiteSpace($override)) { $override } else { Join-Path $WorkspaceRoot 'backend\modules\output\cache' }
     if (-not (Test-Path -LiteralPath $cacheDir)) {
         $null = New-Item -ItemType Directory -Path $cacheDir -Force
     }
+    return $cacheDir
+}
+
+function Get-StatusCacheFilePath {
+    $cacheDir = Get-ScanCacheDirectory
     return Join-Path $cacheDir 'status-cache.json'
 }
 
@@ -2699,7 +2720,7 @@ function Get-PortfolioScanState {
             state           = 'running'
             phase           = $(if ($null -ne $detail) { [string]$detail.phase } else { 'starting' })
             phasesDone      = $(if ($null -ne $detail) { [int]$detail.phasesDone } else { 0 })
-            phaseTotal      = 4
+            phaseTotal      = $(if ($null -ne $detail -and $null -ne $detail.PSObject.Properties['phaseTotal']) { [int]$detail.phaseTotal } else { 4 })
             reposDone       = $(if ($null -ne $detail) { $detail.reposDone } else { $null })
             reposTotal      = $(if ($null -ne $detail) { $detail.reposTotal } else { $null })
             startedAt       = $(if ($null -ne $detail) { [string]$detail.startedAt } else { $lockState.startedAt })
@@ -2729,7 +2750,7 @@ function Get-PortfolioScanState {
         state           = $terminalState
         phase           = [string]$progress.phase
         phasesDone      = [int]$progress.phasesDone
-        phaseTotal      = 4
+        phaseTotal      = $(if ($null -ne $progress.PSObject.Properties['phaseTotal']) { [int]$progress.phaseTotal } else { 4 })
         reposDone       = $progress.reposDone
         reposTotal      = $progress.reposTotal
         startedAt       = [string]$progress.startedAt
@@ -2793,7 +2814,15 @@ function Start-BackgroundStatusRefresh {
     param(
         [Parameter(Mandatory = $true)][string[]]$LocalRoots,
         [Parameter()][int]$MaxDepth = 2,
-        [Parameter()][switch]$IncludeNonGitFolders
+        [Parameter()][switch]$IncludeNonGitFolders,
+        # Lane 0.21: the worker also runs the assessment as phase 5 and writes
+        # the index and the assessment cache, so GET /api/portfolio/assessment
+        # never does. Mode and refresh are the request's; the worker skips a
+        # scan phase whose cache is fresh unless the refresh is forced.
+        [Parameter()][switch]$RunAssessment,
+        [Parameter()][ValidateSet('full', 'differential')][string]$AssessmentScanMode = 'full',
+        [Parameter()][switch]$AssessmentRefresh,
+        [Parameter()][switch]$IncludeGithub
     )
 
     $state = Get-StatusRefreshState
@@ -2833,6 +2862,11 @@ function Start-BackgroundStatusRefresh {
             '-CancelPath', (Get-ScanCancelFilePath)
         )
         if ($IncludeNonGitFolders) { $arguments += '-IncludeNonGitFolders' }
+        if ($RunAssessment) {
+            $arguments += @('-RunAssessment', '-AssessmentScanMode', $AssessmentScanMode)
+            if ($AssessmentRefresh) { $arguments += '-AssessmentRefresh' }
+            if ($IncludeGithub) { $arguments += '-IncludeGithub' }
+        }
         if (-not [string]::IsNullOrWhiteSpace($LogPath)) { $arguments += @('-LogPath', $LogPath) }
 
         $startProcessArgs = @{
@@ -2850,13 +2884,16 @@ function Start-BackgroundStatusRefresh {
 
         # Written AFTER the process exists so the lock always names a real pid.
         $lockBody = @{
-            processId = $process.Id
-            startedAt = (Get-Date).ToUniversalTime().ToString('o')
-            roots     = @($LocalRoots)
+            processId  = $process.Id
+            startedAt  = (Get-Date).ToUniversalTime().ToString('o')
+            roots      = @($LocalRoots)
+            assessment = [bool]$RunAssessment
+            scanMode   = $(if ($RunAssessment) { $AssessmentScanMode } else { $null })
+            refresh    = [bool]$AssessmentRefresh
         } | ConvertTo-Json -Compress
         Set-Content -LiteralPath $lockPath -Value $lockBody -Encoding UTF8
 
-        Write-HostLog ("[TRACE] status.refresh started pid={0} roots={1}" -f $process.Id, ($LocalRoots -join ','))
+        Write-HostLog ("[TRACE] status.refresh started pid={0} roots={1} assessment={2} mode={3} refresh={4}" -f $process.Id, ($LocalRoots -join ','), [bool]$RunAssessment, $AssessmentScanMode, [bool]$AssessmentRefresh)
         return $true
     }
     catch {
@@ -3766,10 +3803,7 @@ function Invoke-GitOperation {
 }
 
 function Get-RoadmapCacheFilePath {
-    $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
-    if (-not (Test-Path -LiteralPath $cacheDir)) {
-        $null = New-Item -ItemType Directory -Path $cacheDir -Force
-    }
+    $cacheDir = Get-ScanCacheDirectory
     return Join-Path $cacheDir 'roadmap-index-cache.json'
 }
 
@@ -3878,10 +3912,7 @@ function Get-RoadmapStandard {
 }
 
 function Get-RoadmapAuditCacheFilePath {
-    $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
-    if (-not (Test-Path -LiteralPath $cacheDir)) {
-        $null = New-Item -ItemType Directory -Path $cacheDir -Force
-    }
+    $cacheDir = Get-ScanCacheDirectory
     return Join-Path $cacheDir 'roadmap-audit-cache.json'
 }
 
@@ -4302,10 +4333,7 @@ function Apply-RoadmapRepair {
 }
 
 function Get-DocAuditCacheFilePath {
-    $cacheDir = Join-Path $WorkspaceRoot 'backend\modules\output\cache'
-    if (-not (Test-Path -LiteralPath $cacheDir)) {
-        $null = New-Item -ItemType Directory -Path $cacheDir -Force
-    }
+    $cacheDir = Get-ScanCacheDirectory
     return Join-Path $cacheDir 'docs-audit-cache.json'
 }
 
@@ -4388,26 +4416,158 @@ function Get-PortfolioAssessmentCacheTtlSeconds {
     return $ttl
 }
 
-function Get-PortfolioAssessmentFromCache {
-    param([int]$TtlSeconds)
-    $nowUtc = (Get-Date).ToUniversalTime()
-    $key = 'portfolio-assessment-global'
-    if ($script:PortfolioAssessmentCacheMemory.ContainsKey($key)) {
-        $entry = $script:PortfolioAssessmentCacheMemory[$key]
-        $age = ($nowUtc - [datetime]$entry.CreatedAtUtc).TotalSeconds
-        if ($age -le $TtlSeconds) {
-            return [pscustomobject]@{
-                hit          = $true
-                source       = 'memory'
-                ageSeconds   = $age
-                generatedAt  = $entry.GeneratedAt
-                entries      = $entry.Entries
-                summary      = $entry.Summary
-                signalSources = $entry.SignalSources
+function Get-PortfolioAssessmentCacheFilePath {
+    # Under the index root, not the shared cache directory: REPO_MGMT_INDEX_ROOT
+    # isolates a gate's fixture scans from the operator's portfolio, and this
+    # file is the assessment's twin of repos.index.json.
+    $indexRoot = Get-PortfolioIndexRoot -WorkspaceRoot $WorkspaceRoot
+    if (-not (Test-Path -LiteralPath $indexRoot)) {
+        $null = New-Item -ItemType Directory -Path $indexRoot -Force
+    }
+    return Join-Path $indexRoot 'assessment-cache.json'
+}
+
+function ConvertFrom-JsonPreservingDateText {
+    <#
+    .SYNOPSIS
+        ConvertFrom-Json that leaves ISO timestamps as strings.
+    .DESCRIPTION
+        PowerShell 7.5 added -DateKind String, which does this at parse time.
+        On an older 7.x the parse converts dates, so every [datetime] in the
+        result is written back as a round-trip UTC string; the instant and an
+        explicit basis survive, which is what a wire timestamp owes a reader.
+    #>
+    param([Parameter(Mandatory = $true)][string]$Json)
+
+    if ($script:ConvertFromJsonHasDateKind) {
+        return (ConvertFrom-Json -InputObject $Json -DateKind String)
+    }
+    $parsed = ConvertFrom-Json -InputObject $Json
+    $stack = [System.Collections.Generic.Stack[object]]::new()
+    if ($null -ne $parsed) { $stack.Push($parsed) }
+    while ($stack.Count -gt 0) {
+        $node = $stack.Pop()
+        if ($node -is [System.Management.Automation.PSCustomObject]) {
+            foreach ($property in @($node.PSObject.Properties)) {
+                $value = $property.Value
+                if ($value -is [datetime]) { $property.Value = $value.ToUniversalTime().ToString('o') }
+                elseif ($null -ne $value -and ($value -is [System.Management.Automation.PSCustomObject] -or $value -is [System.Array])) { $stack.Push($value) }
+            }
+        }
+        elseif ($node -is [System.Array]) {
+            for ($i = 0; $i -lt $node.Length; $i++) {
+                $item = $node[$i]
+                if ($item -is [datetime]) { $node[$i] = $item.ToUniversalTime().ToString('o') }
+                elseif ($null -ne $item -and ($item -is [System.Management.Automation.PSCustomObject] -or $item -is [System.Array])) { $stack.Push($item) }
             }
         }
     }
-    return [pscustomobject]@{ hit = $false }
+    return $parsed
+}
+
+function ConvertTo-SignalSourceTable {
+    # signalSources is a hashtable when the scan built it and a PSCustomObject
+    # after a JSON round trip; the route adds keys, so it needs a hashtable.
+    param([AllowNull()][object]$InputObject)
+    $table = @{}
+    if ($null -eq $InputObject) { return $table }
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        foreach ($key in $InputObject.Keys) { $table[[string]$key] = $InputObject[$key] }
+        return $table
+    }
+    foreach ($property in $InputObject.PSObject.Properties) { $table[$property.Name] = $property.Value }
+    return $table
+}
+
+function Get-PortfolioAssessmentFromCache {
+    <#
+    .SYNOPSIS
+        The last assessment result: the memory entry when it still describes
+        the file on disk, else the file the worker wrote.
+    .DESCRIPTION
+        Lane 0.21, 2026-09-15. The scan runs in a separate process now, so the
+        memory entry is a view of one file version (the same rule the status,
+        roadmap and audit caches follow). -IgnoreTtl is the stale-while-
+        revalidate read the route takes when nothing fresh exists.
+    #>
+    param(
+        [Parameter()][int]$TtlSeconds,
+        [Parameter()][switch]$IgnoreTtl
+    )
+    $nowUtc = (Get-Date).ToUniversalTime()
+    $key = 'portfolio-assessment-global'
+    $cacheFile = Get-PortfolioAssessmentCacheFilePath
+
+    if ($script:PortfolioAssessmentCacheMemory.ContainsKey($key)) {
+        $entry = $script:PortfolioAssessmentCacheMemory[$key]
+        if (-not (Test-MemoryCacheEntryCurrent -Entry $entry -CacheFilePath $cacheFile)) {
+            $script:PortfolioAssessmentCacheMemory.Remove($key)
+            Write-HostLog '[TRACE] portfolio.assessment cache memory entry superseded by background refresh'
+        }
+        else {
+            $age = ($nowUtc - [datetime]$entry.CreatedAtUtc).TotalSeconds
+            if ($IgnoreTtl.IsPresent -or $age -le $TtlSeconds) {
+                return [pscustomobject]@{
+                    hit           = $true
+                    source        = 'memory'
+                    ageSeconds    = $age
+                    generatedAt   = $entry.GeneratedAt
+                    entries       = $entry.Entries
+                    summary       = $entry.Summary
+                    signalSources = $entry.SignalSources
+                    scanSummary   = $entry.ScanSummary
+                }
+            }
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $cacheFile)) { return [pscustomobject]@{ hit = $false } }
+    try {
+        $raw = Get-Content -LiteralPath $cacheFile -Raw -Encoding UTF8 -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) { return [pscustomobject]@{ hit = $false } }
+        # PSCustomObjects, not the hashtable variant: entries are objects
+        # everywhere else (Add-Member is used on them). Dates stay the strings
+        # the worker wrote: ConvertFrom-Json otherwise turns every ISO token
+        # into a [datetime], and the next [string] cast in a consumer renders it
+        # in the machine's culture with no timezone (steering contract 5).
+        $disk = ConvertFrom-JsonPreservingDateText -Json $raw
+        foreach ($required in @('schemaVersion', 'createdAtUtc', 'generatedAt', 'entries')) {
+            if ($null -eq $disk.PSObject.Properties[$required]) { return [pscustomobject]@{ hit = $false } }
+        }
+        if ([int]$disk.schemaVersion -ne $script:PortfolioAssessmentCacheSchemaVersion) { return [pscustomobject]@{ hit = $false } }
+        $createdAtUtc = ([datetime]$disk.createdAtUtc).ToUniversalTime()
+        $age = ($nowUtc - $createdAtUtc).TotalSeconds
+        if ((-not $IgnoreTtl.IsPresent) -and ($age -gt $TtlSeconds)) { return [pscustomobject]@{ hit = $false } }
+
+        $generatedAt = ConvertTo-PortfolioTimestamp $disk.generatedAt
+        $entries = @($disk.entries)
+        $summary = if ($null -ne $disk.PSObject.Properties['summary']) { $disk.summary } else { $null }
+        $signalSources = if ($null -ne $disk.PSObject.Properties['signalSources']) { $disk.signalSources } else { $null }
+        $scanSummary = if ($null -ne $disk.PSObject.Properties['scanSummary']) { $disk.scanSummary } else { $null }
+        $script:PortfolioAssessmentCacheMemory[$key] = @{
+            CreatedAtUtc     = $createdAtUtc
+            GeneratedAt      = $generatedAt
+            Entries          = $entries
+            Summary          = $summary
+            SignalSources    = $signalSources
+            ScanSummary      = $scanSummary
+            FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile)
+        }
+        return [pscustomobject]@{
+            hit           = $true
+            source        = 'disk'
+            ageSeconds    = $age
+            generatedAt   = $generatedAt
+            entries       = $entries
+            summary       = $summary
+            signalSources = $signalSources
+            scanSummary   = $scanSummary
+        }
+    }
+    catch {
+        Write-HostLog ("[WARN] portfolio.assessment cache file unreadable at {0}: {1}" -f $cacheFile, $_.Exception.Message)
+        return [pscustomobject]@{ hit = $false }
+    }
 }
 
 function Save-PortfolioAssessmentCache {
@@ -4415,20 +4575,730 @@ function Save-PortfolioAssessmentCache {
         [array]$Entries,
         [object]$Summary,
         [object]$SignalSources,
-        [string]$GeneratedAt
+        [string]$GeneratedAt,
+        [object]$ScanSummary = $null
     )
     $nowUtc = (Get-Date).ToUniversalTime()
+    $cacheFile = Get-PortfolioAssessmentCacheFilePath
+    $document = @{
+        schemaVersion = $script:PortfolioAssessmentCacheSchemaVersion
+        createdAtUtc  = $nowUtc.ToString('o')
+        generatedAt   = $GeneratedAt
+        entries       = @($Entries)
+        summary       = $Summary
+        signalSources = $SignalSources
+        scanSummary   = $ScanSummary
+    }
+    # Written first, stamped after: the memory entry names the file version it
+    # matches, and that version does not exist until the write does.
+    try {
+        ($document | ConvertTo-Json -Depth 25) | Set-Content -LiteralPath $cacheFile -Encoding UTF8
+    }
+    catch {
+        Write-HostLog ("Portfolio assessment cache write skipped: {0}" -f $_.Exception.Message)
+    }
     $script:PortfolioAssessmentCacheMemory['portfolio-assessment-global'] = @{
-        CreatedAtUtc  = $nowUtc
-        GeneratedAt   = $GeneratedAt
-        Entries       = $Entries
-        Summary       = $Summary
-        SignalSources = $SignalSources
+        CreatedAtUtc     = $nowUtc
+        GeneratedAt      = $GeneratedAt
+        Entries          = @($Entries)
+        Summary          = $Summary
+        SignalSources    = $SignalSources
+        ScanSummary      = $ScanSummary
+        FileWriteTimeUtc = (Get-CacheFileStamp -Path $cacheFile)
     }
 }
 
 function Clear-PortfolioAssessmentCache {
     $script:PortfolioAssessmentCacheMemory = @{}
+    try {
+        $cacheFile = Get-PortfolioAssessmentCacheFilePath
+        if (Test-Path -LiteralPath $cacheFile) { Remove-Item -LiteralPath $cacheFile -Force -ErrorAction Stop }
+    }
+    catch { Write-HostLog ("Portfolio assessment cache clear skipped: {0}" -f $_.Exception.Message) }
+}
+
+
+function Invoke-PortfolioAssessmentScan {
+    <#
+    .SYNOPSIS
+        The portfolio assessment scan: every signal, the differential decision,
+        the assessment, the index write and the cache write. Runs in the
+        background worker, never on the request thread.
+    .DESCRIPTION
+        Lane 0.21, 2026-09-15. This is the body GET /api/portfolio/assessment
+        ran inline: its own GitHub API pass (a workflow-run call and a Pages
+        lookup per repository), scans of changed roots, the assessment and the
+        index write held the single request thread for 28-72 s per page load,
+        and every other route with it. The route now serves the last result
+        this function wrote and kicks scripts/Invoke-StatusCacheRefresh.ps1
+        -RunAssessment, which dot-sources the host and calls this out of
+        process. Parameter names match the route's former locals on purpose,
+        so the moved body reads them unchanged.
+    #>
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Runs in the background worker after an HTTP GET asked for a refresh; no operator is present to answer a -WhatIf prompt.')]
+    param(
+        [Parameter(Mandatory = $true)][object]$Settings,
+        [Parameter()][switch]$Refresh,
+        [Parameter()][switch]$ForcedRefreshAll,
+        [Parameter()][ValidateSet('full', 'differential')][string]$ScanMode = 'full',
+        [Parameter()][switch]$IncludeGithub,
+        [Parameter()][switch]$IncludeCuration,
+        # The worker's scan phases ran (or confirmed fresh) every cache this
+        # reads moments ago, so a forced refresh reads them rather than
+        # treating each as a miss and waiting on a worker it already is.
+        [Parameter()][switch]$CachesFresh,
+        [Parameter()][string]$CorrelationId = 'worker',
+        [Parameter()][datetime]$RequestStart = (Get-Date)
+    )
+
+    $useDifferentialScan = (-not $Refresh) -and ($ScanMode -eq 'differential')
+
+    $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
+    $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
+
+    # Pull cached signal sources where available; otherwise enumerate live for that signal only.
+    $signalSources = @{}
+
+    # 1) Local repo inventory (status)
+    $statusTtl = Get-StatusCacheTtlSeconds -Settings $settings
+    $statusKey = Get-StatusCacheKey -LocalRoots $defaultRoots -MaxDepth $defaultDepth -IncludeNonGitFolders $false
+    $statusResult = $null
+    if ((-not $refresh -or $CachesFresh) -and $statusTtl -gt 0) {
+        $statusCached = Get-StatusFromCache -Key $statusKey -TtlSeconds $statusTtl
+        if ($statusCached.hit) {
+            $statusResult = $statusCached.response
+            $signalSources['status'] = 'cache'
+        }
+    }
+    if ($null -eq $statusResult) {
+        # Same fix as GET /api/status: this route must not run a
+        # portfolio sweep on the request thread either, or it
+        # reintroduces the freeze through the other door. Both
+        # routes read the same cache, so one background worker
+        # serves both.
+        $assessmentRefreshStarted = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
+        $assessmentRefreshState = Get-StatusRefreshState
+
+        $staleStatus = Get-StatusFromCache -Key $statusKey -TtlSeconds $statusTtl -IgnoreTtl:$true
+        if ($staleStatus.hit) {
+            $statusResult = $staleStatus.response
+            $signalSources['status'] = 'stale-cache'
+        }
+        else {
+            $statusResult = $null
+            $signalSources['status'] = 'awaiting-first-scan'
+        }
+
+        $signalSources['statusRefreshing'] = [bool]($assessmentRefreshStarted -or $assessmentRefreshState.running)
+        Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} status-cache miss served={1} refreshing={2}" -f $correlationId, $signalSources['status'], $signalSources['statusRefreshing'])
+    }
+    else {
+        # A cache hit already carries the GitHub metadata the
+        # worker joined in. Re-joining it here would put those
+        # sequential API calls back on the request thread - the
+        # very cost this change removed.
+        $signalSources['statusRefreshing'] = $false
+    }
+    $localRepos = @(if ($null -ne $statusResult -and $statusResult.success -and $null -ne $statusResult.data) { @($statusResult.data.repos) } else { @() })
+    # Release 3.5 milestone 3 (assessment recompute) -- the
+    # assessment, the doc-readiness queue and the value ranking
+    # all derive from this list, and until now they counted
+    # every scanned repo: the review found a .tmp_compare
+    # nested clone RANKED in the Doc Readiness queue. Out-of-
+    # scope repos stay visible in the grid behind their toggle;
+    # they do not receive assessments, rankings, or dispatch
+    # eligibility. Absent classification reads in-scope, so a
+    # missing policy cannot shrink the portfolio.
+    $localRepos = @($localRepos | Where-Object {
+        $repoScope = Get-ObjectPropertyValue -InputObject $_ -PropertyName 'scope' -Default $null
+        $null -eq $repoScope -or [bool](Get-ObjectPropertyValue -InputObject $repoScope -PropertyName 'inScope' -Default $true)
+    })
+
+    # 2) Roadmap entries
+    $roadmapTtl     = Get-RoadmapCacheTtlSeconds -Settings $settings
+    $roadmapEntries = @()
+    if (-not $useDifferentialScan) {
+        if (-not $refresh -or $CachesFresh) {
+            $rmCached = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
+            if ($rmCached.hit) {
+                $roadmapEntries = @($rmCached.entries)
+                $signalSources['roadmap'] = 'cache'
+            }
+        }
+        if (@($roadmapEntries).Count -eq 0) {
+            # Was a fresh inline scan measured at prepMs=40669 on
+            # this workspace - and it never wrote the cache, so
+            # every request paid it again. The worker owns this
+            # scan now; serve whatever it last produced.
+            $null = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
+            $rmStale = Get-RoadmapFromCache -TtlSeconds ([int]::MaxValue)
+            if ($rmStale.hit) {
+                $roadmapEntries = @($rmStale.entries)
+                $signalSources['roadmap'] = 'stale-cache'
+            } else {
+                $roadmapEntries = @()
+                $signalSources['roadmap'] = 'awaiting-first-scan'
+            }
+            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} roadmap-cache miss served={1}" -f $correlationId, $signalSources['roadmap'])
+        }
+    } else {
+        $signalSources['roadmap'] = 'deferred-differential'
+    }
+
+    # 3) Doc audit entries
+    $docAuditTtl     = Get-DocAuditCacheTtlSeconds -Settings $settings
+    $docAuditEntries = @()
+    if (-not $useDifferentialScan) {
+        if (-not $refresh -or $CachesFresh) {
+            $daCached = Get-DocAuditFromCache -TtlSeconds $docAuditTtl
+            if ($daCached.hit) {
+                $docAuditEntries = @($daCached.entries)
+                $signalSources['docAudit'] = 'cache'
+            }
+        }
+        if (@($docAuditEntries).Count -eq 0) {
+            # Same move as the roadmap branch above: the worker
+            # scans, the request serves.
+            $null = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
+            $daStale = Get-DocAuditFromCache -TtlSeconds ([int]::MaxValue)
+            if ($daStale.hit) {
+                $docAuditEntries = @($daStale.entries)
+                $signalSources['docAudit'] = 'stale-cache'
+            } else {
+                $docAuditEntries = @()
+                $signalSources['docAudit'] = 'awaiting-first-scan'
+            }
+            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} doc-audit-cache miss served={1}" -f $correlationId, $signalSources['docAudit'])
+        }
+    } else {
+        $signalSources['docAudit'] = 'deferred-differential'
+    }
+
+    # 4) Roadmap audit entries (maturity).
+    $roadmapAuditEntries = @()
+    $rmAuditTtl = Get-RoadmapAuditCacheTtlSeconds -Settings $settings
+    if (-not $useDifferentialScan) {
+        if (-not $refresh -or $CachesFresh) {
+            $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
+            if ($raCached.hit) {
+                $roadmapAuditEntries = @($raCached.entries)
+                $signalSources['roadmapAudit'] = 'cache'
+            }
+        }
+        if (@($roadmapAuditEntries).Count -eq 0) {
+            # The last of the four sweeps this route ran inline.
+            # With the other three moved, this one alone still
+            # held the request for prepMs=27799.
+            $null = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
+            $raStale = Get-RoadmapAuditFromCache -TtlSeconds ([int]::MaxValue)
+            if ($raStale.hit) {
+                $roadmapAuditEntries = @($raStale.entries)
+                $signalSources['roadmapAudit'] = 'stale-cache'
+            } else {
+                $roadmapAuditEntries = @()
+                $signalSources['roadmapAudit'] = 'awaiting-first-scan'
+            }
+            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} roadmap-audit-cache miss served={1}" -f $correlationId, $signalSources['roadmapAudit'])
+        }
+    } else {
+        $signalSources['roadmapAudit'] = 'deferred-differential'
+    }
+
+    # 5) Execution ledger entries
+    $executionEntries = @()
+    try {
+        $ledger = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
+        $executionEntries = @($ledger.entries)
+        $signalSources['execution'] = 'ledger'
+    } catch {
+        $signalSources['execution'] = 'unavailable'
+    }
+
+    # 6) GitHub repos for enrichment. GitHub-only repos remain opt-in.
+    $githubRepos = @()
+    $signalSources['github'] = 'not-evaluated'
+    $owner = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) {
+        [string]$settings.reconcile.gitHubOwner
+    } else { '' }
+    if (-not [string]::IsNullOrWhiteSpace($owner)) {
+        try {
+            $token = Get-ConfiguredGitHubToken -Settings $settings
+            if (-not [string]::IsNullOrWhiteSpace($token)) {
+                $apiResult = Get-GitHubReposViaApi -Owner $owner -Token $token -RepoLimit 100 -IncludePrivate:$true -IncludeForks:$false -IncludeArchived:$true -FetchCommitMetrics:$false
+                if ($null -ne $apiResult -and $apiResult.PSObject.Properties.Name -contains 'repos') {
+                    $githubRepos = @($apiResult.repos)
+                    $signalSources['github'] = 'api'
+                } else {
+                    $signalSources['github'] = 'unavailable'
+                }
+            } else {
+                $signalSources['github'] = 'no-token'
+            }
+        } catch {
+            $signalSources['github'] = 'error'
+            Write-HostLog ("[TRACE] portfolio.assessment github fetch failed: {0}" -f $_.Exception.Message)
+        }
+    } else {
+        $signalSources['github'] = 'no-owner-configured'
+    }
+
+    $githubReposForAssessment = @($githubRepos)
+    if (-not $includeGithub -and @($githubReposForAssessment).Count -gt 0) {
+        $localRepoNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($repo in @($localRepos)) {
+            if ($null -eq $repo) { continue }
+            $repoName = if ($repo.PSObject.Properties.Name -contains 'name') { [string]$repo.name } else { '' }
+            if (-not [string]::IsNullOrWhiteSpace($repoName)) {
+                [void]$localRepoNames.Add($repoName)
+            }
+        }
+        $githubReposForAssessment = @($githubReposForAssessment | Where-Object { $localRepoNames.Contains([string]$_.name) })
+    }
+
+    $previousIndexPayload = $null
+    $previousRepos = @()
+    $previousRepoMap = @{}
+    $previousAssessments = @()
+    $unchangedAssessments = @()
+    $localReposForAssessment = @($localRepos)
+    $githubReposForAssessmentSubset = @($githubReposForAssessment)
+    $differentialChangedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $differentialDecisionMap = @{}
+    $scanSummary = [ordered]@{
+        reused = 0
+        reindexed = 0
+        failed = 0
+        durationMs = 0
+    }
+
+    if ($useDifferentialScan) {
+        $previousIndexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
+        $previousRepos = @(if ($null -ne $previousIndexPayload -and $previousIndexPayload.PSObject.Properties.Name -contains 'repos') { @($previousIndexPayload.repos) } else { @() })
+        if (@($previousRepos).Count -gt 0) {
+            foreach ($prev in @($previousRepos)) {
+                if ($null -eq $prev) { continue }
+                $prevName = [string](Get-ObjectPropertyValue -InputObject $prev -PropertyName 'repoName' -Default '')
+                if ([string]::IsNullOrWhiteSpace($prevName)) { continue }
+                $previousRepoMap[$prevName.ToLowerInvariant()] = $prev
+            }
+
+            $currentLocalMap = @{}
+            foreach ($repo in @($localRepos)) {
+                if ($null -eq $repo) { continue }
+                $name = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+                if ([string]::IsNullOrWhiteSpace($name)) { continue }
+                $currentLocalMap[$name.ToLowerInvariant()] = $repo
+            }
+            $currentGithubMap = @{}
+            foreach ($repo in @($githubReposForAssessment)) {
+                if ($null -eq $repo) { continue }
+                $name = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+                if ([string]::IsNullOrWhiteSpace($name)) { continue }
+                $currentGithubMap[$name.ToLowerInvariant()] = $repo
+            }
+
+            $allNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($name in $previousRepoMap.Keys) { [void]$allNames.Add($name) }
+            foreach ($name in $currentLocalMap.Keys) { [void]$allNames.Add($name) }
+            foreach ($name in $currentGithubMap.Keys) { [void]$allNames.Add($name) }
+
+            foreach ($nameKey in $allNames) {
+                $currentLocal = if ($currentLocalMap.ContainsKey($nameKey)) { $currentLocalMap[$nameKey] } else { $null }
+                $currentGithub = if ($currentGithubMap.ContainsKey($nameKey)) { $currentGithubMap[$nameKey] } else { $null }
+                # The assessment's own rule, so the fingerprint computed here
+                # is the one the index stores (see Get-PortfolioSourceCoverage).
+                $currentSourceCoverage = Get-PortfolioSourceCoverage -LocalRepo $currentLocal -GitHubRepo $currentGithub
+                $currentLocalPath = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'path' -Default '') } else { '' }
+                $currentHeadCommitSha = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'headCommitSha' -Default '') } else { '' }
+                $currentHeadCommitDate = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'lastCommitDate' -Default '') } else { '' }
+                $currentHeadBranch = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'branch' -Default '') } else { '' }
+                $currentFingerprint = if ($currentSourceCoverage -eq 'none') { '' } else { Get-PortfolioScanFingerprintFromSignals -LocalRepo $currentLocal -GitHubRepo $currentGithub -LocalPath $currentLocalPath -SourceCoverage $currentSourceCoverage }
+
+                $previousRepo = if ($previousRepoMap.ContainsKey($nameKey)) { $previousRepoMap[$nameKey] } else { $null }
+                $previousFingerprint = if ($null -ne $previousRepo) { Get-PortfolioScanFingerprintFromIndexedRepo -IndexedRepo $previousRepo } else { '' }
+                $previousHeadCommitSha = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastIndexedCommitSha' -Default (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'headCommitSha' -Default '')) } else { '' }
+                $previousHeadCommitDate = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastIndexedCommitDate' -Default (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'localLastCommitDate' -Default '')) } else { '' }
+                $previousHeadBranch = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastIndexedBranch' -Default (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'currentBranch' -Default '')) } else { '' }
+                $previousMetadataHash = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastMetadataHash' -Default $previousFingerprint) } else { '' }
+
+                $scanDecisionReason = 'reused-cache'
+                $changeState = 'unchanged'
+                $changed = $false
+
+                if ($null -eq $previousRepo) {
+                    $scanDecisionReason = 'cache-miss'
+                    $changeState = 'needs-rescan'
+                    $changed = $true
+                }
+                elseif ($currentSourceCoverage -eq 'none') {
+                    $scanDecisionReason = 'cache-invalid'
+                    $changeState = 'needs-rescan'
+                    $changed = $true
+                }
+                elseif ([string]::IsNullOrWhiteSpace($previousFingerprint) -or [string]::IsNullOrWhiteSpace($currentFingerprint)) {
+                    $scanDecisionReason = 'cache-invalid'
+                    $changeState = 'needs-rescan'
+                    $changed = $true
+                }
+                elseif (-not [string]::IsNullOrWhiteSpace($currentHeadCommitSha) -and -not [string]::IsNullOrWhiteSpace($previousHeadCommitSha) -and $currentHeadCommitSha -ne $previousHeadCommitSha) {
+                    $scanDecisionReason = 'new-commit'
+                    $changeState = 'new-commits'
+                    $changed = $true
+                }
+                elseif ($currentFingerprint -ne $previousFingerprint) {
+                    $scanDecisionReason = 'metadata-changed'
+                    $changeState = 'metadata-changed'
+                    $changed = $true
+                }
+
+                if ($changed) {
+                    [void]$differentialChangedSet.Add($nameKey)
+                }
+
+                $differentialDecisionMap[$nameKey] = [pscustomobject]@{
+                    changeState            = $changeState
+                    scanDecisionReason     = $scanDecisionReason
+                    headCommitSha          = if ([string]::IsNullOrWhiteSpace($currentHeadCommitSha)) { $null } else { $currentHeadCommitSha }
+                    headCommitDate         = if ([string]::IsNullOrWhiteSpace($currentHeadCommitDate)) { $null } else { $currentHeadCommitDate }
+                    headBranch             = if ([string]::IsNullOrWhiteSpace($currentHeadBranch)) { $null } else { $currentHeadBranch }
+                    currentMetadataHash    = if ([string]::IsNullOrWhiteSpace($currentFingerprint)) { $null } else { $currentFingerprint }
+                    lastIndexedCommitSha   = if ([string]::IsNullOrWhiteSpace($previousHeadCommitSha)) { $null } else { $previousHeadCommitSha }
+                    lastIndexedCommitDate  = if ([string]::IsNullOrWhiteSpace($previousHeadCommitDate)) { $null } else { $previousHeadCommitDate }
+                    lastIndexedBranch      = if ([string]::IsNullOrWhiteSpace($previousHeadBranch)) { $null } else { $previousHeadBranch }
+                    lastMetadataHash       = if ([string]::IsNullOrWhiteSpace($previousMetadataHash)) { $null } else { $previousMetadataHash }
+                    lastScannedAt          = if ($null -ne $previousRepo) { (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastScannedAt' -Default $null) } else { $null }
+                    lastScanStatus         = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastScanStatus' -Default 'ok') } else { 'ok' }
+                    lastScanError          = if ($null -ne $previousRepo) { (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastScanError' -Default $null) } else { $null }
+                }
+            }
+
+            $localReposForAssessment = @($localRepos | Where-Object {
+                $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'name' -Default '')
+                -not [string]::IsNullOrWhiteSpace($repoName) -and $differentialChangedSet.Contains($repoName)
+            })
+
+            $githubReposForAssessmentSubset = @($githubReposForAssessment | Where-Object {
+                $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'name' -Default '')
+                -not [string]::IsNullOrWhiteSpace($repoName) -and $differentialChangedSet.Contains($repoName)
+            })
+
+            $previousAssessments = Convert-PortfolioIndexReposToAssessments -IndexRepos $previousRepos
+            $currentNameSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($repo in @($localRepos)) {
+                $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+                if (-not [string]::IsNullOrWhiteSpace($repoName)) { [void]$currentNameSet.Add($repoName) }
+            }
+            foreach ($repo in @($githubReposForAssessment)) {
+                $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+                if (-not [string]::IsNullOrWhiteSpace($repoName)) { [void]$currentNameSet.Add($repoName) }
+            }
+            $unchangedAssessments = @($previousAssessments | Where-Object {
+                $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                -not [string]::IsNullOrWhiteSpace($repoName) -and $currentNameSet.Contains($repoName) -and (-not $differentialChangedSet.Contains($repoName))
+            })
+
+            Write-HostLog ("[TRACE] portfolio.assessment differential selection changed={0} unchanged={1} totalCurrent={2}" -f $differentialChangedSet.Count, @($unchangedAssessments).Count, $currentNameSet.Count)
+            $signalSources['scanMode'] = 'differential'
+            $signalSources['differentialChangedCount'] = $differentialChangedSet.Count
+            $signalSources['differentialUnchangedCount'] = @($unchangedAssessments).Count
+        } else {
+            $signalSources['scanMode'] = 'differential-fallback-full'
+        }
+    }
+
+    if ($useDifferentialScan) {
+        if (@($previousRepos).Count -eq 0) {
+            $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
+            $signalSources['roadmap'] = 'fresh-scan'
+            $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
+            $signalSources['docAudit'] = 'fresh-scan'
+            $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+            if ($docAuditTtl -gt 0) { Save-DocAuditCache -Entries $docAuditEntries -AuditedAt $auditedAt }
+
+            $roadmapAuditEntries = @()
+            $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
+            if ($raCached.hit) {
+                $roadmapAuditEntries = @($raCached.entries)
+                $signalSources['roadmapAudit'] = 'cache'
+            } else {
+                $signalSources['roadmapAudit'] = 'unavailable'
+            }
+        } elseif (@($localReposForAssessment).Count -gt 0) {
+            $changedLocalRoots = @($localReposForAssessment | ForEach-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'path' -Default '') } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            if (@($changedLocalRoots).Count -gt 0) {
+                $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $changedLocalRoots -MaxDepth 3)
+                $signalSources['roadmap'] = 'differential-scan'
+
+                Clear-DocAuditCache
+                Clear-RoadmapCache
+                $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $changedLocalRoots -MaxDepth 3)
+                $signalSources['docAudit'] = 'differential-scan'
+
+                $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
+                if ($docAuditTtl -gt 0) { Save-DocAuditCache -Entries $docAuditEntries -AuditedAt $auditedAt }
+            }
+
+            $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
+            if ($raCached.hit) {
+                $roadmapAuditEntries = @($raCached.entries | Where-Object {
+                    $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
+                    -not [string]::IsNullOrWhiteSpace($repoName) -and $differentialChangedSet.Contains($repoName)
+                })
+                $signalSources['roadmapAudit'] = 'cache-filtered'
+            } else {
+                $roadmapAuditEntries = @()
+                $signalSources['roadmapAudit'] = 'unavailable'
+            }
+        } else {
+            $roadmapEntries = @()
+            $docAuditEntries = @()
+            $roadmapAuditEntries = @()
+            $signalSources['roadmap'] = 'differential-noop'
+            $signalSources['docAudit'] = 'differential-noop'
+            $signalSources['roadmapAudit'] = 'differential-noop'
+        }
+    }
+
+    # 7) Structure standards
+    $standardsPath = Join-Path $WorkspaceRoot 'backend\config\repo-structure-standards.json'
+    $structStandards = Get-RepoStructureStandards -StandardsPath $standardsPath
+    $valueScoringPath = Join-Path $WorkspaceRoot 'backend\config\value-scoring.json'
+    $valueScoringConfig = Get-PortfolioValueScoringConfig -ConfigPath $valueScoringPath
+
+    # Run the assessment
+    $assessmentLocalRepos = @(if ($useDifferentialScan) { @($localReposForAssessment) } else { @($localRepos) })
+    $assessmentGithubRepos = @(if ($useDifferentialScan) { @($githubReposForAssessmentSubset) } else { @($githubReposForAssessment) })
+
+    # Cross-cutting — scan performance budget: prep (discovery +
+    # git status + GitHub API + prior scans) up to here, then the
+    # assessment (audit + scoring) and index-write phases below.
+    $scanBudgetPrepMs = [int]((Get-Date) - $requestStart).TotalMilliseconds
+    $swAssess = [System.Diagnostics.Stopwatch]::StartNew()
+    $assessedChanged = Invoke-PortfolioAssessment `
+        -LocalRepos          $assessmentLocalRepos `
+        -RoadmapEntries      $roadmapEntries `
+        -DocAuditEntries     $docAuditEntries `
+        -RoadmapAuditEntries $roadmapAuditEntries `
+        -ExecutionEntries    $executionEntries `
+        -GitHubRepos         $assessmentGithubRepos `
+        -StructureStandards  $structStandards `
+        -ValueScoringConfig  $valueScoringConfig
+    $swAssess.Stop()
+
+    $assessments = @(if ($useDifferentialScan -and @($previousRepos).Count -gt 0) {
+        @(@($assessedChanged) + @($unchangedAssessments))
+    } else {
+        @($assessedChanged)
+    })
+
+    if ($useDifferentialScan -and @($previousRepos).Count -gt 0) {
+        foreach ($assessment in @($assessments)) {
+            if ($null -eq $assessment) { continue }
+            $repoName = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'repoName' -Default '')
+            if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
+            $key = $repoName.ToLowerInvariant()
+            if (-not $differentialDecisionMap.ContainsKey($key)) { continue }
+
+            $decision = $differentialDecisionMap[$key]
+            $assessment | Add-Member -NotePropertyName changeState -NotePropertyValue ([string](Get-ObjectPropertyValue -InputObject $decision -PropertyName 'changeState' -Default 'needs-rescan')) -Force
+            $assessment | Add-Member -NotePropertyName scanDecisionReason -NotePropertyValue ([string](Get-ObjectPropertyValue -InputObject $decision -PropertyName 'scanDecisionReason' -Default 'cache-invalid')) -Force
+            $assessment | Add-Member -NotePropertyName headCommitSha -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'headCommitSha' -Default $null) -Force
+            $assessment | Add-Member -NotePropertyName headCommitDate -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'headCommitDate' -Default $null) -Force
+            $assessment | Add-Member -NotePropertyName headBranch -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'headBranch' -Default $null) -Force
+            $assessment | Add-Member -NotePropertyName currentMetadataHash -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'currentMetadataHash' -Default $null) -Force
+            $assessment | Add-Member -NotePropertyName lastIndexedCommitSha -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastIndexedCommitSha' -Default $null) -Force
+            $assessment | Add-Member -NotePropertyName lastIndexedCommitDate -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastIndexedCommitDate' -Default $null) -Force
+            $assessment | Add-Member -NotePropertyName lastIndexedBranch -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastIndexedBranch' -Default $null) -Force
+            $assessment | Add-Member -NotePropertyName lastMetadataHash -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastMetadataHash' -Default $null) -Force
+            $assessment | Add-Member -NotePropertyName lastScannedAt -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastScannedAt' -Default $null) -Force
+            $assessment | Add-Member -NotePropertyName lastScanStatus -NotePropertyValue ([string](Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastScanStatus' -Default 'ok')) -Force
+            $assessment | Add-Member -NotePropertyName lastScanError -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastScanError' -Default $null) -Force
+        }
+
+        $scanSummary.reused = @($unchangedAssessments).Count
+        $scanSummary.reindexed = @($assessedChanged).Count
+        $scanSummary.failed = 0
+    } else {
+        foreach ($assessment in @($assessments)) {
+            if ($null -eq $assessment) { continue }
+            $assessment | Add-Member -NotePropertyName changeState -NotePropertyValue 'needs-rescan' -Force
+            $assessment | Add-Member -NotePropertyName scanDecisionReason -NotePropertyValue $(if ($refresh) { 'forced-refresh' } else { 'cache-miss' }) -Force
+        }
+        $scanSummary.reused = 0
+        $scanSummary.reindexed = @($assessments).Count
+        $scanSummary.failed = 0
+    }
+
+    $localRepoByName = @{}
+    foreach ($repo in @($localRepos)) {
+        if ($null -eq $repo) { continue }
+        $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+        if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
+        $localRepoByName[$repoName.ToLowerInvariant()] = $repo
+    }
+
+    $githubRepoByName = @{}
+    foreach ($repo in @($githubReposForAssessment)) {
+        if ($null -eq $repo) { continue }
+        $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
+        if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
+        $githubRepoByName[$repoName.ToLowerInvariant()] = $repo
+    }
+
+    foreach ($assessment in @($assessments)) {
+        if ($null -eq $assessment) { continue }
+        $repoName = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'repoName' -Default '')
+        if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
+
+        $nameKey = $repoName.ToLowerInvariant()
+        $localRepo = if ($localRepoByName.ContainsKey($nameKey)) { $localRepoByName[$nameKey] } else { $null }
+        $githubRepo = if ($githubRepoByName.ContainsKey($nameKey)) { $githubRepoByName[$nameKey] } else { $null }
+        $localPath = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'localPath' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'path' -Default ''))
+        $sourceCoverage = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'sourceCoverage' -Default $(if ($null -ne $localRepo -and $null -ne $githubRepo) { 'local+github' } elseif ($null -ne $localRepo) { 'local' } elseif ($null -ne $githubRepo) { 'github' } else { 'none' }))
+        $headCommitSha = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'headCommitSha' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'headCommitSha' -Default ''))
+        $headCommitDate = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'headCommitDate' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'lastCommitDate' -Default ''))
+        $headBranch = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'headBranch' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'branch' -Default (Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'branch' -Default '')))
+        $currentMetadataHash = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'currentMetadataHash' -Default '')
+        if ([string]::IsNullOrWhiteSpace($currentMetadataHash) -and $sourceCoverage -ne 'none') {
+            $currentMetadataHash = Get-PortfolioScanFingerprintFromSignals -LocalRepo $localRepo -GitHubRepo $githubRepo -LocalPath $localPath -SourceCoverage $sourceCoverage
+        }
+
+        $assessment | Add-Member -NotePropertyName headCommitSha -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitSha)) { $null } else { $headCommitSha }) -Force
+        $assessment | Add-Member -NotePropertyName headCommitDate -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitDate)) { $null } else { $headCommitDate }) -Force
+        $assessment | Add-Member -NotePropertyName headBranch -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headBranch)) { $null } else { $headBranch }) -Force
+        $assessment | Add-Member -NotePropertyName currentMetadataHash -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($currentMetadataHash)) { $null } else { $currentMetadataHash }) -Force
+
+        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastIndexedCommitSha' -Default ''))) {
+            $assessment | Add-Member -NotePropertyName lastIndexedCommitSha -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitSha)) { $null } else { $headCommitSha }) -Force
+        }
+        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastIndexedCommitDate' -Default ''))) {
+            $assessment | Add-Member -NotePropertyName lastIndexedCommitDate -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitDate)) { $null } else { $headCommitDate }) -Force
+        }
+        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastIndexedBranch' -Default ''))) {
+            $assessment | Add-Member -NotePropertyName lastIndexedBranch -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headBranch)) { $null } else { $headBranch }) -Force
+        }
+        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastMetadataHash' -Default ''))) {
+            $assessment | Add-Member -NotePropertyName lastMetadataHash -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($currentMetadataHash)) { $null } else { $currentMetadataHash }) -Force
+        }
+        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastScanStatus' -Default ''))) {
+            $assessment | Add-Member -NotePropertyName lastScanStatus -NotePropertyValue 'ok' -Force
+        }
+        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastScannedAt' -Default ''))) {
+            $assessment | Add-Member -NotePropertyName lastScannedAt -NotePropertyValue $null -Force
+        }
+    }
+
+    $assessments = @($assessments | Sort-Object `
+        @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') }; Ascending = $true },
+        @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'sourceCoverage' -Default '') }; Ascending = $true })
+
+    if ($includeCuration) {
+        $assessments = Add-PortfolioCurationToAssessments -Assessments $assessments
+    }
+
+    $summary = Get-PortfolioAssessmentSummary -Assessments $assessments
+    $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+    $scanId = [guid]::NewGuid().ToString('n')
+
+    try {
+        $snapshotResult = Write-AppDbPortfolioAssessmentSnapshot -Assessments $assessments -ScanId $scanId -CapturedAt $generatedAt
+        if (-not $snapshotResult.success) {
+            Write-HostLog ("WARN portfolio.assessment persistence snapshot skipped: {0}" -f $snapshotResult.reason)
+        }
+    } catch {
+        Write-HostLog ("WARN portfolio.assessment persistence snapshot failed: {0}" -f $_.Exception.Message)
+    }
+
+    # Release 3.6 M5 -- foundation coverage accrues on the same
+    # clock as maturity history. This is the ONLY site that
+    # records it: a capture wired anywhere else would leave the
+    # coverage series a one-point scaffold forever.
+    try {
+        $coverageConfig = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
+        if ($null -ne $coverageConfig) {
+            $coveragePayload = Get-PortfolioConclusionsPayload -Entries @($assessments) -Config $coverageConfig -GeneratedAt $generatedAt
+            $coverageWrite = Write-AppDbFoundationCoverage `
+                -Coverage $coveragePayload.coverage `
+                -ScanId $scanId `
+                -CapturedAt $generatedAt `
+                -RepoCount ([int]$coveragePayload.count)
+            if ($coverageWrite.success) {
+                Write-HostLog ("[TRACE] portfolio.assessment foundation coverage recorded scanId={0} domains={1} repos={2}" -f $scanId, $coverageWrite.inserted, $coveragePayload.count)
+            }
+            else {
+                Write-HostLog ("WARN portfolio.assessment foundation coverage skipped: {0}" -f $coverageWrite.reason)
+            }
+        }
+    } catch {
+        Write-HostLog ("WARN portfolio.assessment foundation coverage failed: {0}" -f $_.Exception.Message)
+    }
+
+    try {
+        $changedRepoNames = @(if ($useDifferentialScan) {
+            @($differentialChangedSet | ForEach-Object { [string]$_ })
+        } else {
+            @($assessments | ForEach-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        })
+        $scanSummaryResult = Write-AppDbDifferentialScanSnapshot `
+            -ScanId $scanId `
+            -ScanMode $(if ($useDifferentialScan) { 'differential' } else { 'full' }) `
+            -StartedAt ($requestStart.ToUniversalTime().ToString('o')) `
+            -CompletedAt $generatedAt `
+            -ReposTotal @($assessments).Count `
+            -ReposChanged $(if ($useDifferentialScan) { $differentialChangedSet.Count } else { @($assessments).Count }) `
+            -ChangedRepoNames $changedRepoNames
+        if (-not $scanSummaryResult.success) {
+            Write-HostLog ("WARN portfolio.assessment differential snapshot skipped: {0}" -f $scanSummaryResult.reason)
+        }
+    } catch {
+        Write-HostLog ("WARN portfolio.assessment differential snapshot failed: {0}" -f $_.Exception.Message)
+    }
+
+    $swIndex = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $curationMap = Get-PortfolioCurationMap -WorkspaceRoot $WorkspaceRoot
+        $indexArtifacts = Save-PortfolioIndexArtifacts `
+            -WorkspaceRoot $WorkspaceRoot `
+            -Assessments $assessments `
+            -LocalRepos $localRepos `
+            -GitHubRepos $githubReposForAssessment `
+            -Summary $summary `
+            -SignalSources $signalSources `
+            -CurationByRepoId $curationMap `
+            -GeneratedAt $generatedAt
+        Write-HostLog ("[TRACE] portfolio.assessment index-written path={0} artifact={1} count={2}" -f $indexArtifacts.indexPath, $indexArtifacts.artifactPath, $indexArtifacts.repoCount)
+    } catch {
+        Write-HostLog ("WARN portfolio.assessment index write skipped: {0}" -f $_.Exception.Message)
+    }
+    $swIndex.Stop()
+
+
+    $scanSummary.durationMs = [int]((Get-Date) - $requestStart).TotalMilliseconds
+    # Written whenever a scan completes, TTL or not: the route serves this
+    # file, so a TTL of 0 must not leave it with nothing to serve.
+    Save-PortfolioAssessmentCache -Entries $assessments -Summary $summary -SignalSources $signalSources -GeneratedAt $generatedAt -ScanSummary $scanSummary
+
+    # Release 2.3 Phase 5F observability: one greppable line per scan
+    # proving how many repos were reused from cache vs fully reindexed.
+    $scanSummaryMode = if ($useDifferentialScan) { 'differential' } elseif ($refresh) { $(if ($forcedRefreshAll) { 'forced-refresh-all' } else { 'forced-full' }) } else { 'full' }
+    Write-HostLog ("[TRACE] portfolio.assessment scan-summary correlationId={0} mode={1} reused={2} reindexed={3} failed={4} durationMs={5}" -f $correlationId, $scanSummaryMode, $scanSummary.reused, $scanSummary.reindexed, $scanSummary.failed, $scanSummary.durationMs)
+    # Cross-cutting — per-phase scan performance budget log.
+    Write-HostLog ("[TRACE] portfolio.assessment scan-budget correlationId={0} prepMs={1} assessMs={2} indexWriteMs={3} totalMs={4} reposAssessed={5}" -f $correlationId, $scanBudgetPrepMs, [int]$swAssess.ElapsedMilliseconds, [int]$swIndex.ElapsedMilliseconds, $scanSummary.durationMs, @($assessments).Count)
+
+    return [pscustomobject]@{
+        entries       = @($assessments)
+        summary       = $summary
+        signalSources = $signalSources
+        generatedAt   = $generatedAt
+        scanSummary   = $scanSummary
+        scanMode      = $scanSummaryMode
+        prepMs        = $scanBudgetPrepMs
+        assessMs      = [int]$swAssess.ElapsedMilliseconds
+        indexWriteMs  = [int]$swIndex.ElapsedMilliseconds
+        count         = @($assessments).Count
+    }
 }
 
 function Clear-DocAuditCache {
@@ -10428,680 +11298,100 @@ try {
 
                     $settings   = Get-HostSettings
                     $ttlSeconds = Get-PortfolioAssessmentCacheTtlSeconds -Settings $settings
-
-                    if (-not $refresh -and -not $useDifferentialScan -and $ttlSeconds -gt 0) {
-                        $cacheHit = Get-PortfolioAssessmentFromCache -TtlSeconds $ttlSeconds
-                        if ($cacheHit.hit) {
-                            $cacheHitEntries = @($cacheHit.entries)
-                            if ($includeCuration) {
-                                # Curation is operator-authored and can change between scans;
-                                # merge the current map even on cache hits so toggles are
-                                # visible without forcing a rescan.
-                                $cacheHitEntries = Add-PortfolioCurationToAssessments -Assessments $cacheHitEntries
-                            }
-                            Add-MetricCounter -Name 'api_requests_total'
-                            Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
-                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} done source=cache ageSeconds={1}" -f $correlationId, [math]::Round($cacheHit.ageSeconds, 1))
-                            $readBudget = New-PortfolioReadBudgetResult -CacheSource 'memory' `
-                                -MeasuredMs ([double]((Get-Date) - $requestStart).TotalMilliseconds) -Settings $settings
-                            Write-HostLog (Format-PortfolioReadBudgetLog -Result $readBudget -CorrelationId $correlationId -Route '/api/portfolio/assessment')
-                            if (-not $readBudget.withinBudget) {
-                                Write-HostLog ("WARN portfolio.assessment read budget exceeded correlationId={0} class={1} measuredMs={2} budgetMs={3} overByMs={4}" -f $correlationId, $readBudget.readClass, $readBudget.measuredMs, $readBudget.budgetMs, $readBudget.overByMs)
-                            }
-                            Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
-                                success = $true
-                                data = @{
-                                    entries         = $cacheHitEntries
-                                    summary         = $cacheHit.summary
-                                    signalSources   = $cacheHit.signalSources
-                                    generatedAt     = $cacheHit.generatedAt
-                                    count           = @($cacheHitEntries).Count
-                                    cacheSource     = 'memory'
-                                    cacheAgeSeconds = [math]::Round($cacheHit.ageSeconds, 1)
-                                    performance     = $readBudget
-                                }
-                            }
-                            break
-                        }
-                    }
-
+                    $includeGithub = if ($q.ContainsKey('includeGithub')) { Parse-Bool -Value $q.includeGithub -Default $false } else { $false }
                     $defaultRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $settings
                     $defaultDepth = if ($settings.ContainsKey('inventory') -and $settings.inventory.ContainsKey('maxDepth') -and $settings.inventory.maxDepth) { [int]$settings.inventory.maxDepth } else { 3 }
 
-                    # Pull cached signal sources where available; otherwise enumerate live for that signal only.
-                    $signalSources = @{}
+                    # Lane 0.21 (2026-09-15): this route never scans, never calls
+                    # GitHub and never assesses on the request thread. It serves
+                    # the last result the worker wrote and, when asked, kicks the
+                    # worker, which runs Invoke-PortfolioAssessmentScan out of
+                    # process. Measured before this: 28-72 s per page load, and
+                    # /health/live waiting behind it.
+                    # One read, judged for freshness here: the served result is
+                    # the last one written whatever its age, and its age decides
+                    # whether a plain read asks for another.
+                    $served = Get-PortfolioAssessmentFromCache -TtlSeconds $ttlSeconds -IgnoreTtl
+                    $servedFresh = [bool]($served.hit -and $ttlSeconds -gt 0 -and $served.ageSeconds -le $ttlSeconds)
+                    # Existence only: parsing the index here would put a multi-MB
+                    # read back on the request thread to learn one boolean.
+                    $hasIndex = Test-Path -LiteralPath (Get-PortfolioIndexPath -WorkspaceRoot $WorkspaceRoot) -PathType Leaf
 
-                    # 1) Local repo inventory (status)
-                    $statusTtl = Get-StatusCacheTtlSeconds -Settings $settings
-                    $statusKey = Get-StatusCacheKey -LocalRoots $defaultRoots -MaxDepth $defaultDepth -IncludeNonGitFolders $false
-                    $statusResult = $null
-                    if (-not $refresh -and $statusTtl -gt 0) {
-                        $statusCached = Get-StatusFromCache -Key $statusKey -TtlSeconds $statusTtl
-                        if ($statusCached.hit) {
-                            $statusResult = $statusCached.response
-                            $signalSources['status'] = 'cache'
+                    # What this request asks of the worker. A differential load
+                    # always asks (it is the console's "what changed?"), a forced
+                    # refresh always asks for a full pass, and a plain read asks
+                    # only when nothing fresh is on disk.
+                    $wantScan = [bool]($refresh -or $useDifferentialScan -or (-not $servedFresh))
+                    $requestedMode = if ($refresh) { 'full' } elseif ($useDifferentialScan -and $hasIndex) { 'differential' } elseif ($useDifferentialScan) { 'differential-fallback-full' } elseif ($hasIndex) { 'differential' } else { 'full' }
+                    $workerMode = if ($requestedMode -eq 'differential') { 'differential' } else { 'full' }
+                    $scanStarted = $false
+                    $scanQueued = $false
+                    $refreshState = Get-StatusRefreshState
+                    $pendingRefresh = $script:AssessmentRefreshPending
+                    if ($refreshState.running) {
+                        # Single flight. A forced refresh that arrives mid-scan is
+                        # remembered and started when the running scan ends; a
+                        # differential request is answered by the scan in flight.
+                        if ($refresh) {
+                            $script:AssessmentRefreshPending = @{ includeGithub = [bool]$includeGithub; requestedAt = (Get-Date).ToUniversalTime().ToString('o') }
+                            $scanQueued = $true
                         }
                     }
-                    if ($null -eq $statusResult) {
-                        # Same fix as GET /api/status: this route must not run a
-                        # portfolio sweep on the request thread either, or it
-                        # reintroduces the freeze through the other door. Both
-                        # routes read the same cache, so one background worker
-                        # serves both.
-                        $assessmentRefreshStarted = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
-                        $assessmentRefreshState = Get-StatusRefreshState
-
-                        $staleStatus = Get-StatusFromCache -Key $statusKey -TtlSeconds $statusTtl -IgnoreTtl:$true
-                        if ($staleStatus.hit) {
-                            $statusResult = $staleStatus.response
-                            $signalSources['status'] = 'stale-cache'
+                    elseif ($wantScan -or $null -ne $pendingRefresh) {
+                        $startRefresh = [bool]($refresh -or ($null -ne $pendingRefresh))
+                        $startMode = if ($startRefresh) { 'full' } else { $workerMode }
+                        $startIncludeGithub = [bool]($includeGithub -or ($null -ne $pendingRefresh -and [bool]$pendingRefresh.includeGithub))
+                        $scanStarted = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth -RunAssessment -AssessmentScanMode $startMode -AssessmentRefresh:$startRefresh -IncludeGithub:$startIncludeGithub
+                        if ($scanStarted) {
+                            $script:AssessmentRefreshPending = $null
+                            if ($startRefresh) { $requestedMode = 'full' }
                         }
                         else {
-                            $statusResult = $null
-                            $signalSources['status'] = 'awaiting-first-scan'
-                        }
-
-                        $signalSources['statusRefreshing'] = [bool]($assessmentRefreshStarted -or $assessmentRefreshState.running)
-                        Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} status-cache miss served={1} refreshing={2}" -f $correlationId, $signalSources['status'], $signalSources['statusRefreshing'])
-                    }
-                    else {
-                        # A cache hit already carries the GitHub metadata the
-                        # worker joined in. Re-joining it here would put those
-                        # sequential API calls back on the request thread - the
-                        # very cost this change removed.
-                        $signalSources['statusRefreshing'] = $false
-                    }
-                    $localRepos = @(if ($null -ne $statusResult -and $statusResult.success -and $null -ne $statusResult.data) { @($statusResult.data.repos) } else { @() })
-                    # Release 3.5 milestone 3 (assessment recompute) -- the
-                    # assessment, the doc-readiness queue and the value ranking
-                    # all derive from this list, and until now they counted
-                    # every scanned repo: the review found a .tmp_compare
-                    # nested clone RANKED in the Doc Readiness queue. Out-of-
-                    # scope repos stay visible in the grid behind their toggle;
-                    # they do not receive assessments, rankings, or dispatch
-                    # eligibility. Absent classification reads in-scope, so a
-                    # missing policy cannot shrink the portfolio.
-                    $localRepos = @($localRepos | Where-Object {
-                        $repoScope = Get-ObjectPropertyValue -InputObject $_ -PropertyName 'scope' -Default $null
-                        $null -eq $repoScope -or [bool](Get-ObjectPropertyValue -InputObject $repoScope -PropertyName 'inScope' -Default $true)
-                    })
-
-                    # 2) Roadmap entries
-                    $roadmapTtl     = Get-RoadmapCacheTtlSeconds -Settings $settings
-                    $roadmapEntries = @()
-                    if (-not $useDifferentialScan) {
-                        if (-not $refresh) {
-                            $rmCached = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
-                            if ($rmCached.hit) {
-                                $roadmapEntries = @($rmCached.entries)
-                                $signalSources['roadmap'] = 'cache'
-                            }
-                        }
-                        if (@($roadmapEntries).Count -eq 0) {
-                            # Was a fresh inline scan measured at prepMs=40669 on
-                            # this workspace - and it never wrote the cache, so
-                            # every request paid it again. The worker owns this
-                            # scan now; serve whatever it last produced.
-                            $null = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
-                            $rmStale = Get-RoadmapFromCache -TtlSeconds ([int]::MaxValue)
-                            if ($rmStale.hit) {
-                                $roadmapEntries = @($rmStale.entries)
-                                $signalSources['roadmap'] = 'stale-cache'
-                            } else {
-                                $roadmapEntries = @()
-                                $signalSources['roadmap'] = 'awaiting-first-scan'
-                            }
-                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} roadmap-cache miss served={1}" -f $correlationId, $signalSources['roadmap'])
-                        }
-                    } else {
-                        $signalSources['roadmap'] = 'deferred-differential'
-                    }
-
-                    # 3) Doc audit entries
-                    $docAuditTtl     = Get-DocAuditCacheTtlSeconds -Settings $settings
-                    $docAuditEntries = @()
-                    if (-not $useDifferentialScan) {
-                        if (-not $refresh) {
-                            $daCached = Get-DocAuditFromCache -TtlSeconds $docAuditTtl
-                            if ($daCached.hit) {
-                                $docAuditEntries = @($daCached.entries)
-                                $signalSources['docAudit'] = 'cache'
-                            }
-                        }
-                        if (@($docAuditEntries).Count -eq 0) {
-                            # Same move as the roadmap branch above: the worker
-                            # scans, the request serves.
-                            $null = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
-                            $daStale = Get-DocAuditFromCache -TtlSeconds ([int]::MaxValue)
-                            if ($daStale.hit) {
-                                $docAuditEntries = @($daStale.entries)
-                                $signalSources['docAudit'] = 'stale-cache'
-                            } else {
-                                $docAuditEntries = @()
-                                $signalSources['docAudit'] = 'awaiting-first-scan'
-                            }
-                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} doc-audit-cache miss served={1}" -f $correlationId, $signalSources['docAudit'])
-                        }
-                    } else {
-                        $signalSources['docAudit'] = 'deferred-differential'
-                    }
-
-                    # 4) Roadmap audit entries (maturity).
-                    $roadmapAuditEntries = @()
-                    $rmAuditTtl = Get-RoadmapAuditCacheTtlSeconds -Settings $settings
-                    if (-not $useDifferentialScan) {
-                        if (-not $refresh) {
-                            $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
-                            if ($raCached.hit) {
-                                $roadmapAuditEntries = @($raCached.entries)
-                                $signalSources['roadmapAudit'] = 'cache'
-                            }
-                        }
-                        if (@($roadmapAuditEntries).Count -eq 0) {
-                            # The last of the four sweeps this route ran inline.
-                            # With the other three moved, this one alone still
-                            # held the request for prepMs=27799.
-                            $null = Start-BackgroundStatusRefresh -LocalRoots $defaultRoots -MaxDepth $defaultDepth
-                            $raStale = Get-RoadmapAuditFromCache -TtlSeconds ([int]::MaxValue)
-                            if ($raStale.hit) {
-                                $roadmapAuditEntries = @($raStale.entries)
-                                $signalSources['roadmapAudit'] = 'stale-cache'
-                            } else {
-                                $roadmapAuditEntries = @()
-                                $signalSources['roadmapAudit'] = 'awaiting-first-scan'
-                            }
-                            Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} roadmap-audit-cache miss served={1}" -f $correlationId, $signalSources['roadmapAudit'])
-                        }
-                    } else {
-                        $signalSources['roadmapAudit'] = 'deferred-differential'
-                    }
-
-                    # 5) Execution ledger entries
-                    $executionEntries = @()
-                    try {
-                        $ledger = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
-                        $executionEntries = @($ledger.entries)
-                        $signalSources['execution'] = 'ledger'
-                    } catch {
-                        $signalSources['execution'] = 'unavailable'
-                    }
-
-                    # 6) GitHub repos for enrichment. GitHub-only repos remain opt-in.
-                    $githubRepos = @()
-                    $signalSources['github'] = 'not-evaluated'
-                    $includeGithub = if ($q.ContainsKey('includeGithub')) { Parse-Bool -Value $q.includeGithub -Default $false } else { $false }
-                    $owner = if ($settings.ContainsKey('reconcile') -and $settings.reconcile.ContainsKey('gitHubOwner') -and $settings.reconcile.gitHubOwner) {
-                        [string]$settings.reconcile.gitHubOwner
-                    } else { '' }
-                    if (-not [string]::IsNullOrWhiteSpace($owner)) {
-                        try {
-                            $token = Get-ConfiguredGitHubToken -Settings $settings
-                            if (-not [string]::IsNullOrWhiteSpace($token)) {
-                                $apiResult = Get-GitHubReposViaApi -Owner $owner -Token $token -RepoLimit 100 -IncludePrivate:$true -IncludeForks:$false -IncludeArchived:$true -FetchCommitMetrics:$false
-                                if ($null -ne $apiResult -and $apiResult.PSObject.Properties.Name -contains 'repos') {
-                                    $githubRepos = @($apiResult.repos)
-                                    $signalSources['github'] = 'api'
-                                } else {
-                                    $signalSources['github'] = 'unavailable'
-                                }
-                            } else {
-                                $signalSources['github'] = 'no-token'
-                            }
-                        } catch {
-                            $signalSources['github'] = 'error'
-                            Write-HostLog ("[TRACE] portfolio.assessment github fetch failed: {0}" -f $_.Exception.Message)
-                        }
-                    } else {
-                        $signalSources['github'] = 'no-owner-configured'
-                    }
-
-                    $githubReposForAssessment = @($githubRepos)
-                    if (-not $includeGithub -and @($githubReposForAssessment).Count -gt 0) {
-                        $localRepoNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-                        foreach ($repo in @($localRepos)) {
-                            if ($null -eq $repo) { continue }
-                            $repoName = if ($repo.PSObject.Properties.Name -contains 'name') { [string]$repo.name } else { '' }
-                            if (-not [string]::IsNullOrWhiteSpace($repoName)) {
-                                [void]$localRepoNames.Add($repoName)
-                            }
-                        }
-                        $githubReposForAssessment = @($githubReposForAssessment | Where-Object { $localRepoNames.Contains([string]$_.name) })
-                    }
-
-                    $previousIndexPayload = $null
-                    $previousRepos = @()
-                    $previousRepoMap = @{}
-                    $previousAssessments = @()
-                    $unchangedAssessments = @()
-                    $localReposForAssessment = @($localRepos)
-                    $githubReposForAssessmentSubset = @($githubReposForAssessment)
-                    $differentialChangedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-                    $differentialDecisionMap = @{}
-                    $scanSummary = [ordered]@{
-                        reused = 0
-                        reindexed = 0
-                        failed = 0
-                        durationMs = 0
-                    }
-
-                    if ($useDifferentialScan) {
-                        $previousIndexPayload = Get-PortfolioIndexPayload -WorkspaceRoot $WorkspaceRoot
-                        $previousRepos = @(if ($null -ne $previousIndexPayload -and $previousIndexPayload.PSObject.Properties.Name -contains 'repos') { @($previousIndexPayload.repos) } else { @() })
-                        if (@($previousRepos).Count -gt 0) {
-                            foreach ($prev in @($previousRepos)) {
-                                if ($null -eq $prev) { continue }
-                                $prevName = [string](Get-ObjectPropertyValue -InputObject $prev -PropertyName 'repoName' -Default '')
-                                if ([string]::IsNullOrWhiteSpace($prevName)) { continue }
-                                $previousRepoMap[$prevName.ToLowerInvariant()] = $prev
-                            }
-
-                            $currentLocalMap = @{}
-                            foreach ($repo in @($localRepos)) {
-                                if ($null -eq $repo) { continue }
-                                $name = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
-                                if ([string]::IsNullOrWhiteSpace($name)) { continue }
-                                $currentLocalMap[$name.ToLowerInvariant()] = $repo
-                            }
-                            $currentGithubMap = @{}
-                            foreach ($repo in @($githubReposForAssessment)) {
-                                if ($null -eq $repo) { continue }
-                                $name = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
-                                if ([string]::IsNullOrWhiteSpace($name)) { continue }
-                                $currentGithubMap[$name.ToLowerInvariant()] = $repo
-                            }
-
-                            $allNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-                            foreach ($name in $previousRepoMap.Keys) { [void]$allNames.Add($name) }
-                            foreach ($name in $currentLocalMap.Keys) { [void]$allNames.Add($name) }
-                            foreach ($name in $currentGithubMap.Keys) { [void]$allNames.Add($name) }
-
-                            foreach ($nameKey in $allNames) {
-                                $currentLocal = if ($currentLocalMap.ContainsKey($nameKey)) { $currentLocalMap[$nameKey] } else { $null }
-                                $currentGithub = if ($currentGithubMap.ContainsKey($nameKey)) { $currentGithubMap[$nameKey] } else { $null }
-                                # The assessment's own rule, so the fingerprint computed here
-                                # is the one the index stores (see Get-PortfolioSourceCoverage).
-                                $currentSourceCoverage = Get-PortfolioSourceCoverage -LocalRepo $currentLocal -GitHubRepo $currentGithub
-                                $currentLocalPath = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'path' -Default '') } else { '' }
-                                $currentHeadCommitSha = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'headCommitSha' -Default '') } else { '' }
-                                $currentHeadCommitDate = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'lastCommitDate' -Default '') } else { '' }
-                                $currentHeadBranch = if ($null -ne $currentLocal) { [string](Get-ObjectPropertyValue -InputObject $currentLocal -PropertyName 'branch' -Default '') } else { '' }
-                                $currentFingerprint = if ($currentSourceCoverage -eq 'none') { '' } else { Get-PortfolioScanFingerprintFromSignals -LocalRepo $currentLocal -GitHubRepo $currentGithub -LocalPath $currentLocalPath -SourceCoverage $currentSourceCoverage }
-
-                                $previousRepo = if ($previousRepoMap.ContainsKey($nameKey)) { $previousRepoMap[$nameKey] } else { $null }
-                                $previousFingerprint = if ($null -ne $previousRepo) { Get-PortfolioScanFingerprintFromIndexedRepo -IndexedRepo $previousRepo } else { '' }
-                                $previousHeadCommitSha = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastIndexedCommitSha' -Default (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'headCommitSha' -Default '')) } else { '' }
-                                $previousHeadCommitDate = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastIndexedCommitDate' -Default (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'localLastCommitDate' -Default '')) } else { '' }
-                                $previousHeadBranch = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastIndexedBranch' -Default (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'currentBranch' -Default '')) } else { '' }
-                                $previousMetadataHash = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastMetadataHash' -Default $previousFingerprint) } else { '' }
-
-                                $scanDecisionReason = 'reused-cache'
-                                $changeState = 'unchanged'
-                                $changed = $false
-
-                                if ($null -eq $previousRepo) {
-                                    $scanDecisionReason = 'cache-miss'
-                                    $changeState = 'needs-rescan'
-                                    $changed = $true
-                                }
-                                elseif ($currentSourceCoverage -eq 'none') {
-                                    $scanDecisionReason = 'cache-invalid'
-                                    $changeState = 'needs-rescan'
-                                    $changed = $true
-                                }
-                                elseif ([string]::IsNullOrWhiteSpace($previousFingerprint) -or [string]::IsNullOrWhiteSpace($currentFingerprint)) {
-                                    $scanDecisionReason = 'cache-invalid'
-                                    $changeState = 'needs-rescan'
-                                    $changed = $true
-                                }
-                                elseif (-not [string]::IsNullOrWhiteSpace($currentHeadCommitSha) -and -not [string]::IsNullOrWhiteSpace($previousHeadCommitSha) -and $currentHeadCommitSha -ne $previousHeadCommitSha) {
-                                    $scanDecisionReason = 'new-commit'
-                                    $changeState = 'new-commits'
-                                    $changed = $true
-                                }
-                                elseif ($currentFingerprint -ne $previousFingerprint) {
-                                    $scanDecisionReason = 'metadata-changed'
-                                    $changeState = 'metadata-changed'
-                                    $changed = $true
-                                }
-
-                                if ($changed) {
-                                    [void]$differentialChangedSet.Add($nameKey)
-                                }
-
-                                $differentialDecisionMap[$nameKey] = [pscustomobject]@{
-                                    changeState            = $changeState
-                                    scanDecisionReason     = $scanDecisionReason
-                                    headCommitSha          = if ([string]::IsNullOrWhiteSpace($currentHeadCommitSha)) { $null } else { $currentHeadCommitSha }
-                                    headCommitDate         = if ([string]::IsNullOrWhiteSpace($currentHeadCommitDate)) { $null } else { $currentHeadCommitDate }
-                                    headBranch             = if ([string]::IsNullOrWhiteSpace($currentHeadBranch)) { $null } else { $currentHeadBranch }
-                                    currentMetadataHash    = if ([string]::IsNullOrWhiteSpace($currentFingerprint)) { $null } else { $currentFingerprint }
-                                    lastIndexedCommitSha   = if ([string]::IsNullOrWhiteSpace($previousHeadCommitSha)) { $null } else { $previousHeadCommitSha }
-                                    lastIndexedCommitDate  = if ([string]::IsNullOrWhiteSpace($previousHeadCommitDate)) { $null } else { $previousHeadCommitDate }
-                                    lastIndexedBranch      = if ([string]::IsNullOrWhiteSpace($previousHeadBranch)) { $null } else { $previousHeadBranch }
-                                    lastMetadataHash       = if ([string]::IsNullOrWhiteSpace($previousMetadataHash)) { $null } else { $previousMetadataHash }
-                                    lastScannedAt          = if ($null -ne $previousRepo) { (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastScannedAt' -Default $null) } else { $null }
-                                    lastScanStatus         = if ($null -ne $previousRepo) { [string](Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastScanStatus' -Default 'ok') } else { 'ok' }
-                                    lastScanError          = if ($null -ne $previousRepo) { (Get-ObjectPropertyValue -InputObject $previousRepo -PropertyName 'lastScanError' -Default $null) } else { $null }
-                                }
-                            }
-
-                            $localReposForAssessment = @($localRepos | Where-Object {
-                                $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'name' -Default '')
-                                -not [string]::IsNullOrWhiteSpace($repoName) -and $differentialChangedSet.Contains($repoName)
-                            })
-
-                            $githubReposForAssessmentSubset = @($githubReposForAssessment | Where-Object {
-                                $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'name' -Default '')
-                                -not [string]::IsNullOrWhiteSpace($repoName) -and $differentialChangedSet.Contains($repoName)
-                            })
-
-                            $previousAssessments = Convert-PortfolioIndexReposToAssessments -IndexRepos $previousRepos
-                            $currentNameSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-                            foreach ($repo in @($localRepos)) {
-                                $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
-                                if (-not [string]::IsNullOrWhiteSpace($repoName)) { [void]$currentNameSet.Add($repoName) }
-                            }
-                            foreach ($repo in @($githubReposForAssessment)) {
-                                $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
-                                if (-not [string]::IsNullOrWhiteSpace($repoName)) { [void]$currentNameSet.Add($repoName) }
-                            }
-                            $unchangedAssessments = @($previousAssessments | Where-Object {
-                                $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
-                                -not [string]::IsNullOrWhiteSpace($repoName) -and $currentNameSet.Contains($repoName) -and (-not $differentialChangedSet.Contains($repoName))
-                            })
-
-                            Write-HostLog ("[TRACE] portfolio.assessment differential selection changed={0} unchanged={1} totalCurrent={2}" -f $differentialChangedSet.Count, @($unchangedAssessments).Count, $currentNameSet.Count)
-                            $signalSources['scanMode'] = 'differential'
-                            $signalSources['differentialChangedCount'] = $differentialChangedSet.Count
-                            $signalSources['differentialUnchangedCount'] = @($unchangedAssessments).Count
-                        } else {
-                            $signalSources['scanMode'] = 'differential-fallback-full'
+                            Write-HostLog ("WARN portfolio.assessment correlationId={0} the background worker did not start; serving {1} without a refresh" -f $correlationId, $(if ($served.hit) { 'the last result' } else { 'nothing' }))
                         }
                     }
+                    $refreshState = Get-StatusRefreshState
+                    $refreshing = [bool]($scanStarted -or $refreshState.running -or $null -ne $script:AssessmentRefreshPending)
 
-                    if ($useDifferentialScan) {
-                        if (@($previousRepos).Count -eq 0) {
-                            $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
-                            $signalSources['roadmap'] = 'fresh-scan'
-                            $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $defaultRoots -MaxDepth $defaultDepth)
-                            $signalSources['docAudit'] = 'fresh-scan'
-                            $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
-                            if ($docAuditTtl -gt 0) { Save-DocAuditCache -Entries $docAuditEntries -AuditedAt $auditedAt }
-
-                            $roadmapAuditEntries = @()
-                            $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
-                            if ($raCached.hit) {
-                                $roadmapAuditEntries = @($raCached.entries)
-                                $signalSources['roadmapAudit'] = 'cache'
-                            } else {
-                                $signalSources['roadmapAudit'] = 'unavailable'
-                            }
-                        } elseif (@($localReposForAssessment).Count -gt 0) {
-                            $changedLocalRoots = @($localReposForAssessment | ForEach-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'path' -Default '') } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-                            if (@($changedLocalRoots).Count -gt 0) {
-                                $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $changedLocalRoots -MaxDepth 3)
-                                $signalSources['roadmap'] = 'differential-scan'
-
-                                Clear-DocAuditCache
-                                Clear-RoadmapCache
-                                $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $changedLocalRoots -MaxDepth 3)
-                                $signalSources['docAudit'] = 'differential-scan'
-
-                                $auditedAt = (Get-Date).ToUniversalTime().ToString('o')
-                                if ($docAuditTtl -gt 0) { Save-DocAuditCache -Entries $docAuditEntries -AuditedAt $auditedAt }
-                            }
-
-                            $raCached = Get-RoadmapAuditFromCache -TtlSeconds $rmAuditTtl
-                            if ($raCached.hit) {
-                                $roadmapAuditEntries = @($raCached.entries | Where-Object {
-                                    $repoName = [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '')
-                                    -not [string]::IsNullOrWhiteSpace($repoName) -and $differentialChangedSet.Contains($repoName)
-                                })
-                                $signalSources['roadmapAudit'] = 'cache-filtered'
-                            } else {
-                                $roadmapAuditEntries = @()
-                                $signalSources['roadmapAudit'] = 'unavailable'
-                            }
-                        } else {
-                            $roadmapEntries = @()
-                            $docAuditEntries = @()
-                            $roadmapAuditEntries = @()
-                            $signalSources['roadmap'] = 'differential-noop'
-                            $signalSources['docAudit'] = 'differential-noop'
-                            $signalSources['roadmapAudit'] = 'differential-noop'
+                    $entries = @()
+                    $summary = $null
+                    $signalSources = @{}
+                    $generatedAt = $null
+                    $scanSummary = $null
+                    $cacheSource = 'awaiting-first-scan'
+                    $cacheAgeSeconds = $null
+                    if ($served.hit) {
+                        $entries = @($served.entries)
+                        if ($includeCuration) {
+                            # Curation is operator-authored and can change between
+                            # scans; merge the current map so toggles are visible
+                            # without waiting for the worker.
+                            # No @() here: the function returns ,@(...) so the array
+                            # survives the pipeline, and wrapping it again nests it -
+                            # entries reached the wire as [[...]], hidden by a
+                            # one-repository fixture whose count still read 1.
+                            $entries = Add-PortfolioCurationToAssessments -Assessments $entries
                         }
+                        $summary = $served.summary
+                        $signalSources = ConvertTo-SignalSourceTable -InputObject $served.signalSources
+                        $generatedAt = $served.generatedAt
+                        $scanSummary = $served.scanSummary
+                        $cacheSource = if ($served.source -eq 'memory') { 'memory' } else { 'disk' }
+                        $cacheAgeSeconds = [math]::Round($served.ageSeconds, 1)
                     }
-
-                    # 7) Structure standards
-                    $standardsPath = Join-Path $WorkspaceRoot 'backend\config\repo-structure-standards.json'
-                    $structStandards = Get-RepoStructureStandards -StandardsPath $standardsPath
-                    $valueScoringPath = Join-Path $WorkspaceRoot 'backend\config\value-scoring.json'
-                    $valueScoringConfig = Get-PortfolioValueScoringConfig -ConfigPath $valueScoringPath
-
-                    # Run the assessment
-                    $assessmentLocalRepos = @(if ($useDifferentialScan) { @($localReposForAssessment) } else { @($localRepos) })
-                    $assessmentGithubRepos = @(if ($useDifferentialScan) { @($githubReposForAssessmentSubset) } else { @($githubReposForAssessment) })
-
-                    # Cross-cutting — scan performance budget: prep (discovery +
-                    # git status + GitHub API + prior scans) up to here, then the
-                    # assessment (audit + scoring) and index-write phases below.
-                    $scanBudgetPrepMs = [int]((Get-Date) - $requestStart).TotalMilliseconds
-                    $swAssess = [System.Diagnostics.Stopwatch]::StartNew()
-                    $assessedChanged = Invoke-PortfolioAssessment `
-                        -LocalRepos          $assessmentLocalRepos `
-                        -RoadmapEntries      $roadmapEntries `
-                        -DocAuditEntries     $docAuditEntries `
-                        -RoadmapAuditEntries $roadmapAuditEntries `
-                        -ExecutionEntries    $executionEntries `
-                        -GitHubRepos         $assessmentGithubRepos `
-                        -StructureStandards  $structStandards `
-                        -ValueScoringConfig  $valueScoringConfig
-                    $swAssess.Stop()
-
-                    $assessments = @(if ($useDifferentialScan -and @($previousRepos).Count -gt 0) {
-                        @(@($assessedChanged) + @($unchangedAssessments))
-                    } else {
-                        @($assessedChanged)
-                    })
-
-                    if ($useDifferentialScan -and @($previousRepos).Count -gt 0) {
-                        foreach ($assessment in @($assessments)) {
-                            if ($null -eq $assessment) { continue }
-                            $repoName = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'repoName' -Default '')
-                            if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
-                            $key = $repoName.ToLowerInvariant()
-                            if (-not $differentialDecisionMap.ContainsKey($key)) { continue }
-
-                            $decision = $differentialDecisionMap[$key]
-                            $assessment | Add-Member -NotePropertyName changeState -NotePropertyValue ([string](Get-ObjectPropertyValue -InputObject $decision -PropertyName 'changeState' -Default 'needs-rescan')) -Force
-                            $assessment | Add-Member -NotePropertyName scanDecisionReason -NotePropertyValue ([string](Get-ObjectPropertyValue -InputObject $decision -PropertyName 'scanDecisionReason' -Default 'cache-invalid')) -Force
-                            $assessment | Add-Member -NotePropertyName headCommitSha -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'headCommitSha' -Default $null) -Force
-                            $assessment | Add-Member -NotePropertyName headCommitDate -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'headCommitDate' -Default $null) -Force
-                            $assessment | Add-Member -NotePropertyName headBranch -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'headBranch' -Default $null) -Force
-                            $assessment | Add-Member -NotePropertyName currentMetadataHash -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'currentMetadataHash' -Default $null) -Force
-                            $assessment | Add-Member -NotePropertyName lastIndexedCommitSha -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastIndexedCommitSha' -Default $null) -Force
-                            $assessment | Add-Member -NotePropertyName lastIndexedCommitDate -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastIndexedCommitDate' -Default $null) -Force
-                            $assessment | Add-Member -NotePropertyName lastIndexedBranch -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastIndexedBranch' -Default $null) -Force
-                            $assessment | Add-Member -NotePropertyName lastMetadataHash -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastMetadataHash' -Default $null) -Force
-                            $assessment | Add-Member -NotePropertyName lastScannedAt -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastScannedAt' -Default $null) -Force
-                            $assessment | Add-Member -NotePropertyName lastScanStatus -NotePropertyValue ([string](Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastScanStatus' -Default 'ok')) -Force
-                            $assessment | Add-Member -NotePropertyName lastScanError -NotePropertyValue (Get-ObjectPropertyValue -InputObject $decision -PropertyName 'lastScanError' -Default $null) -Force
-                        }
-
-                        $scanSummary.reused = @($unchangedAssessments).Count
-                        $scanSummary.reindexed = @($assessedChanged).Count
-                        $scanSummary.failed = 0
-                    } else {
-                        foreach ($assessment in @($assessments)) {
-                            if ($null -eq $assessment) { continue }
-                            $assessment | Add-Member -NotePropertyName changeState -NotePropertyValue 'needs-rescan' -Force
-                            $assessment | Add-Member -NotePropertyName scanDecisionReason -NotePropertyValue $(if ($refresh) { 'forced-refresh' } else { 'cache-miss' }) -Force
-                        }
-                        $scanSummary.reused = 0
-                        $scanSummary.reindexed = @($assessments).Count
-                        $scanSummary.failed = 0
+                    if ($null -eq $summary) { $summary = Get-PortfolioAssessmentSummary -Assessments @() }
+                    if ($null -eq $scanSummary) {
+                        # Not computed is null with a reason, never 0 (contract 2).
+                        $scanSummary = @{ reused = $null; reindexed = $null; failed = $null; durationMs = $null; reason = 'no scan has completed yet; the worker writes this with its first result' }
                     }
-
-                    $localRepoByName = @{}
-                    foreach ($repo in @($localRepos)) {
-                        if ($null -eq $repo) { continue }
-                        $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
-                        if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
-                        $localRepoByName[$repoName.ToLowerInvariant()] = $repo
-                    }
-
-                    $githubRepoByName = @{}
-                    foreach ($repo in @($githubReposForAssessment)) {
-                        if ($null -eq $repo) { continue }
-                        $repoName = [string](Get-ObjectPropertyValue -InputObject $repo -PropertyName 'name' -Default '')
-                        if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
-                        $githubRepoByName[$repoName.ToLowerInvariant()] = $repo
-                    }
-
-                    foreach ($assessment in @($assessments)) {
-                        if ($null -eq $assessment) { continue }
-                        $repoName = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'repoName' -Default '')
-                        if ([string]::IsNullOrWhiteSpace($repoName)) { continue }
-
-                        $nameKey = $repoName.ToLowerInvariant()
-                        $localRepo = if ($localRepoByName.ContainsKey($nameKey)) { $localRepoByName[$nameKey] } else { $null }
-                        $githubRepo = if ($githubRepoByName.ContainsKey($nameKey)) { $githubRepoByName[$nameKey] } else { $null }
-                        $localPath = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'localPath' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'path' -Default ''))
-                        $sourceCoverage = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'sourceCoverage' -Default $(if ($null -ne $localRepo -and $null -ne $githubRepo) { 'local+github' } elseif ($null -ne $localRepo) { 'local' } elseif ($null -ne $githubRepo) { 'github' } else { 'none' }))
-                        $headCommitSha = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'headCommitSha' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'headCommitSha' -Default ''))
-                        $headCommitDate = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'headCommitDate' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'lastCommitDate' -Default ''))
-                        $headBranch = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'headBranch' -Default (Get-ObjectPropertyValue -InputObject $localRepo -PropertyName 'branch' -Default (Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'branch' -Default '')))
-                        $currentMetadataHash = [string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'currentMetadataHash' -Default '')
-                        if ([string]::IsNullOrWhiteSpace($currentMetadataHash) -and $sourceCoverage -ne 'none') {
-                            $currentMetadataHash = Get-PortfolioScanFingerprintFromSignals -LocalRepo $localRepo -GitHubRepo $githubRepo -LocalPath $localPath -SourceCoverage $sourceCoverage
-                        }
-
-                        $assessment | Add-Member -NotePropertyName headCommitSha -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitSha)) { $null } else { $headCommitSha }) -Force
-                        $assessment | Add-Member -NotePropertyName headCommitDate -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitDate)) { $null } else { $headCommitDate }) -Force
-                        $assessment | Add-Member -NotePropertyName headBranch -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headBranch)) { $null } else { $headBranch }) -Force
-                        $assessment | Add-Member -NotePropertyName currentMetadataHash -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($currentMetadataHash)) { $null } else { $currentMetadataHash }) -Force
-
-                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastIndexedCommitSha' -Default ''))) {
-                            $assessment | Add-Member -NotePropertyName lastIndexedCommitSha -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitSha)) { $null } else { $headCommitSha }) -Force
-                        }
-                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastIndexedCommitDate' -Default ''))) {
-                            $assessment | Add-Member -NotePropertyName lastIndexedCommitDate -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headCommitDate)) { $null } else { $headCommitDate }) -Force
-                        }
-                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastIndexedBranch' -Default ''))) {
-                            $assessment | Add-Member -NotePropertyName lastIndexedBranch -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($headBranch)) { $null } else { $headBranch }) -Force
-                        }
-                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastMetadataHash' -Default ''))) {
-                            $assessment | Add-Member -NotePropertyName lastMetadataHash -NotePropertyValue $(if ([string]::IsNullOrWhiteSpace($currentMetadataHash)) { $null } else { $currentMetadataHash }) -Force
-                        }
-                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastScanStatus' -Default ''))) {
-                            $assessment | Add-Member -NotePropertyName lastScanStatus -NotePropertyValue 'ok' -Force
-                        }
-                        if ([string]::IsNullOrWhiteSpace([string](Get-ObjectPropertyValue -InputObject $assessment -PropertyName 'lastScannedAt' -Default ''))) {
-                            $assessment | Add-Member -NotePropertyName lastScannedAt -NotePropertyValue $null -Force
-                        }
-                    }
-
-                    $assessments = @($assessments | Sort-Object `
-                        @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') }; Ascending = $true },
-                        @{ Expression = { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'sourceCoverage' -Default '') }; Ascending = $true })
-
-                    if ($includeCuration) {
-                        $assessments = Add-PortfolioCurationToAssessments -Assessments $assessments
-                    }
-
-                    $summary = Get-PortfolioAssessmentSummary -Assessments $assessments
-                    $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
-                    $scanId = [guid]::NewGuid().ToString('n')
-
-                    try {
-                        $snapshotResult = Write-AppDbPortfolioAssessmentSnapshot -Assessments $assessments -ScanId $scanId -CapturedAt $generatedAt
-                        if (-not $snapshotResult.success) {
-                            Write-HostLog ("WARN portfolio.assessment persistence snapshot skipped: {0}" -f $snapshotResult.reason)
-                        }
-                    } catch {
-                        Write-HostLog ("WARN portfolio.assessment persistence snapshot failed: {0}" -f $_.Exception.Message)
-                    }
-
-                    # Release 3.6 M5 -- foundation coverage accrues on the same
-                    # clock as maturity history. This is the ONLY site that
-                    # records it: a capture wired anywhere else would leave the
-                    # coverage series a one-point scaffold forever.
-                    try {
-                        $coverageConfig = Get-FoundationDomainsConfig -ConfigPath (Join-Path $WorkspaceRoot 'backend\config\foundation-domains.json')
-                        if ($null -ne $coverageConfig) {
-                            $coveragePayload = Get-PortfolioConclusionsPayload -Entries @($assessments) -Config $coverageConfig -GeneratedAt $generatedAt
-                            $coverageWrite = Write-AppDbFoundationCoverage `
-                                -Coverage $coveragePayload.coverage `
-                                -ScanId $scanId `
-                                -CapturedAt $generatedAt `
-                                -RepoCount ([int]$coveragePayload.count)
-                            if ($coverageWrite.success) {
-                                Write-HostLog ("[TRACE] portfolio.assessment foundation coverage recorded scanId={0} domains={1} repos={2}" -f $scanId, $coverageWrite.inserted, $coveragePayload.count)
-                            }
-                            else {
-                                Write-HostLog ("WARN portfolio.assessment foundation coverage skipped: {0}" -f $coverageWrite.reason)
-                            }
-                        }
-                    } catch {
-                        Write-HostLog ("WARN portfolio.assessment foundation coverage failed: {0}" -f $_.Exception.Message)
-                    }
-
-                    try {
-                        $changedRepoNames = @(if ($useDifferentialScan) {
-                            @($differentialChangedSet | ForEach-Object { [string]$_ })
-                        } else {
-                            @($assessments | ForEach-Object { [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'repoName' -Default '') } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-                        })
-                        $scanSummaryResult = Write-AppDbDifferentialScanSnapshot `
-                            -ScanId $scanId `
-                            -ScanMode $(if ($useDifferentialScan) { 'differential' } else { 'full' }) `
-                            -StartedAt ($requestStart.ToUniversalTime().ToString('o')) `
-                            -CompletedAt $generatedAt `
-                            -ReposTotal @($assessments).Count `
-                            -ReposChanged $(if ($useDifferentialScan) { $differentialChangedSet.Count } else { @($assessments).Count }) `
-                            -ChangedRepoNames $changedRepoNames
-                        if (-not $scanSummaryResult.success) {
-                            Write-HostLog ("WARN portfolio.assessment differential snapshot skipped: {0}" -f $scanSummaryResult.reason)
-                        }
-                    } catch {
-                        Write-HostLog ("WARN portfolio.assessment differential snapshot failed: {0}" -f $_.Exception.Message)
-                    }
-
-                    $swIndex = [System.Diagnostics.Stopwatch]::StartNew()
-                    try {
-                        $curationMap = Get-PortfolioCurationMap -WorkspaceRoot $WorkspaceRoot
-                        $indexArtifacts = Save-PortfolioIndexArtifacts `
-                            -WorkspaceRoot $WorkspaceRoot `
-                            -Assessments $assessments `
-                            -LocalRepos $localRepos `
-                            -GitHubRepos $githubReposForAssessment `
-                            -Summary $summary `
-                            -SignalSources $signalSources `
-                            -CurationByRepoId $curationMap `
-                            -GeneratedAt $generatedAt
-                        Write-HostLog ("[TRACE] portfolio.assessment index-written path={0} artifact={1} count={2}" -f $indexArtifacts.indexPath, $indexArtifacts.artifactPath, $indexArtifacts.repoCount)
-                    } catch {
-                        Write-HostLog ("WARN portfolio.assessment index write skipped: {0}" -f $_.Exception.Message)
-                    }
-                    $swIndex.Stop()
-
-                    if ($ttlSeconds -gt 0) {
-                        Save-PortfolioAssessmentCache -Entries $assessments -Summary $summary -SignalSources $signalSources -GeneratedAt $generatedAt
-                    }
-
-                    $scanSummary.durationMs = [int]((Get-Date) - $requestStart).TotalMilliseconds
-
-                    # Release 2.3 Phase 5F observability: one greppable line per scan
-                    # proving how many repos were reused from cache vs fully reindexed.
-                    $scanSummaryMode = if ($useDifferentialScan) { 'differential' } elseif ($refresh) { $(if ($forcedRefreshAll) { 'forced-refresh-all' } else { 'forced-full' }) } else { 'full' }
-                    Write-HostLog ("[TRACE] portfolio.assessment scan-summary correlationId={0} mode={1} reused={2} reindexed={3} failed={4} durationMs={5}" -f $correlationId, $scanSummaryMode, $scanSummary.reused, $scanSummary.reindexed, $scanSummary.failed, $scanSummary.durationMs)
-                    # Cross-cutting — per-phase scan performance budget log.
-                    Write-HostLog ("[TRACE] portfolio.assessment scan-budget correlationId={0} prepMs={1} assessMs={2} indexWriteMs={3} totalMs={4} reposAssessed={5}" -f $correlationId, $scanBudgetPrepMs, [int]$swAssess.ElapsedMilliseconds, [int]$swIndex.ElapsedMilliseconds, $scanSummary.durationMs, @($assessments).Count)
+                    $signalSources['statusRefreshing'] = $refreshing
+                    $signalSources['servedFrom'] = $cacheSource
+                    $signalSources['requestedScanMode'] = $requestedMode
 
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
-                    Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} done count={1} ready={2} blocked={3} durationMs={4}" -f $correlationId, @($assessments).Count, $summary.readyForWorkCount, $summary.blockedCount, [int]((Get-Date) - $requestStart).TotalMilliseconds)
-                    $readBudget = New-PortfolioReadBudgetResult -CacheSource 'fresh-scan' `
+                    Write-HostLog ("[TRACE] portfolio.assessment correlationId={0} done source={1} count={2} refreshing={3} requested={4} started={5} queued={6} durationMs={7}" -f $correlationId, $cacheSource, @($entries).Count, $refreshing, $requestedMode, $scanStarted, $scanQueued, [int]((Get-Date) - $requestStart).TotalMilliseconds)
+                    $readBudget = New-PortfolioReadBudgetResult -CacheSource $cacheSource `
                         -MeasuredMs ([double]((Get-Date) - $requestStart).TotalMilliseconds) -Settings $settings
                     Write-HostLog (Format-PortfolioReadBudgetLog -Result $readBudget -CorrelationId $correlationId -Route '/api/portfolio/assessment')
                     if (-not $readBudget.withinBudget) {
@@ -11110,14 +11400,26 @@ try {
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data = @{
-                            entries         = $assessments
+                            entries         = $entries
                             summary         = $summary
                             signalSources   = $signalSources
                             generatedAt     = $generatedAt
-                            count           = @($assessments).Count
-                            cacheSource     = 'fresh-scan'
-                            cacheAgeSeconds = 0
+                            count           = @($entries).Count
+                            cacheSource     = $cacheSource
+                            cacheAgeSeconds = $cacheAgeSeconds
                             scanSummary     = $scanSummary
+                            refreshing      = $refreshing
+                            # The scan's own timestamps stay on /api/portfolio/scan/status:
+                            # its progress file round-trips through ConvertFrom-Json and
+                            # reaches the wire culture-formatted (Lane 0.21's timestamp
+                            # item), which this payload's timezone contract would fail.
+                            scanRequested   = @{
+                                mode      = $requestedMode
+                                started   = [bool]$scanStarted
+                                queued    = [bool]$scanQueued
+                                running   = [bool]$refreshState.running
+                                processId = $(if ($refreshState.running) { [int]$refreshState.processId } else { $null })
+                            }
                             performance     = $readBudget
                         }
                     }
@@ -11143,7 +11445,10 @@ try {
                     $scanSettings = Get-HostSettings
                     $scanRoots = Get-ConfiguredLocalRootsOrWorkspace -Settings $scanSettings
                     $scanDepth = if ($scanSettings.ContainsKey('inventory') -and $scanSettings.inventory.ContainsKey('maxDepth') -and $scanSettings.inventory.maxDepth) { [int]$scanSettings.inventory.maxDepth } else { 3 }
-                    $scanStartedNow = Start-BackgroundStatusRefresh -LocalRoots $scanRoots -MaxDepth $scanDepth
+                    # Lane 0.21: an explicit scan ends with a fresh index and
+                    # assessment cache, not just warm scan caches, so the page
+                    # that asked for it has something new to show when it ends.
+                    $scanStartedNow = Start-BackgroundStatusRefresh -LocalRoots $scanRoots -MaxDepth $scanDepth -RunAssessment -AssessmentRefresh
                     $scanState = Get-PortfolioScanState
                     Write-HostLog ("[TRACE] portfolio.scan correlationId={0} started={1} state={2}" -f $correlationId, $scanStartedNow, $scanState.state)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{

@@ -214,6 +214,36 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   // Release 2.3 Phase 5E: ordinary loads run change-aware differential
   // reassessment so unchanged repos are reused from the persisted index;
   // refresh=true keeps the full-signal rebuild for post-operation refreshes.
+  // Lane 0.21: the route answers at once from the worker's last result and
+  // says whether a scan is in flight. While it is, poll the PLAIN route (which
+  // never asks for another scan while the result is fresh) until the worker's
+  // result lands, so a cold start converges without a reload. One timer at a
+  // time: the next poll is scheduled only after the previous one settles, and
+  // the delay backs off 3s, 6s, 12s, 24s, then holds at 30s.
+  const assessmentRefreshing = portfolioAssessment?.refreshing ?? false;
+  const [assessmentPollTick, setAssessmentPollTick] = useState(0);
+  useEffect(() => {
+    if (!assessmentRefreshing) return undefined;
+    let cancelled = false;
+    const delayMs = Math.min(3000 * 2 ** Math.min(assessmentPollTick, 4), 30000);
+    const timer = setTimeout(() => {
+      getPortfolioAssessment({ includeCuration: true })
+        .then(next => {
+          if (cancelled) return;
+          setPortfolioAssessment(next);
+          setPortfolioAssessmentError(null);
+          setAssessmentPollTick(tick => (next.refreshing ? tick + 1 : 0));
+        })
+        .catch(() => {
+          if (!cancelled) setAssessmentPollTick(tick => tick + 1);
+        });
+    }, delayMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [assessmentRefreshing, assessmentPollTick]);
+
   const refreshPortfolioAssessment = (refresh = false) => {
     setPortfolioAssessmentLoading(true);
     return getPortfolioAssessment(refresh ? { refresh: true, includeCuration: true } : { scanMode: 'differential', includeCuration: true })

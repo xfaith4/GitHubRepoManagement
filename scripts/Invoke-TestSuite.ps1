@@ -181,11 +181,17 @@ if (-not $SkipApiHost) {
     # portal on 7071, made the host terminate the operator's running instance.
     $apiHostArgs = $rootArgs + @('-Port', $Port, '-BaseUrl', "http://127.0.0.1:$Port")
     Invoke-ScriptGate -Name 'API host smoke' -ScriptPath (Join-Path $scriptsDir 'Invoke-ApiHostSmokeTest.ps1')        -ScriptArgs $apiHostArgs
+
+    # Lane 0.21, 2026-09-15: the assessment route answers from the worker's
+    # last result while the worker scans. Boots its own host on a free port with
+    # every written root isolated, so it never touches $Port or the portal.
+    Invoke-ScriptGate -Name 'Request thread budget' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RequestThreadBudget.ps1') -ScriptArgs @('-Route', '/api/portfolio/assessment', '-MaxMs', '2000', '-FailOnError')
 }
 else {
     Write-Host ''
     Write-Host '===== API host smoke =====' -ForegroundColor Cyan
     Write-Host '[SKIP] API host smoke (-SkipApiHost)' -ForegroundColor Yellow
+    Write-Host '[SKIP] Request thread budget (-SkipApiHost; it boots a host)' -ForegroundColor Yellow
 }
 
 Invoke-ScriptGate -Name 'API contract'      -ScriptPath (Join-Path $scriptsDir 'Invoke-ApiContractTest.ps1')          -ScriptArgs $rootArgs

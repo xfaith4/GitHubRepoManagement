@@ -2,6 +2,53 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-16 — The assessment route no longer holds the request thread (Lane 0.21)
+
+The host serves one connection at a time. Each
+`GET /api/portfolio/assessment?scanMode=differential` ran the route's own
+GitHub pass, scans of changed roots, the assessment and the index write
+inline, so every page load held every route: 28 s with nothing changed and
+60–72 s during the operator's timed reload, with `/health/live` waiting up to
+48 s behind it.
+
+- **The scan moved to the background worker.** The route's former body is now
+  `Invoke-PortfolioAssessmentScan`. The worker
+  (`scripts/Invoke-StatusCacheRefresh.ps1 -RunAssessment`) runs it as phase 5
+  after the four scan phases. Unless the refresh is forced, it skips any
+  phase whose cache is still fresh. It writes the index, the scan-history
+  mirror and `assessment-cache.json` under the index root.
+- **The route answers at once.** It serves the worker's last result and says
+  where that came from: `memory`, `disk`, or `awaiting-first-scan` with an
+  empty result before the first scan finishes. It reports `refreshing` and
+  what it asked the worker to do (`scanRequested`). Only one scan runs at a
+  time: a differential load during a scan is answered by the running scan,
+  and a forced refresh that arrives mid-scan is queued and starts when that
+  scan ends. `POST /api/portfolio/scan` now also ends with a fresh index.
+- **The page picks up the result.** While `refreshing` is true, the dashboard
+  re-reads the plain route. It waits for each read to finish before starting
+  the next, with delays of 3 s, 6 s, 12 s and 24 s, then every 30 s. A result
+  still waiting for its first scan shows "not computed" rather than zeros.
+- **`REPO_MGMT_CACHE_ROOT`** moves the scan caches and the worker's lock,
+  progress and cancel files, as `REPO_MGMT_INDEX_ROOT` does for the index. The
+  portal service runs from this working tree, so a test host shared its scan
+  lock and overwrote its roadmap and doc-audit caches, which are not keyed by
+  root. The api-host smoke, the auth smoke and the contract suite now set it,
+  and module smoke fails if any of them stops. Two direct writes also moved
+  to the isolated directory. Three contract tests had overwritten the
+  operator's `status-cache.json` and then restored it. The api-host smoke's
+  scan-cancel step starts workers itself; on 2026-09-16 its fixture scan
+  replaced the live roadmap and doc-audit caches with 0 and 1 entries.
+- **Gates.** `tests/Test-RequestThreadBudget.ps1` starts a host with every
+  written root isolated. It measures the route and `/health/live` from the
+  client while a real scan runs, and fails when no measurement overlapped a
+  running scan. The suite runs it as `Request thread budget`. Module smoke
+  fails if code outside a function calls `Invoke-PortfolioAssessmentScan`. It
+  also fails if the assessment route calls the GitHub pass, the assessment or
+  the index read or write, or stops starting the worker. The inline-scan
+  baseline drops from 18 to 14. The api-host smoke waits for the worker's
+  scan before it checks scan counts, forced-refresh reasons and the
+  scan-budget log line.
+
 ## 2026-09-15 — Four decisions ruled: D-006, D-012, D-021, D-022
 
 The register's Open section is empty for the first time. Each ruling keeps its

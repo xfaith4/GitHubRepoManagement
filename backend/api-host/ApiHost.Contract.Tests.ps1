@@ -117,12 +117,16 @@ BeforeAll {
     # same treatment. Previous values are restored in AfterAll so a run from an
     # operator's own session leaves their environment as it found it.
     $script:IsolationPrevious = @{}
-    foreach ($name in 'REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT') {
+    # REPO_MGMT_CACHE_ROOT (Lane 0.21): a cold assessment read starts the
+    # background worker, and without it that worker holds the operator's scan
+    # lock and writes their scan caches.
+    foreach ($name in 'REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT', 'REPO_MGMT_CACHE_ROOT') {
         $script:IsolationPrevious[$name] = [Environment]::GetEnvironmentVariable($name)
     }
     [Environment]::SetEnvironmentVariable('REPO_MGMT_INDEX_ROOT', (Join-Path $script:LogRoot 'contract-index'))
     [Environment]::SetEnvironmentVariable('REPO_MGMT_QUEUE_PATH', (Join-Path $script:LogRoot 'contract-task-queue.jsonl'))
     [Environment]::SetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT', (Join-Path $script:LogRoot 'contract-runner-control'))
+    [Environment]::SetEnvironmentVariable('REPO_MGMT_CACHE_ROOT', (Join-Path $script:LogRoot 'contract-cache'))
     $null = New-Item -ItemType Directory -Path (Join-Path $script:LogRoot 'contract-runner-control') -Force
 
     $script:HostPowerShell = [powershell]::Create()
@@ -519,7 +523,10 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
     # fixture, and the contract under test is "the route can read what the
     # cache actually writes."
     It 'reads a populated status cache instead of throwing on its shape' {
-        $cacheDir = Join-Path $script:WorkspaceRoot 'backend\modules\output\cache'
+        # The host's cache directory, isolated in BeforeAll (Lane 0.21). These
+        # fixtures used to overwrite the operator's own status cache and
+        # restore it afterwards, while the live portal could read it.
+        $cacheDir = [Environment]::GetEnvironmentVariable('REPO_MGMT_CACHE_ROOT')
         # The cache directory is gitignored, so it does not exist on a fresh
         # clone; creating the parent is part of the fixture, not a side effect.
         $null = New-Item -ItemType Directory -Path $cacheDir -Force
@@ -612,7 +619,7 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
     # ------------------------------------------------------------------
 
     It 'repoCount equals an independent filesystem enumeration at the configured scan depth' {
-        $cacheDir = Join-Path $script:WorkspaceRoot 'backend\modules\output\cache'
+        $cacheDir = [Environment]::GetEnvironmentVariable('REPO_MGMT_CACHE_ROOT')
         $null = New-Item -ItemType Directory -Path $cacheDir -Force
         $cacheFile = Join-Path $cacheDir 'status-cache.json'
         $restore = if (Test-Path -LiteralPath $cacheFile) { Get-Content -LiteralPath $cacheFile -Raw } else { $null }
@@ -688,7 +695,7 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
     }
 
     It 'the status clock is the cache record it derives from, not the moment of the build' {
-        $cacheDir = Join-Path $script:WorkspaceRoot 'backend\modules\output\cache'
+        $cacheDir = [Environment]::GetEnvironmentVariable('REPO_MGMT_CACHE_ROOT')
         $null = New-Item -ItemType Directory -Path $cacheDir -Force
         $cacheFile = Join-Path $cacheDir 'status-cache.json'
         $restore = if (Test-Path -LiteralPath $cacheFile) { Get-Content -LiteralPath $cacheFile -Raw } else { $null }
