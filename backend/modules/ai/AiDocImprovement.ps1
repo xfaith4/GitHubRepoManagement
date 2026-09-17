@@ -123,7 +123,7 @@ function Get-AiDocTemplates {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
 
-    $path = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:AiDocTemplatesRelPath
+    $path = Join-Path $WorkspaceRoot $script:AiDocTemplatesRelPath
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         return [pscustomobject]@{ readmeTemplates = @(); roadmapTemplates = @() }
     }

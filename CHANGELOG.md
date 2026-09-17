@@ -42,7 +42,10 @@ Everything else under `output\` was still built inline as
   override leave the workspace `output\` absent. It finds every file that
   starts a host and requires the override there, and it checks the
   historical filter both ways. Against the Lane 0.21 tree it reports 113
-  problems.
+  problems. It also fails when `Resolve-OutputPath` is given a `$script:`
+  constant that is not an `output\` path. The first conversion did that to
+  the AI template path, which is config: the resolver threw, and scheduled
+  doc refinement reported 0 proposals.
 - **Found on the way.** README standardization writes its history inside
   the managed repository while the host reads it from this workspace;
   recorded as a Lane 0.22 non-blocker.
