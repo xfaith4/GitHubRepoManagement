@@ -2,7 +2,7 @@
   "PSAvoidDefaultValueSwitchParameter": 5,
   "PSAvoidUsingEmptyCatchBlock": 15,
   "PSAvoidUsingPlainTextForPassword": 9,
-  "PSAvoidUsingPositionalParameters": 34,
+  "PSAvoidUsingPositionalParameters": 33,
   "PSProvideCommentHelp": 18,
   "PSReviewUnusedParameter": 26,
   "PSUseApprovedVerbs": 18,
