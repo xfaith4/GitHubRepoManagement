@@ -23,6 +23,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 $script:MergeReadinessRelDir = 'output\merge-readiness'
@@ -43,7 +47,7 @@ function _MergeReadinessField {
 
 function _MergeReadinessSnapshotPath {
     param([string]$WorkspaceRoot, [string]$RepoId)
-    $dir = Join-Path $WorkspaceRoot $script:MergeReadinessRelDir
+    $dir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:MergeReadinessRelDir
     $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue
     $safeRepoId = $RepoId -replace '[\\/:*?"<>|]', '_'
     return Join-Path $dir "$safeRepoId.json"

@@ -34,6 +34,10 @@ param(
 )
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 function Test-CommandExists {
@@ -78,7 +82,7 @@ function Initialize-HistoryStore {
     $repoRoot = Split-Path -Parent $PSScriptRoot
     $effectiveRoot = $RootPath
     if ([string]::IsNullOrWhiteSpace($effectiveRoot)) {
-        $effectiveRoot = Join-Path $repoRoot 'output\roadmap-task-history'
+        $effectiveRoot = Resolve-OutputPath -WorkspaceRoot $repoRoot -RelativePath 'output\roadmap-task-history'
     }
 
     $runsPath = Join-Path $effectiveRoot 'runs'

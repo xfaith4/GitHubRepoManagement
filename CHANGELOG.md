@@ -2,6 +2,51 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-16 — Test fixtures never reach live state (Lane 0.22)
+
+On 2026-09-15, 175 of the operator's 192 agent-run records were the api-host
+smoke's `dispatch-success-smoke`. They made up most of the console's "100
+agent runs" badge, and `smoke-packaging-repo` led the packaged work queue.
+The smoke already isolated the index, queue, settings and runner state.
+Everything else under `output\` was still built inline as
+`Join-Path $WorkspaceRoot 'output\...'`.
+
+- **One output root.** `REPO_MGMT_OUTPUT_ROOT` (`Get-OutputRoot`,
+  `Resolve-OutputPath`) now resolves every run-evidence path under
+  `output\`:
+  - agent runs and events, packaged items and packaging runs, work packets
+  - run summaries, the execution ledger, `app.db` and its backups
+  - write-back history, the operation heartbeat, logs, notification
+    webhooks and the other history stores
+
+  The index, queue and runner-state defaults now derive from the output
+  root; their own overrides still take precedence. The API key file is the
+  one named exemption, because a credential stays the operator's.
+- **Every host-starting gate sets it.** That covers the api-host smoke
+  (including the workers and agent-run calls it runs in its own process),
+  the auth smoke, the contract suite and the request-thread budget test.
+  The operation heartbeat is covered too: a test host clears it at startup,
+  and in the shared location that could let the watchdog restart the live
+  portal mid-scan.
+- **Records already written are hidden, not deleted.** In the operator's
+  own root, the agent-run list, budget usage, run metrics (cost, trend,
+  leverage), lane observation and the packaged queue skip five fixture
+  repository names found in the live ledgers. Under an override nothing is
+  hidden, so a gate can read its own fixtures back. The ledgers stay
+  append-only evidence.
+- **Gate.** `tests/Test-FixtureIsolation.ps1` runs in the suite as
+  `Fixture isolation`. It fails any `Join-Path` that builds an `output\`
+  path without the resolver; its detector must flag six violating
+  fixtures and pass six resolved forms first. It checks that ten resolvers
+  follow the override and return when it clears, and that writes under an
+  override leave the workspace `output\` absent. It finds every file that
+  starts a host and requires the override there, and it checks the
+  historical filter both ways. Against the Lane 0.21 tree it reports 113
+  problems.
+- **Found on the way.** README standardization writes its history inside
+  the managed repository while the host reads it from this workspace;
+  recorded as a Lane 0.22 non-blocker.
+
 ## 2026-09-16 — The assessment route no longer holds the request thread (Lane 0.21)
 
 The host serves one connection at a time. Each

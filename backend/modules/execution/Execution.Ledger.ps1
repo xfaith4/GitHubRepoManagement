@@ -26,6 +26,10 @@
 #   The same roadmap item cannot be running in two repos simultaneously.
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
@@ -48,7 +52,7 @@ function Get-ExecutionLedgerPath {
         [string]$WorkspaceRoot
     )
 
-    $dir = Join-Path $WorkspaceRoot 'output\execution'
+    $dir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\execution'
     if (-not (Test-Path -LiteralPath $dir)) {
         $null = New-Item -ItemType Directory -Path $dir -Force
     }

@@ -52,6 +52,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
@@ -119,7 +123,7 @@ function Get-AiDocTemplates {
     [CmdletBinding()]
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
 
-    $path = Join-Path $WorkspaceRoot $script:AiDocTemplatesRelPath
+    $path = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:AiDocTemplatesRelPath
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         return [pscustomobject]@{ readmeTemplates = @(); roadmapTemplates = @() }
     }
@@ -990,7 +994,7 @@ function Invoke-AiDocImprovePreview {
 function _AiHistoryFilePath {
     param([string]$WorkspaceRoot, [string]$RepoName)
     $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
-    $historyRoot = Join-Path $WorkspaceRoot $script:AiDocHistoryRelDir
+    $historyRoot = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:AiDocHistoryRelDir
     $null = New-Item -ItemType Directory -Path $historyRoot -Force -ErrorAction SilentlyContinue
     return Join-Path $historyRoot "$safeRepoName.improvements.jsonl"
 }
@@ -1173,7 +1177,7 @@ function Invoke-AiDocImproveApply {
     $stamp = $now.ToString('yyyyMMddTHHmmssfff') + 'Z'
 
     $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
-    $backupDir = Join-Path (Join-Path $WorkspaceRoot $script:AiDocBackupRelDir) $safeRepoName
+    $backupDir = Join-Path (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:AiDocBackupRelDir) $safeRepoName
     $null = New-Item -ItemType Directory -Path $backupDir -Force
 
     $originalExisted = Test-Path -LiteralPath $TargetPath -PathType Leaf

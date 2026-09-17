@@ -30,10 +30,13 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
 - [ ] **Lane 0.22 — test fixtures never reach live state.** 175 of 192 live
       agent-run records are the api-host smoke's `dispatch-success-smoke`. They
       are most of the green "100 agent runs" badge, and a smoke fixture leads
-      the packaged work queue. The smoke writes the real agent-run ledger,
-      `roadmap-writeback.jsonl` and the packaging queue. Isolate those roots
-      as `REPO_MGMT_INDEX_ROOT` did for the index, and keep the records already
-      written out of every operational view. _(state: planned)_
+      the packaged work queue. The smoke writes the real agent-run ledger, the
+      packaging queue, work packets, run summaries and `app.db`. Isolate those
+      roots as `REPO_MGMT_INDEX_ROOT` did for the index, and keep the records
+      already written out of every operational view. Built on
+      `lane-022-fixture-isolation`: `REPO_MGMT_OUTPUT_ROOT` moves all of
+      `output\`, and the listed fixtures are hidden when the operator's own
+      root is read. _(state: built)_
       `check: pwsh ./tests/Test-FixtureIsolation.ps1 -FailOnError`
 - [ ] **Lane 0.22 — one dispatch-eligibility rule, enforced everywhere.** The
       Dispatch Board read "Ready" for repositories Today holds for uncommitted
@@ -2009,8 +2012,12 @@ one Work pipeline) are product decisions and live in D-022.
 
 - **Test data in the live ledger: confirmed.** 175 of 192 agent-run records in
   the live `output/agent-runs` are `dispatch-success-smoke`. The api-host smoke
-  writes the real agent-run ledger, `roadmap-writeback.jsonl` and the packaging
-  queue.
+  writes the real agent-run ledger and the packaging queue, and also work
+  packets, run summaries and the `app.db` mirror. It does not write
+  `roadmap-writeback.jsonl`. The write-back ledger is
+  `output\roadmap-writeback\history.jsonl`, and the smoke only reaches its
+  refusals, which write nothing. (2026-09-16: 251 of 257 packaged items are
+  `smoke-packaging-repo`.)
 - **"One click, no preview": not true.** The board's Dispatch button opens the
   task preview, not a dispatch. Its "Ready" label still ignores holds.
 
@@ -2087,6 +2094,15 @@ live state, and one dispatch-eligibility rule. Then:
       by a developer as package dependencies) is renamed or folded into
       repository detail. _(state: planned)_
       `check: npx vitest run frontend/components/RepoGrid.test.tsx`
+- [ ] **[non-blocker] README standardization history is read where it is
+      written.** Found by the fixture-isolation sweep (2026-09-16). The apply
+      step treats the target repository as its workspace, so it writes backups
+      and `standardization-history.jsonl` under `output\` inside the managed
+      repository. The host reads that history from this workspace's `output\`,
+      so an applied change never shows in its history. Write both to the
+      workspace output root, and stop writing into the managed repository.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-ReadmeStandardizationHistory.ps1 -FailOnError`
 
 ---
 

@@ -24,6 +24,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
@@ -39,12 +43,12 @@ $script:MaturityRank    = @{ 'L0' = 0; 'L1' = 1; 'L2' = 2; 'L3' = 3; 'L4' = 4 }
 
 function _GetBaselinesPath {
     param([string]$WorkspaceRoot)
-    return Join-Path $WorkspaceRoot $script:BaselinesFile
+    return Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:BaselinesFile
 }
 
 function _EnsureOutputDir {
     param([string]$WorkspaceRoot)
-    $dir = Join-Path $WorkspaceRoot 'output'
+    $dir = Get-OutputRoot -WorkspaceRoot $WorkspaceRoot
     New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue | Out-Null
 }
 

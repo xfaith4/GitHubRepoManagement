@@ -39,6 +39,10 @@
 
 Set-StrictMode -Version Latest
 
+# The default derives from the output root (Lane 0.22), so a gate that moves
+# all of output\ moves the index with it.
+. (Join-Path $PSScriptRoot 'Config.OutputRoot.ps1')
+
 function Get-PortfolioIndexRoot {
     <#
     .SYNOPSIS
@@ -57,7 +61,7 @@ function Get-PortfolioIndexRoot {
     $override = [System.Environment]::GetEnvironmentVariable('REPO_MGMT_INDEX_ROOT')
     if (-not [string]::IsNullOrWhiteSpace($override)) { return $override }
 
-    Join-Path $WorkspaceRoot 'output\index'
+    Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\index'
 }
 
 function Get-PortfolioIndexPath {

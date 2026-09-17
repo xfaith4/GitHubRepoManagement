@@ -289,10 +289,10 @@ function Send-WatchdogAlert {
 if ($LoadFunctionsOnly) { return }
 
 # ── Watchdog cycle ───────────────────────────────────────────────────────────
-if (-not $StatePath) { $StatePath = Join-Path $WorkspaceRoot 'output\logs\service-watchdog.state.json' }
-if (-not $LedgerPath) { $LedgerPath = Join-Path $WorkspaceRoot 'output\logs\service-watchdog.jsonl' }
+if (-not $StatePath) { $StatePath = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\logs\service-watchdog.state.json' }
+if (-not $LedgerPath) { $LedgerPath = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\logs\service-watchdog.jsonl' }
 
-if (-not $OperationStatePath) { $OperationStatePath = Join-Path $WorkspaceRoot 'output\logs\portal-operation.json' }
+if (-not $OperationStatePath) { $OperationStatePath = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\logs\portal-operation.json' }
 
 $prior = Get-WatchdogState -Path $StatePath
 $probe = Test-PortalHealth -Uri "$BaseUrl$HealthPath" -TimeoutSec $TimeoutSec

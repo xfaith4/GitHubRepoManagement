@@ -33,6 +33,12 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root, and the smoke's
+# packaged fixtures already in the operator's queue are skipped when folded.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+. (Join-Path $PSScriptRoot '..\common\Fixture.Records.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 $script:PackagingRunsRelPath  = 'output/automation/packaging-runs.jsonl'
@@ -771,7 +777,7 @@ function New-PackagingDigestPayload {
 
 function Get-PackagingRunsFilePath {
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
-    return (Join-Path $WorkspaceRoot ($script:PackagingRunsRelPath -replace '/', [System.IO.Path]::DirectorySeparatorChar))
+    return (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:PackagingRunsRelPath)
 }
 
 function _Pack_AppendJsonl {
@@ -1018,7 +1024,7 @@ function Get-PackagingHealth {
 
 function Get-PackagedItemsFilePath {
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
-    return (Join-Path $WorkspaceRoot ($script:PackagedItemsRelPath -replace '/', [System.IO.Path]::DirectorySeparatorChar))
+    return (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:PackagedItemsRelPath)
 }
 
 function Write-PackagedItemRecord {
@@ -1065,8 +1071,9 @@ function Get-PackagedItemQueue {
     foreach ($record in $records) {
         $packetId = [string](_Pack_GetField -Obj $record -Name 'packetId' -Default '')
         if ([string]::IsNullOrWhiteSpace($packetId)) { continue }
+        if (Test-FixtureRecord -Record $record) { continue }
 
-        $status_ = [string](_Pack_GetField -Obj $record -Name 'status' -Default '')
+        $status_ =[string](_Pack_GetField -Obj $record -Name 'status' -Default '')
         $at = [string](_Pack_GetField -Obj $record -Name 'recordedAt' -Default '')
         $actor = [string](_Pack_GetField -Obj $record -Name 'actor' -Default '')
         $note = [string](_Pack_GetField -Obj $record -Name 'note' -Default '')
@@ -1363,7 +1370,7 @@ function Submit-PackagedItemToRunner {
     $null = _Pack_AppendJsonl -Path $queuePath -Record ([pscustomobject]$entry)
 
     $summary = New-PackagedItemRunSummary -RunId $RunId -Packet $Packet -Actor $Actor
-    $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+    $runsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs'
     if (-not (Test-Path -LiteralPath $runsDir)) { $null = New-Item -ItemType Directory -Path $runsDir -Force }
     $summaryPath = Join-Path $runsDir ("{0}.summary.json" -f $RunId)
     ($summary | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath $summaryPath -Encoding UTF8

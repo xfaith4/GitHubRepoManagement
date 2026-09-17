@@ -70,6 +70,9 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 # switched off -- kept apart from the tracked settings file for the reason
 # Config.InstallationStatePath.ps1's header records.
 . (Join-Path $commonRoot 'Config.InstallationStatePath.ps1')
+# Lane 0.22: every run-evidence store under output\ -- see Config.OutputRoot.ps1
+# for the smoke fixtures that made up most of the operator's agent-run count.
+. (Join-Path $commonRoot 'Config.OutputRoot.ps1')
 # And the portfolio index, for the same reason one directory over -- see
 # Config.IndexPath.ps1's header for the run that emptied the operator's console.
 . (Join-Path $commonRoot 'Config.IndexPath.ps1')
@@ -211,8 +214,8 @@ $script:ScanRequestTimeoutSeconds = Get-EffectiveScanRequestTimeoutSeconds `
     -BaseSeconds $script:RequestTimeoutSeconds
 $script:RequestDeadlineController = $null
 
-$script:RoadmapRepairHistoryRoot   = Join-Path $WorkspaceRoot 'output\roadmap-repair-history'
-$script:RepoEvaluationHistoryRoot  = Join-Path $WorkspaceRoot 'output\repo-evaluations'
+$script:RoadmapRepairHistoryRoot   = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-repair-history'
+$script:RepoEvaluationHistoryRoot  = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\repo-evaluations'
 
 # Release 1.3 — production static frontend bundle path
 $script:FrontendDistPath = Join-Path $WorkspaceRoot 'frontend\dist'
@@ -1026,7 +1029,7 @@ function Resolve-WriteBackContext {
     $dispatchRunId = [string](Get-ValueOrDefault $trace.identity.dispatchRunId '')
     $runSummary = $null
     if (-not [string]::IsNullOrWhiteSpace($dispatchRunId)) {
-        $summaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $dispatchRunId)
+        $summaryPath = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath ("output\roadmap-task-history\runs\{0}.summary.json" -f $dispatchRunId)
         if (Test-Path -LiteralPath $summaryPath -PathType Leaf) {
             try { $runSummary = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8) } catch { $runSummary = $null }
         }
@@ -5489,7 +5492,7 @@ function Get-RoadmapTaskHistory {
         [int]$Limit = 25
     )
 
-    $historyRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history'
+    $historyRoot = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history'
     $runsPath = Join-Path $historyRoot 'runs'
 
     if (-not (Test-Path -LiteralPath $runsPath)) {
@@ -5721,7 +5724,7 @@ function Get-OperationsPromptRefinementRecord {
     }
 
     $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
-    $refineRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history\prompt-refinements'
+    $refineRoot = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\prompt-refinements'
     $refineFile = Join-Path $refineRoot "$safeRepoName.refinements.jsonl"
     if (-not (Test-Path -LiteralPath $refineFile -PathType Leaf)) {
         return $null
@@ -6431,7 +6434,7 @@ Execution requirements:
 
     # Step 8: Stable run ID and history paths
     $runId = "{0}-{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 8))
-    $historyRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history'
+    $historyRoot = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history'
     $runsPath    = Join-Path $historyRoot 'runs'
     $null = New-Item -ItemType Directory -Path $runsPath -Force -ErrorAction SilentlyContinue
 
@@ -6667,7 +6670,7 @@ function Write-OperationsPromptRefinementHistory {
     $runId = "{0}-{1}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 8))
     $createdAt = (Get-Date).ToUniversalTime().ToString('o')
     $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
-    $refineRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history\prompt-refinements'
+    $refineRoot = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\prompt-refinements'
     $null = New-Item -ItemType Directory -Path $refineRoot -Force -ErrorAction SilentlyContinue
     $refineFile = Join-Path $refineRoot "$safeRepoName.refinements.jsonl"
 
@@ -6727,7 +6730,7 @@ function Write-OperationsPromptDispatchRecord {
     }
 
     $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
-    $refineRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history\prompt-refinements'
+    $refineRoot = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\prompt-refinements'
     $null = New-Item -ItemType Directory -Path $refineRoot -Force -ErrorAction SilentlyContinue
     $dispatchFile = Join-Path $refineRoot "$safeRepoName.dispatches.jsonl"
     $recordedAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -6765,7 +6768,7 @@ function Get-OperationsPromptDispatchRecords {
     )
 
     $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
-    $refineRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history\prompt-refinements'
+    $refineRoot = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\prompt-refinements'
     $dispatchFile = Join-Path $refineRoot "$safeRepoName.dispatches.jsonl"
     if (-not (Test-Path -LiteralPath $dispatchFile -PathType Leaf)) {
         return @()
@@ -6800,7 +6803,7 @@ function Get-OperationsPromptRefinementHistory {
     )
 
     $safeRepoName = $RepoName -replace '[\\/:*?"<>|]', '_'
-    $refineRoot = Join-Path $WorkspaceRoot 'output\roadmap-task-history\prompt-refinements'
+    $refineRoot = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\prompt-refinements'
     $refineFile = Join-Path $refineRoot "$safeRepoName.refinements.jsonl"
     if (-not (Test-Path -LiteralPath $refineFile -PathType Leaf)) {
         return @()
@@ -7217,7 +7220,7 @@ function Invoke-DeliveryReconciliation {
     $summary = [ordered]@{ prsOpened = 0; refreshed = 0; failed = 0; skipped = 0 }
 
     try {
-        $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+        $runsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs'
         if (Test-Path -LiteralPath $runsDir -PathType Container) {
             # Newest first: a freshly pushed branch is the one an operator is
             # waiting on, and MaxRuns means the oldest may not be reached this
@@ -7344,7 +7347,7 @@ function Invoke-DeliveryReconciliation {
         if ([string]::IsNullOrWhiteSpace($remTarget)) { $remTarget = 'claude' }
         if ($remTarget -eq 'auto' -and -not $remAutoEnabled) { $remTarget = 'claude' }
 
-        $remRunsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+        $remRunsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs'
 
         # Release 3.1's invariant, and it belongs on the write rather than on
         # the surface that offers it: work queued with nothing able to claim it
@@ -7545,7 +7548,7 @@ $startupTransport = Get-PortalTransportState
 Write-HostLog ("Repo Management API host started on {0}://{1}:{2}" -f $startupTransport.scheme, $BindAddress, $Port)
 Write-HostLog ("Auth: {0}" -f $(if ($script:AuthEnforced) { 'API key required on /api routes' } else { 'open (loopback; no API key required)' }))
 Write-HostLog ("Ops log: {0}" -f (Get-ValueOrDefault $script:OpsLogPath '(none)'))
-$requestTimeoutLogPath = Join-Path $WorkspaceRoot 'output\logs\request-timeouts.jsonl'
+$requestTimeoutLogPath = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\logs\request-timeouts.jsonl'
 $script:RequestDeadlineController = Start-RequestDeadlineWatchdog `
     -TimeoutSeconds $script:RequestTimeoutSeconds `
     -IncidentLogPath $requestTimeoutLogPath
@@ -9923,7 +9926,7 @@ try {
                     $tokenPresent = ($prereqResolution.Source -ne 'none')
                     $outputWritable = $false
                     try {
-                        $probeDir = Join-Path $WorkspaceRoot 'output'
+                        $probeDir = Get-OutputRoot -WorkspaceRoot $WorkspaceRoot
                         $null = New-Item -ItemType Directory -Path $probeDir -Force -ErrorAction Stop
                         $probe = Join-Path $probeDir '.setup-probe'
                         Set-Content -LiteralPath $probe -Value 'ok' -Encoding UTF8
@@ -10810,7 +10813,7 @@ try {
                         }
                     }
                     else {
-                        $approveSummaryPath = Join-Path (Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs') ("{0}.summary.json" -f $approveRunId)
+                        $approveSummaryPath = Join-Path (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs') ("{0}.summary.json" -f $approveRunId)
                         if (-not (Test-Path -LiteralPath $approveSummaryPath -PathType Leaf)) {
                             Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
                                 success = $false
@@ -11624,7 +11627,7 @@ try {
                         # zero that reads as measured.
                         $leverageRuns = @()
                         try {
-                            $leverageHistory = Get-AppDbAgentRunMetricsHistory -Days $requestedDays -SeedFromRunsDirectory (Join-Path $WorkspaceRoot 'output\agent-runs\runs')
+                            $leverageHistory = Get-AppDbAgentRunMetricsHistory -Days $requestedDays -SeedFromRunsDirectory (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\agent-runs\runs')
                             if ($null -ne $leverageHistory -and $leverageHistory.available) { $leverageRuns = @($leverageHistory.entries) }
                         } catch { Write-HostLog ("WARN portfolio.trend leverage agent runs unavailable: {0}" -f $_.Exception.Message) }
 
@@ -12039,7 +12042,7 @@ try {
                     $days = if ($q.ContainsKey('days') -and $q.days) { [int]$q.days } else { 30 }
                     if ($days -lt 1) { $days = 1 }
                     if ($days -gt 3650) { $days = 3650 }
-                    $agentRunsJsonDir = Join-Path $WorkspaceRoot 'output\agent-runs\runs'
+                    $agentRunsJsonDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\agent-runs\runs'
                     $history = Get-AppDbAgentRunMetricsHistory -RepoName '' -Days $days -SeedFromRunsDirectory $agentRunsJsonDir
                     $entries = @(if ($history.available) { @($history.entries) } else { @() })
                     $byRepo = [System.Collections.Generic.List[object]]::new()
@@ -12086,7 +12089,7 @@ try {
                         if ($days -lt 1) { $days = 1 }
                         if ($days -gt 3650) { $days = 3650 }
 
-                        $agentRunsJsonDir = Join-Path $WorkspaceRoot 'output\agent-runs\runs'
+                        $agentRunsJsonDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\agent-runs\runs'
                         $history = Get-AppDbAgentRunMetricsHistory -RepoName $repoName -Days $days -SeedFromRunsDirectory $agentRunsJsonDir
                         if ($history.available) {
                             Add-MetricCounter -Name 'api_requests_total'
@@ -12906,7 +12909,7 @@ try {
                     if (-not (Test-Path -LiteralPath $dispatchQueueDir)) { $null = New-Item -ItemType Directory -Path $dispatchQueueDir -Force }
                     Add-Content -LiteralPath $dispatchQueuePath -Value ([pscustomobject]$queueEntry | ConvertTo-Json -Depth 8 -Compress) -Encoding UTF8
 
-                    $dispatchRunsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+                    $dispatchRunsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs'
                     if (-not (Test-Path -LiteralPath $dispatchRunsDir)) { $null = New-Item -ItemType Directory -Path $dispatchRunsDir -Force }
                     ([ordered]@{
                         runId             = $runId
@@ -14030,7 +14033,7 @@ try {
                         $q = Parse-QueryString -Query $req.Query
                         $limit = if ($q.ContainsKey('limit') -and $q.limit -match '^\d+$') { [int]$q.limit } else { 25 }
                         if ($limit -gt 200) { $limit = 200 }
-                        $historyPath = Join-Path $WorkspaceRoot 'output\readme-standardization-history\standardization-history.jsonl'
+                        $historyPath = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\readme-standardization-history\standardization-history.jsonl'
                         $items = [System.Collections.Generic.List[object]]::new()
                         if (Test-Path -LiteralPath $historyPath) {
                             $lines = Get-Content -LiteralPath $historyPath -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Last $limit

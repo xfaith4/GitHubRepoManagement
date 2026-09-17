@@ -1,4 +1,8 @@
 ﻿Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 <#
@@ -78,7 +82,7 @@ function Get-RunnerControlRoot {
 
     $override = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
     if (-not [string]::IsNullOrWhiteSpace($override)) { return $override }
-    return (Join-Path $WorkspaceRoot 'output')
+    return (Get-OutputRoot -WorkspaceRoot $WorkspaceRoot)
 }
 
 function Get-RunnerHeartbeatFilePath {
@@ -330,7 +334,7 @@ function Get-QueuedTaskBacklog {
         . (Join-Path $PSScriptRoot 'Automation.RoadmapQueue.ps1')
     }
     $queuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot
-    $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+    $runsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs'
     $claude = 0
     $copilot = 0
     $oldestQueuedAt = $null

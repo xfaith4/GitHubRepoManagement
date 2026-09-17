@@ -158,10 +158,10 @@ if ([string]::IsNullOrWhiteSpace($StopFilePath)) {
     # Resolved through REPO_MGMT_RUNNER_CONTROL_ROOT like the portal's writer, so a
     # stop the console writes lands where this runner is actually watching.
     $stopControlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
-    if ([string]::IsNullOrWhiteSpace($stopControlRoot)) { $stopControlRoot = Join-Path $WorkspaceRoot 'output' }
+    if ([string]::IsNullOrWhiteSpace($stopControlRoot)) { $stopControlRoot = Get-OutputRoot -WorkspaceRoot $WorkspaceRoot }
     $StopFilePath = Join-Path $stopControlRoot 'roadmap-task-runner.stop'
 }
-$runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+$runsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs'
 
 # Hoisted to an explicit script-scoped value: Invoke-QueuedTask reads it from
 # inside a function, which PowerShell resolves dynamically but leaves invisible
@@ -341,14 +341,14 @@ function Get-RunnerHeartbeatPath {
        absent. The module smoke compares this against the host's resolver. #>
     param([Parameter(Mandatory)][string]$WorkspaceRoot)
     $controlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
-    if ([string]::IsNullOrWhiteSpace($controlRoot)) { $controlRoot = Join-Path $WorkspaceRoot 'output' }
+    if ([string]::IsNullOrWhiteSpace($controlRoot)) { $controlRoot = Get-OutputRoot -WorkspaceRoot $WorkspaceRoot }
     return (Join-Path $controlRoot 'roadmap-task-runner.heartbeat.json')
 }
 
 function Get-RunnerStopFilePath {
     param([Parameter(Mandatory)][string]$WorkspaceRoot)
     $controlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
-    if ([string]::IsNullOrWhiteSpace($controlRoot)) { $controlRoot = Join-Path $WorkspaceRoot 'output' }
+    if ([string]::IsNullOrWhiteSpace($controlRoot)) { $controlRoot = Get-OutputRoot -WorkspaceRoot $WorkspaceRoot }
     return (Join-Path $controlRoot 'roadmap-task-runner.stop')
 }
 
@@ -376,7 +376,7 @@ function Get-RunnerHoldFilePath {
        smoke compares the two resolvers for exactly that reason. #>
     param([Parameter(Mandatory)][string]$WorkspaceRoot)
     $controlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
-    if ([string]::IsNullOrWhiteSpace($controlRoot)) { $controlRoot = Join-Path $WorkspaceRoot 'output' }
+    if ([string]::IsNullOrWhiteSpace($controlRoot)) { $controlRoot = Get-OutputRoot -WorkspaceRoot $WorkspaceRoot }
     return (Join-Path $controlRoot 'roadmap-task-runner.hold.json')
 }
 

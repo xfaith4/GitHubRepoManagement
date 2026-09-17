@@ -45,6 +45,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 $script:WorkItemTraceSchemaVersion = '1'
@@ -705,7 +709,7 @@ function Get-WorkItemTrace {
     }
     $queueEntries = @(_Trace_ReadJsonl -Path (Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot))
 
-    $agentRunsDir = Join-Path $WorkspaceRoot $script:WorkItemTraceAgentRunsRelDir
+    $agentRunsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:WorkItemTraceAgentRunsRelDir
     $agentRuns = @(
         @(Get-ChildItem -LiteralPath $agentRunsDir -Filter '*.json' -File -ErrorAction SilentlyContinue) |
             ForEach-Object { _Trace_ReadJson -Path $_.FullName } | Where-Object { $null -ne $_ }
@@ -716,7 +720,7 @@ function Get-WorkItemTrace {
 
     $runSummary = $null
     if (_Trace_HasText $identity.dispatchRunId) {
-        $runSummary = _Trace_ReadJson -Path (Join-Path (Join-Path $WorkspaceRoot $script:WorkItemTraceRunsRelDir) ("{0}.summary.json" -f $identity.dispatchRunId))
+        $runSummary = _Trace_ReadJson -Path (Join-Path (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:WorkItemTraceRunsRelDir) ("{0}.summary.json" -f $identity.dispatchRunId))
     }
 
     $packet = _Trace_GetField -Obj $identity.packagedItem -Name 'packet' -Default $null
@@ -730,7 +734,7 @@ function Get-WorkItemTrace {
     if (-not (_Trace_HasText $repoName)) { $repoName = _Trace_Str -Obj $runSummary -Name 'repository' }
 
     $prRecord = Select-WorkItemTracePrRecord `
-        -RepairHistory (_Trace_ReadJsonl -Path (Join-Path $WorkspaceRoot $script:WorkItemTraceRepairHistoryRelPath)) `
+        -RepairHistory (_Trace_ReadJsonl -Path (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:WorkItemTraceRepairHistoryRelPath)) `
         -Branch $branch -RepoName $repoName
 
     $repoId = _Trace_Str -Obj $packet -Name 'repoId'
@@ -741,7 +745,7 @@ function Get-WorkItemTrace {
     }
 
     $writeBack = $null
-    $writeBackRecords = @(_Trace_ReadJsonl -Path (Join-Path $WorkspaceRoot $script:WorkItemTraceWriteBackRelPath))
+    $writeBackRecords = @(_Trace_ReadJsonl -Path (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:WorkItemTraceWriteBackRelPath))
     if ($writeBackRecords.Count -gt 0) {
         $keys = @(@($identity.dispatchRunId, (_Trace_Str -Obj $identity.packagedItem -Name 'packetId')) | Where-Object { _Trace_HasText $_ })
         $writeBackMatches = @($writeBackRecords | Where-Object {

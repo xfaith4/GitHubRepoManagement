@@ -178,6 +178,7 @@ $job = Start-Job -ScriptBlock {
     $env:REPO_MGMT_SETTINGS_PATH = (Join-Path $jobRunRoot 'settings.json')
     $env:REPO_MGMT_INDEX_ROOT = (Join-Path $jobRunRoot 'index')
     $env:REPO_MGMT_CACHE_ROOT = (Join-Path $jobRunRoot 'cache')
+    $env:REPO_MGMT_OUTPUT_ROOT = (Join-Path $jobRunRoot 'output')
     $env:REPO_MGMT_QUEUE_PATH = (Join-Path $jobRunRoot 'queue.jsonl')
     $env:REPO_MGMT_RUNNER_CONTROL_ROOT = (Join-Path $jobRunRoot 'runner-control')
     $env:REPO_MGMT_INSTALLATION_STATE_PATH = (Join-Path $jobRunRoot 'installation.local.json')

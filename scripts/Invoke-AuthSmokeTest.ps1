@@ -80,7 +80,9 @@ $env:REPO_MGMT_RUNNER_CONTROL_ROOT = Join-Path $smokeRoot 'runner-control'
 $null = New-Item -ItemType Directory -Path $env:REPO_MGMT_RUNNER_CONTROL_ROOT -Force
 # Lane 0.21: the scan caches and the background worker's lock.
 $env:REPO_MGMT_CACHE_ROOT = Join-Path $smokeRoot 'cache'
-Write-Host ("  index, queue, runner state and scan caches isolated under {0}" -f $smokeRoot) -ForegroundColor DarkGray
+# Lane 0.22: the rest of output\ (agent runs, app.db, run summaries, logs).
+$env:REPO_MGMT_OUTPUT_ROOT = Join-Path $smokeRoot 'output'
+Write-Host ("  index, queue, runner state, scan caches and run evidence isolated under {0}" -f $smokeRoot) -ForegroundColor DarkGray
 
 # Every host started here except the TLS step speaks plain HTTP, and Start-Job
 # inherits this process's environment. An inherited REPO_MGMT_TLS_PFX -- set at

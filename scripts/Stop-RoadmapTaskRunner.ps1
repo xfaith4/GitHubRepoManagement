@@ -49,13 +49,17 @@ param(
 )
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # Same resolution as the portal and the runner, REPO_MGMT_RUNNER_CONTROL_ROOT
 # included: a stop request written where the runner is not looking is a stop
 # that silently never happens.
 $runnerControlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
-if ([string]::IsNullOrWhiteSpace($runnerControlRoot)) { $runnerControlRoot = Join-Path $WorkspaceRoot 'output' }
+if ([string]::IsNullOrWhiteSpace($runnerControlRoot)) { $runnerControlRoot = Get-OutputRoot -WorkspaceRoot $WorkspaceRoot }
 $heartbeatPath = Join-Path $runnerControlRoot 'roadmap-task-runner.heartbeat.json'
 $stopFilePath = Join-Path $runnerControlRoot 'roadmap-task-runner.stop'
 

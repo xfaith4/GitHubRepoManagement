@@ -38,6 +38,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # The spec's confidence ladder, HIGHEST confidence first. The index is the
@@ -331,7 +335,7 @@ function Get-ProviderCapacityRecordPath {
         [Parameter(Mandatory)][string]$WorkspaceRoot,
         [Parameter(Mandatory)][string]$Provider
     )
-    return (Join-Path $WorkspaceRoot ('output\provider-capacity\{0}.json' -f $Provider))
+    return (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath ('output\provider-capacity\{0}.json' -f $Provider))
 }
 
 <#

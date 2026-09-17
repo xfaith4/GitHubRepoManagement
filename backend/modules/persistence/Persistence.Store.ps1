@@ -49,6 +49,12 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root, and the agent-run
+# mirror's smoke-fixture rows stay out of the metrics it serves.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+. (Join-Path $PSScriptRoot '..\common\Fixture.Records.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
@@ -549,7 +555,7 @@ function Get-AppDatabasePath {
     param(
         [Parameter(Mandatory = $true)][string]$WorkspaceRoot
     )
-    return Join-Path $WorkspaceRoot $script:AppDbRelPath
+    return Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:AppDbRelPath
 }
 
 function Get-AppDatabaseSchemaSql {
@@ -2285,7 +2291,9 @@ ORDER BY COALESCE(dispatched_at, updated_at) ASC, run_id ASC
         since     = $sinceIso
     })
 
-    $entries = @($rows | ForEach-Object {
+    $entries = @($rows | Where-Object {
+        -not (Test-FixtureRecord -Record @{ repo_name = [string](_AppDbRecordValue -Record $_ -Name 'repo_name') })
+    } | ForEach-Object {
         [pscustomobject]@{
             runId                = [string](_AppDbRecordValue -Record $_ -Name 'run_id')
             repoName             = [string](_AppDbRecordValue -Record $_ -Name 'repo_name')

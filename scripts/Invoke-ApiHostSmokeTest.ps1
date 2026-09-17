@@ -505,6 +505,20 @@ $script:SmokeCacheRoot = Join-Path $smokeRoot 'cache'
 Remove-Item -LiteralPath $script:SmokeCacheRoot -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ("  scan caches and worker lock isolated to {0} (the operator's scan never waits on this gate's)" -f $script:SmokeCacheRoot) -ForegroundColor DarkGray
 
+# Lane 0.22 — everything else under output\. Until this, the agent-run ledger,
+# packaged items, work packets, run summaries, the execution ledger and app.db
+# were written to the operator's own output\: on 2026-09-15, 175 of their 192
+# agent-run records were this gate's dispatch-success-smoke, and a fixture led
+# their packaged work queue. The host resolves every one of those through
+# Get-OutputRoot, which honours REPO_MGMT_OUTPUT_ROOT; keep in step with the
+# job's assignment below. Created, not just cleared: steps below seed run
+# summaries into it before the host has written anything.
+$script:SmokeOutputRoot = Join-Path $smokeRoot 'output'
+Remove-Item -LiteralPath $script:SmokeOutputRoot -Recurse -Force -ErrorAction SilentlyContinue
+$null = New-Item -ItemType Directory -Path (Join-Path $script:SmokeOutputRoot 'roadmap-task-history\runs') -Force
+$null = New-Item -ItemType Directory -Path (Join-Path $script:SmokeOutputRoot 'agent-runs\runs') -Force
+Write-Host ("  run evidence isolated to {0} (agent runs, packaged items, work packets, run summaries, app.db)" -f $script:SmokeOutputRoot) -ForegroundColor DarkGray
+
 $job = Start-Job -ScriptBlock {
     param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $QueuePath, $SettingsPath)
     # Both overrides are set on the JOB, never on the parent, so a crashed smoke
@@ -532,6 +546,10 @@ $job = Start-Job -ScriptBlock {
     # Lane 0.21, same rebuild from $Root: the worker this host starts inherits
     # the override. Must stay in step with $script:SmokeCacheRoot.
     $env:REPO_MGMT_CACHE_ROOT = (Join-Path $Root 'output\smoke\api-host\cache')
+    # Lane 0.22, same rebuild from $Root. Every process the host starts (the
+    # worker, a dispatched task) inherits it. Must stay in step with
+    # $script:SmokeOutputRoot.
+    $env:REPO_MGMT_OUTPUT_ROOT = (Join-Path $Root 'output\smoke\api-host\output')
     # Start-Job inherits the parent environment. Every assertion below speaks
     # plain HTTP to this host, so an inherited REPO_MGMT_TLS_PFX -- which the
     # installed service sets at MACHINE scope -- would wrap the listener in an
@@ -650,12 +668,15 @@ try {
     $scanPsExe = (Get-Process -Id $PID).Path
 
     # These two workers are started from THIS process, not the host job, so
-    # they would not inherit the job's REPO_MGMT_CACHE_ROOT. Without it, the
+    # they would not inherit the job's REPO_MGMT_CACHE_ROOT (or, since Lane
+    # 0.22, REPO_MGMT_OUTPUT_ROOT). Without the cache root, the
     # fixture scan replaced the operator's roadmap and doc-audit caches with
     # zero and one entries (seen 2026-09-16). Set for the two runs only, then
     # restored; a crash cannot leak it past this child pwsh process.
     $priorCacheRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_CACHE_ROOT')
+    $priorOutputRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_OUTPUT_ROOT')
     [Environment]::SetEnvironmentVariable('REPO_MGMT_CACHE_ROOT', $script:SmokeCacheRoot)
+    [Environment]::SetEnvironmentVariable('REPO_MGMT_OUTPUT_ROOT', $script:SmokeOutputRoot)
     try {
         $scanControl = Start-Process -FilePath $scanPsExe -ArgumentList @(
             '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scanWorkerScript,
@@ -681,6 +702,7 @@ try {
     }
     finally {
         [Environment]::SetEnvironmentVariable('REPO_MGMT_CACHE_ROOT', $priorCacheRoot)
+        [Environment]::SetEnvironmentVariable('REPO_MGMT_OUTPUT_ROOT', $priorOutputRoot)
     }
     $scanCancelFinal = Get-Content -LiteralPath $scanWorkerProgress -Raw | ConvertFrom-Json
     if ($scanCancelRun.ExitCode -ne 0) { throw "Cancelled worker must exit 0 (operator action, not failure); got $($scanCancelRun.ExitCode)." }
@@ -1568,7 +1590,7 @@ try {
     if ($dispatchQueueLines.Count -le $queueLinesBefore) { throw 'roadmap-task-queue.jsonl did not gain an entry after /api/roadmap-agent/start' }
     $dispatchQueueEntry = $dispatchQueueLines[-1] | ConvertFrom-Json
     if ([string]$dispatchQueueEntry.runId -ne $dispatchRunId) { throw ("queue tail runId '{0}' does not match started run '{1}'" -f $dispatchQueueEntry.runId, $dispatchRunId) }
-    $dispatchSummaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $dispatchRunId)
+    $dispatchSummaryPath = Join-Path $script:SmokeOutputRoot ("roadmap-task-history\runs\{0}.summary.json" -f $dispatchRunId)
     $dispatchSummary = Get-Content -LiteralPath $dispatchSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if ([string]$dispatchSummary.status -ne 'queued') { throw ("run summary status expected 'queued', got '{0}'" -f $dispatchSummary.status) }
     # Put the operator's heartbeat back exactly as found, before anything else
@@ -1728,7 +1750,7 @@ try {
 
             if (-not [string]::IsNullOrWhiteSpace($opsPromptHistoryLinkedRefineRunId)) {
                 $safeRepoName = $workspaceRepoName -replace '[\\/:*?"<>|]', '_'
-                $opsPromptHistoryDispatchFile = Join-Path $WorkspaceRoot "output\roadmap-task-history\prompt-refinements\$safeRepoName.dispatches.jsonl"
+                $opsPromptHistoryDispatchFile = Join-Path $script:SmokeOutputRoot "roadmap-task-history\prompt-refinements\$safeRepoName.dispatches.jsonl"
                 if (Test-Path -LiteralPath $opsPromptHistoryDispatchFile) {
                     $opsPromptHistoryDispatchBackup = Get-Content -LiteralPath $opsPromptHistoryDispatchFile -Raw -Encoding UTF8
                 }
@@ -1914,8 +1936,8 @@ try {
     # Real apply against an isolated temp target so the smoke never mutates a real repo document.
     $aiApplyRepoName = 'smoke-ai-apply'
     $aiApplyDir = Join-Path ([System.IO.Path]::GetTempPath()) ("ai-apply-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
-    $aiApplyBackupDir = Join-Path $WorkspaceRoot "output\ai-doc-improvements\backups\$aiApplyRepoName"
-    $aiApplyHistoryFile = Join-Path $WorkspaceRoot "output\ai-doc-improvements\$aiApplyRepoName.improvements.jsonl"
+    $aiApplyBackupDir = Join-Path $script:SmokeOutputRoot "ai-doc-improvements\backups\$aiApplyRepoName"
+    $aiApplyHistoryFile = Join-Path $script:SmokeOutputRoot "ai-doc-improvements\$aiApplyRepoName.improvements.jsonl"
     try {
         New-Item -ItemType Directory -Path $aiApplyDir -Force | Out-Null
         $aiApplyTarget = Join-Path $aiApplyDir 'README.md'
@@ -2099,7 +2121,7 @@ try {
         }
         if ([string]$okEntry.prompt -notmatch 'Smoke-test the successful enqueue') { throw 'queue entry did not carry the approved prompt' }
 
-        $okSummaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $okRunId)
+        $okSummaryPath = Join-Path $script:SmokeOutputRoot ("roadmap-task-history\runs\{0}.summary.json" -f $okRunId)
         if (-not (Test-Path -LiteralPath $okSummaryPath -PathType Leaf)) {
             throw "No run summary at $okSummaryPath; a queue line with no summary is a task the runner never claims."
         }
@@ -2174,7 +2196,7 @@ try {
         if ([string]$explicitQueueEntry.dispatchTarget -ne 'codex') {
             throw ("queue entry lost the requested dispatchTarget: expected 'codex', got '{0}'" -f $explicitQueueEntry.dispatchTarget)
         }
-        $explicitSummary = Get-Content -LiteralPath (Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f [string]$explicitTargetResponse.Json.data.runId)) -Raw -Encoding UTF8 | ConvertFrom-Json
+        $explicitSummary = Get-Content -LiteralPath (Join-Path $script:SmokeOutputRoot ("roadmap-task-history\runs\{0}.summary.json" -f [string]$explicitTargetResponse.Json.data.runId)) -Raw -Encoding UTF8 | ConvertFrom-Json
         if ([string]$explicitSummary.dispatchTarget -ne 'codex') {
             throw ("run summary lost the requested dispatchTarget: expected 'codex', got '{0}'" -f $explicitSummary.dispatchTarget)
         }
@@ -2298,7 +2320,7 @@ try {
             throw ("An acknowledged dispatch must count itself as stranded; got strandedCount={0}" -f $forcedJson.data.strandedCount)
         }
         if (-not [string]::IsNullOrWhiteSpace($forcedRunId)) {
-            Remove-Item -LiteralPath (Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $forcedRunId)) -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Join-Path $script:SmokeOutputRoot ("roadmap-task-history\runs\{0}.summary.json" -f $forcedRunId)) -Force -ErrorAction SilentlyContinue
         }
         Write-Host ("  dispatch presence gate ok: 409 runner-absent wrote nothing and named the precondition; acknowledged override queued with stranded={0}" -f `
                 $forcedJson.data.strandedCount) -ForegroundColor DarkGray
@@ -2317,7 +2339,7 @@ try {
             Set-Content -LiteralPath $heartbeatPath -Value $heartbeatBackup -Encoding UTF8 -NoNewline
         }
         if (-not [string]::IsNullOrWhiteSpace($okRunId)) {
-            Remove-Item -LiteralPath (Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $okRunId)) -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Join-Path $script:SmokeOutputRoot ("roadmap-task-history\runs\{0}.summary.json" -f $okRunId)) -Force -ErrorAction SilentlyContinue
         }
         # Fixture dispatches used to be left in the operator's real queue file
         # forever — this smoke's own entries, indistinguishable from work an
@@ -2338,7 +2360,7 @@ try {
     Write-Host '[STEP] Dispatch quota guard contract (Release 2.0 Phase 4)' -ForegroundColor Cyan
     $settingsPath = $script:HostSettingsPath
     $settingsBackup = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 } else { $null }
-    $agentEventsPath = Join-Path $WorkspaceRoot 'output\agent-runs\events.jsonl'
+    $agentEventsPath = Join-Path $script:SmokeOutputRoot 'agent-runs\events.jsonl'
     $agentEventsBackup = if (Test-Path -LiteralPath $agentEventsPath) { Get-Content -LiteralPath $agentEventsPath -Raw -Encoding UTF8 } else { $null }
     $quotaRepoRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dispatch-quota-smoke-" + [guid]::NewGuid().ToString('n').Substring(0, 8))
     $quotaRepoPath = Join-Path $quotaRepoRoot 'quota-dispatch-smoke'
@@ -3959,7 +3981,7 @@ A release should not be marked `done` unless:
         if ([string]::IsNullOrWhiteSpace($packagingDispatchRunId)) { throw 'Approval did not return a dispatch run id' }
         $queueAfterApprove = if (Test-Path -LiteralPath $packagingQueuePath) { Get-Content -LiteralPath $packagingQueuePath -Raw -Encoding UTF8 } else { '' }
         if ([string]$queueAfterApprove -notmatch [regex]::Escape($packagingDispatchRunId)) { throw 'Approval did not enqueue the task for the operator runner' }
-        $packagingSummaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $packagingDispatchRunId)
+        $packagingSummaryPath = Join-Path $script:SmokeOutputRoot ("roadmap-task-history\runs\{0}.summary.json" -f $packagingDispatchRunId)
         if (-not (Test-Path -LiteralPath $packagingSummaryPath)) { throw 'Approval did not write the run summary the operator runner claims on' }
         if ([string]((Get-Content -LiteralPath $packagingSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json).status) -ne 'queued') {
             throw 'The dispatched run summary must read status=queued for the runner to claim it'
@@ -4079,7 +4101,7 @@ A release should not be marked `done` unless:
             Remove-Item -LiteralPath $packagingQueuePath -Force -ErrorAction SilentlyContinue
         }
         if (-not [string]::IsNullOrWhiteSpace($packagingDispatchRunId)) {
-            Remove-Item -LiteralPath (Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $packagingDispatchRunId)) -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Join-Path $script:SmokeOutputRoot ("roadmap-task-history\runs\{0}.summary.json" -f $packagingDispatchRunId)) -Force -ErrorAction SilentlyContinue
         }
         foreach ($curatedId in $packagingCuratedIds) {
             $null = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/operations/repos/$([uri]::EscapeDataString($curatedId))/curation" -Body @{ curationState = 'none'; reason = 'api-host smoke cleanup' }
@@ -4422,7 +4444,7 @@ A release should not be marked `done` unless:
     $reconcileOk = $false
     $reconcileRunId = ("smoke-reconcile-{0}" -f ([guid]::NewGuid().ToString('n').Substring(0, 8)))
     $reconcileFixture = Join-Path $WorkspaceRoot 'output\smoke\api-host\reconcile'
-    $reconcileSummaryPath = Join-Path $WorkspaceRoot ("output\roadmap-task-history\runs\{0}.summary.json" -f $reconcileRunId)
+    $reconcileSummaryPath = Join-Path $script:SmokeOutputRoot ("roadmap-task-history\runs\{0}.summary.json" -f $reconcileRunId)
     try {
         if (Test-Path -LiteralPath $reconcileFixture) { Remove-Item -LiteralPath $reconcileFixture -Recurse -Force }
         $null = New-Item -ItemType Directory -Path $reconcileFixture -Force
@@ -4528,7 +4550,7 @@ A release should not be marked `done` unless:
     $remRunId = ("smoke-remediate-{0}" -f ([guid]::NewGuid().ToString('n').Substring(0, 8)))
     $remCapRunId = ("smoke-remediate-cap-{0}" -f ([guid]::NewGuid().ToString('n').Substring(0, 8)))
     $remFixture = Join-Path $WorkspaceRoot 'output\smoke\api-host\remediation'
-    $remRunsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+    $remRunsDir = Join-Path $script:SmokeOutputRoot 'roadmap-task-history\runs'
     $remSummaryPath = Join-Path $remRunsDir ("{0}.summary.json" -f $remRunId)
     $remCapSummaryPath = Join-Path $remRunsDir ("{0}.summary.json" -f $remCapRunId)
     # The operator's real heartbeat file. Backed up and put back exactly as
@@ -4736,6 +4758,11 @@ A release should not be marked `done` unless:
     Write-Host '[STEP] Approve binds to a SHA - a mismatched commit is refused (Release 3.8 M4)' -ForegroundColor Cyan
     $approveBindOk = $false
     $approveBindRunId = $null
+    # This step seeds its run from THIS process, which does not have the job's
+    # REPO_MGMT_OUTPUT_ROOT. Set for the step and restored in its finally, or
+    # the record lands in the operator's ledger while the host looks elsewhere.
+    $priorApproveOutputRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_OUTPUT_ROOT')
+    [Environment]::SetEnvironmentVariable('REPO_MGMT_OUTPUT_ROOT', $script:SmokeOutputRoot)
     try {
         if (-not (Get-Command New-AgentRunRecord -ErrorAction SilentlyContinue)) {
             . (Join-Path $WorkspaceRoot 'backend\modules\agent-runs\AgentRuns.ps1')
@@ -4807,8 +4834,9 @@ A release should not be marked `done` unless:
     }
     finally {
         if (-not [string]::IsNullOrWhiteSpace($approveBindRunId)) {
-            Remove-Item -LiteralPath (Join-Path $WorkspaceRoot ("output\agent-runs\runs\{0}.json" -f $approveBindRunId)) -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Join-Path $script:SmokeOutputRoot ("agent-runs\runs\{0}.json" -f $approveBindRunId)) -Force -ErrorAction SilentlyContinue
         }
+        [Environment]::SetEnvironmentVariable('REPO_MGMT_OUTPUT_ROOT', $priorApproveOutputRoot)
     }
 
     Write-Host '[STEP] Route census — critical API routes must return JSON (not the SPA fallback)' -ForegroundColor Cyan

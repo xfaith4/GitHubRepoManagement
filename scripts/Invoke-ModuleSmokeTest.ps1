@@ -12042,14 +12042,15 @@ Write-Step 'Settings path resolver - one definition, so a gate cannot write the 
         $indexGateText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot $indexGate) -Raw -Encoding UTF8
         # REPO_MGMT_CACHE_ROOT since Lane 0.21: an assessment read starts the
         # background worker, which would otherwise hold the operator's scan
-        # lock and write their scan caches.
-        foreach ($required in @('REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT', 'REPO_MGMT_CACHE_ROOT')) {
+        # lock and write their scan caches. REPO_MGMT_OUTPUT_ROOT since Lane
+        # 0.22 (tests/Test-FixtureIsolation.ps1 derives the full host list).
+        foreach ($required in @('REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT', 'REPO_MGMT_CACHE_ROOT', 'REPO_MGMT_OUTPUT_ROOT')) {
             if ($indexGateText -notmatch [regex]::Escape($required)) {
-                throw ("{0} starts an API host without setting {1}; that host can write the operator's real index, queue, runner state or scan caches. Set it beside the gate's other overrides." -f $indexGate, $required)
+                throw ("{0} starts an API host without setting {1}; that host can write the operator's real index, queue, runner state, scan caches or run evidence. Set it beside the gate's other overrides." -f $indexGate, $required)
             }
         }
     }
-    Write-Host '  host isolation ok: every test gate that starts a host sets REPO_MGMT_INDEX_ROOT, REPO_MGMT_QUEUE_PATH, REPO_MGMT_RUNNER_CONTROL_ROOT and REPO_MGMT_CACHE_ROOT' -ForegroundColor DarkGray
+    Write-Host '  host isolation ok: every test gate that starts a host sets REPO_MGMT_INDEX_ROOT, REPO_MGMT_QUEUE_PATH, REPO_MGMT_RUNNER_CONTROL_ROOT, REPO_MGMT_CACHE_ROOT and REPO_MGMT_OUTPUT_ROOT' -ForegroundColor DarkGray
 
     Write-Host '  settings path ok: detector rejected its own inline fixture and spared the resolved form; no bypass under backend/ or scripts/ (installer exempt); REPO_MGMT_SETTINGS_PATH redirects and clears; both host smokes isolate and assert' -ForegroundColor DarkGray
 }

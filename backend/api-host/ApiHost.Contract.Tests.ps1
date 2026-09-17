@@ -120,13 +120,16 @@ BeforeAll {
     # REPO_MGMT_CACHE_ROOT (Lane 0.21): a cold assessment read starts the
     # background worker, and without it that worker holds the operator's scan
     # lock and writes their scan caches.
-    foreach ($name in 'REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT', 'REPO_MGMT_CACHE_ROOT') {
+    # REPO_MGMT_OUTPUT_ROOT (Lane 0.22): the rest of output\ -- app.db, agent
+    # runs, run summaries, the request-timeout log.
+    foreach ($name in 'REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT', 'REPO_MGMT_CACHE_ROOT', 'REPO_MGMT_OUTPUT_ROOT') {
         $script:IsolationPrevious[$name] = [Environment]::GetEnvironmentVariable($name)
     }
     [Environment]::SetEnvironmentVariable('REPO_MGMT_INDEX_ROOT', (Join-Path $script:LogRoot 'contract-index'))
     [Environment]::SetEnvironmentVariable('REPO_MGMT_QUEUE_PATH', (Join-Path $script:LogRoot 'contract-task-queue.jsonl'))
     [Environment]::SetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT', (Join-Path $script:LogRoot 'contract-runner-control'))
     [Environment]::SetEnvironmentVariable('REPO_MGMT_CACHE_ROOT', (Join-Path $script:LogRoot 'contract-cache'))
+    [Environment]::SetEnvironmentVariable('REPO_MGMT_OUTPUT_ROOT', (Join-Path $script:LogRoot 'contract-output'))
     $null = New-Item -ItemType Directory -Path (Join-Path $script:LogRoot 'contract-runner-control') -Force
 
     # Lane 0.21: the host's first assessment comes from the background worker,
