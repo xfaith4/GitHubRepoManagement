@@ -79,7 +79,11 @@ $apiHostText = Get-Content -LiteralPath $apiHostPath -Raw
 #   Invoke-RoadmapAuditScan  - these two ARE the scan implementations; they
 #   Invoke-DocAuditScan        compose Invoke-RoadmapScan rather than adding a
 #                              new place a request can block.
-$scanAllowedInFunctions = @('Invoke-GitOperation', 'Invoke-RoadmapAuditScan', 'Invoke-DocAuditScan', 'Invoke-BackgroundPortfolioAssessment')
+#   Invoke-PortfolioAssessmentScan  Lane 0.21 (2026-09-15): the assessment
+#                              route's former body. Only the background worker
+#                              calls it; the assertion below fails if the main
+#                              script body (the route switch) ever does.
+$scanAllowedInFunctions = @('Invoke-GitOperation', 'Invoke-RoadmapAuditScan', 'Invoke-DocAuditScan', 'Invoke-PortfolioAssessmentScan')
 
 # Ratchet, not a clean sheet. GET /api/status and GET /api/portfolio/assessment
 # are fixed and asserted below; the remaining routes still scan inline and are
@@ -94,6 +98,11 @@ $scanAllowedInFunctions = @('Invoke-GitOperation', 'Invoke-RoadmapAuditScan', 'I
 # because the lens widened, not because the code got worse. Recorded plainly
 # rather than quietly re-baselined, since a baseline nobody can explain is a
 # baseline nobody will lower.
+#
+# 14, not 18 (Lane 0.21, 2026-09-15): the assessment route's differential
+# branch ran Invoke-RoadmapScan and Invoke-DocAuditScan twice each on the
+# request thread. That body is Invoke-PortfolioAssessmentScan now, run by the
+# worker, and the four sites went with it.
 $inlineScanBaseline = 14
 
 # All three portfolio sweeps, not just the status one. GET
@@ -153,6 +162,41 @@ foreach ($cacheWrite in @('Save-StatusCache', 'Save-RoadmapCache', 'Save-DocAudi
     if ($workerText -notmatch [regex]::Escape($cacheWrite)) {
         throw "The background refresh worker must call $cacheWrite; a scan whose result is never cached makes every request pay for it again"
     }
+}
+
+# Lane 0.21: the assessment scan is allowed inside its own function only
+# because nothing on the request thread calls that function. A route that calls
+# it inline puts the 28-72 s freeze straight back, so the allowance above is
+# conditional on this.
+$assessmentScanInlineCalls = @($hostAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Invoke-PortfolioAssessmentScan'
+}, $true) | Where-Object {
+    $enclosingFn = $_.Parent
+    while ($null -ne $enclosingFn -and -not ($enclosingFn -is [System.Management.Automation.Language.FunctionDefinitionAst])) { $enclosingFn = $enclosingFn.Parent }
+    $null -eq $enclosingFn
+})
+if ($assessmentScanInlineCalls.Count -gt 0) {
+    throw ("Invoke-PortfolioAssessmentScan is called on the request thread at line(s) {0}. It runs the GitHub pass, the assessment and the index write; only scripts/Invoke-StatusCacheRefresh.ps1 may call it (Lane 0.21)." -f (($assessmentScanInlineCalls | ForEach-Object { $_.Extent.StartLineNumber }) -join ', '))
+}
+if ($workerText -notmatch 'Invoke-PortfolioAssessmentScan\s') {
+    throw 'The background refresh worker must run Invoke-PortfolioAssessmentScan; the assessment route no longer does, so without it the index is never rebuilt'
+}
+if ($workerText -notmatch 'Initialize-AppDatabase') {
+    throw 'The worker must open the app database before the assessment phase, or its snapshot, coverage and scan-history mirror writes are silently skipped'
+}
+$assessmentRouteClause = @($hostAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true) |
+    ForEach-Object { $_.Clauses } |
+    Where-Object { $_.Item1.Extent.Text.Trim("'`"") -eq 'GET /api/portfolio/assessment' }) | Select-Object -First 1
+if ($null -eq $assessmentRouteClause) { throw 'GET /api/portfolio/assessment route clause not found; the Lane 0.21 route assertion would be vacuous' }
+$assessmentRouteCommands = @($assessmentRouteClause.Item2.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ })
+foreach ($forbiddenInRoute in @('Get-GitHubReposViaApi', 'Invoke-PortfolioAssessment', 'Save-PortfolioIndexArtifacts', 'Get-PortfolioIndexPayload')) {
+    if ($forbiddenInRoute -in $assessmentRouteCommands) {
+        throw ("GET /api/portfolio/assessment calls {0} on the request thread. The route serves the worker's last result; the GitHub pass, the assessment and the index read/write are the worker's (Lane 0.21)." -f $forbiddenInRoute)
+    }
+}
+if ('Start-BackgroundStatusRefresh' -notin $assessmentRouteCommands) {
+    throw 'GET /api/portfolio/assessment must kick the background worker; serving the last result without ever asking for a new one would freeze the portfolio instead of the portal'
 }
 
 # The miss paths must actually start the worker, or they would just serve
@@ -11996,13 +12040,16 @@ Write-Step 'Settings path resolver - one definition, so a gate cannot write the 
     # the real portfolio is its purpose.
     foreach ($indexGate in @('scripts\Invoke-ApiHostSmokeTest.ps1', 'scripts\Invoke-AuthSmokeTest.ps1', 'backend\api-host\ApiHost.Contract.Tests.ps1')) {
         $indexGateText = Get-Content -LiteralPath (Join-Path $WorkspaceRoot $indexGate) -Raw -Encoding UTF8
-        foreach ($required in @('REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT')) {
+        # REPO_MGMT_CACHE_ROOT since Lane 0.21: an assessment read starts the
+        # background worker, which would otherwise hold the operator's scan
+        # lock and write their scan caches.
+        foreach ($required in @('REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT', 'REPO_MGMT_CACHE_ROOT')) {
             if ($indexGateText -notmatch [regex]::Escape($required)) {
-                throw ("{0} starts an API host without setting {1}; that host can write the operator's real index, queue or runner state. Set it beside the gate's other overrides." -f $indexGate, $required)
+                throw ("{0} starts an API host without setting {1}; that host can write the operator's real index, queue, runner state or scan caches. Set it beside the gate's other overrides." -f $indexGate, $required)
             }
         }
     }
-    Write-Host '  host isolation ok: every test gate that starts a host sets REPO_MGMT_INDEX_ROOT, REPO_MGMT_QUEUE_PATH and REPO_MGMT_RUNNER_CONTROL_ROOT' -ForegroundColor DarkGray
+    Write-Host '  host isolation ok: every test gate that starts a host sets REPO_MGMT_INDEX_ROOT, REPO_MGMT_QUEUE_PATH, REPO_MGMT_RUNNER_CONTROL_ROOT and REPO_MGMT_CACHE_ROOT' -ForegroundColor DarkGray
 
     Write-Host '  settings path ok: detector rejected its own inline fixture and spared the resolved form; no bypass under backend/ or scripts/ (installer exempt); REPO_MGMT_SETTINGS_PATH redirects and clears; both host smokes isolate and assert' -ForegroundColor DarkGray
 }

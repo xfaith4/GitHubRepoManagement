@@ -6824,25 +6824,22 @@ resolves to the lifecycle state `curated-out`. The live index reflects kind
 signals only after OQ-12. Verified means the CI check is green, not operator
 sign-off (D-018).
 
-## Lane 0.21 — verified milestones (lane still open; moved from ROADMAP.md under the §3 archive rule)
+## Lane 0.21 — verified milestones (lane still open; moved from ROADMAP.md Current focus under the §3 archive rule)
 
-- [x] **Polls never pile up behind a slow host.** The next poll starts only
-      when the previous one settles (a `setTimeout` chain, not `setInterval`).
-      Each poll has an `AbortController` timeout, backs off while calls are slow,
-      and pauses while `document.hidden`. `/api/agent-runs` returned the same
-      147 KB seven times in one load; it answers with an ETag or a `since=`
-      cursor. _(state: verified)_
-      **Built:** on `lane-021-poll-loop`. `frontend/lib/pollLoop.ts` is the
-      one helper (settle-then-wait chain, per-call abort, back-off, silence
-      while hidden) and `frontend/hooks/usePollLoop.ts` its React form; every
-      former `setInterval` and hand-rolled `setTimeout` chain in `frontend/`
-      runs on it, and the check scans the tree for any that does not.
-      `GET /api/agent-runs` answers an `ETag` with `Cache-Control: no-cache`
-      and 304 to a matching `If-None-Match`; the api-host smoke asserts it.
-      `check: npx vitest run frontend/lib/pollLoop.test.ts`
+- [x] **Lane 0.21 — the assessment route never holds the request thread.**
+      While a scan runs the portal stops answering: 60–72 s per page load,
+      3 m 33 s in the operator's timed reload. The fingerprint defect behind most
+      of it is fixed; the route's GitHub pass and changed-root scans still run
+      inline. Move them into the background worker, and have the route answer
+      from the index at once. Lane 0.21's other items follow it. Built on
+      `lane-021-assessment-worker`: the worker runs the assessment as phase 5
+      and the route serves its last result. _(state: verified)_
+      `check: pwsh ./tests/Test-RequestThreadBudget.ps1 -Route /api/portfolio/assessment -MaxMs 2000 -FailOnError`
 
-Verified 2026-09-17, the gate exiting 0 in CI on the PR head:
-
-| Milestone | PR | Head | CI run | Gate |
-| --- | --- | --- | --- | --- |
-| Polls never pile up behind a slow host | #310 | `fab044f` | 35218569388 | `Frontend unit tests` |
+Verified 2026-09-16: the `Request thread budget` gate exited 0 in CI on the
+head of #309 (`543a396`, run 35170440969). Locally the slowest request took
+349 ms against the 2000 ms budget, with 20 samples taken while a scan ran. The
+same test fails against `origin/main`'s host. Field proof (the live portal
+answering while its own worker scans) needs the elevated service restart that
+loads the new host; it is not a gate on this milestone. Lane 0.21's remaining
+items stay open in ROADMAP.md.

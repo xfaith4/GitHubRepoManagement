@@ -2,87 +2,57 @@
 
 All notable changes to this project are documented here.
 
-## 2026-09-18 — Lane 0.22: lanes close on evidence; Cancel must be trustworthy
+## 2026-09-16 — The assessment route no longer holds the request thread (Lane 0.21)
 
-Ben's ruling on the Dispatch Board's two execution lanes. Three planned items
-added to Lane 0.22, each with its check:
+The host serves one connection at a time. Each
+`GET /api/portfolio/assessment?scanMode=differential` ran the route's own
+GitHub pass, scans of changed roots, the assessment and the index write
+inline, so every page load held every route: 28 s with nothing changed and
+60–72 s during the operator's timed reload, with `/health/live` waiting up to
+48 s behind it.
 
-- **Lanes close on evidence, not on a click.** The Complete button goes: an
-  operator pressing it asserts work the operator did not do, and it always
-  sent `hasRemainingWork: true`, so it only ever released the lane under the
-  wrong name. The lane observation already computes `finished`/`failed`; a
-  sweep acts on it, the way `Invoke-AgentRunAutoClose` does for agent runs.
-- **Cancel reaches the runner.** Found while checking the ruling: Cancel only
-  edits the ledger — the lane frees and the agent keeps working, its PR
-  arriving later as an orphan. A cancel flag the runner honours at the next
-  phase boundary, a closed draft PR, and an acknowledgement in the lane's
-  history make the button true.
-- **A lane tile shows the phase, the clock and the work order.** Phase n of N
-  from the execution event stream, time-in-phase, stalled flag, and a link to
-  the WorkPacket / trace — never a percentage, which nothing reports.
-
-The two-lane cap (a Release 1.0 constant) is named as an open question for
-the decision register; the register entry waits for a review slot.
-Verified by `tools/Test-RoadmapStructure.ps1 -FailOnError` and
-`tests/Test-RoadmapCheckRunsInCi.ps1 -FailOnError`.
-
-## 2026-09-17 — The roadmap is the first file an agent reads and the last it writes
-
-Ben's ruling after the Lane 0.21 poll-loop run: a completed item is marked on
-the roadmap as part of finishing the work, not afterwards. Nothing in the
-standard or the operating contract had said so in one sentence.
-
-- **`AGENTS.md`** — the section "Read the roadmap before you build" becomes
-  "The roadmap is the first file you read and the last file you write", with
-  a third rule: every run that ships anything ends with `ROADMAP.md` advanced
-  (`built` + **Built:** line; `[x]` `verified` + archive once CI is green in
-  the same PR), and only a pending CI validation may hold the record at
-  `built`.
-- **Roadmap standard** — `ROADMAP_TEMPLATE.md` (both `standards/roadmap/` and
-  the self-contained `spec/roadmap-contract/` copy) gains authoring rule 7,
-  "this file opens and closes every agent run", so every roadmap the product
-  generates or repairs carries the rule.
-- **Gate gap recorded, not papered over.** `Test-RoadmapCapabilityRecord.ps1`
-  binds only `feat(release-N.M):`-style commits touching `backend/` or
-  `scripts/`; the poll-loop commit shipped 16 files under that bar and
-  `frontend/` never counts. Lane 0.8 gains a planned item to widen the
-  predicate, with its check named. Until it lands the rule binds by contract.
-- Verified by `tools/Test-RoadmapStructure.ps1 -FailOnError`,
-  `tests/Test-RoadmapCheckRunsInCi.ps1 -FailOnError` and the module smoke
-  (the template is parsed by the roadmap fixtures).
-
-## 2026-09-17 — Lane 0.21: polls never pile up behind a slow host
-
-`/api/agent-runs` was fetched seven times in one page load, 147 KB each,
-because every poll in the frontend ran on `setInterval`, which fires whether
-or not the previous call has come back — so a slow host was made slower.
-
-- **One poll helper.** `frontend/lib/pollLoop.ts` (`startPollLoop`) runs a
-  settle-then-wait `setTimeout` chain: the next call starts only when the
-  last one has settled. Every call carries an `AbortSignal` that fires at a
-  per-call timeout; the gap doubles after a slow, timed-out or failed call up
-  to a cap and snaps back after a fast success; nothing is called while the
-  document is hidden, and the loop resumes on `visibilitychange`.
-  `frontend/hooks/usePollLoop.ts` is its React form (task read through a ref;
-  `enabled`; `runNow`).
-- **Every site moved.** The nine `setInterval` timers and the two hand-rolled
-  `setTimeout` chains (Dashboard, ScanProgressChip, AgentActivityIndicator,
-  BuildStampIndicator, App's relative-time ticker, `useBackendLog`,
-  `useHealthPing`, `useRunnerControl`) run on the helper, and the six
-  `apiClient` functions they call accept `{ signal }` so the abort reaches
-  `fetch`.
-- **`GET /api/agent-runs` revalidates.** The route hashes its body into an
-  `ETag`, sends `Cache-Control: no-cache`, and answers a matching
-  `If-None-Match` with 304 and no body. The payload is byte-identical; only
-  the transport changed. `Send-HttpContent` gained `-ExtraHeaders` and now
-  builds its header block as a list, so an empty correlation id no longer
-  emits a stray blank line.
-- **Verified by** `npx vitest run frontend/lib/pollLoop.test.ts`, which proves
-  each rule on a fake clock (one call in flight under a 5 s host, back-off
-  2× to the cap and reset, abort at the timeout, zero calls while hidden) and
-  then scans `frontend/` itself for any `setInterval` or self-rescheduling
-  `setTimeout` outside the helper — proved red on the unchanged tree against
-  exactly the sites above. The api-host smoke asserts the ETag and the 304.
+- **The scan moved to the background worker.** The route's former body is now
+  `Invoke-PortfolioAssessmentScan`. The worker
+  (`scripts/Invoke-StatusCacheRefresh.ps1 -RunAssessment`) runs it as phase 5
+  after the four scan phases. Unless the refresh is forced, it skips any
+  phase whose cache is still fresh. It writes the index, the scan-history
+  mirror and `assessment-cache.json` under the index root.
+- **The route answers at once.** It serves the worker's last result and says
+  where that came from: `memory`, `disk`, or `awaiting-first-scan` with an
+  empty result before the first scan finishes. It reports `refreshing` and
+  what it asked the worker to do (`scanRequested`). Only one scan runs at a
+  time: a differential load during a scan is answered by the running scan,
+  and a forced refresh that arrives mid-scan is queued and starts when that
+  scan ends. `POST /api/portfolio/scan` now also ends with a fresh index.
+- **The page picks up the result.** While `refreshing` is true, the dashboard
+  re-reads the plain route. It waits for each read to finish before starting
+  the next, with delays of 3 s, 6 s, 12 s and 24 s, then every 30 s. A result
+  still waiting for its first scan shows "not computed" rather than zeros.
+- **`REPO_MGMT_CACHE_ROOT`** moves the scan caches and the worker's lock,
+  progress and cancel files, as `REPO_MGMT_INDEX_ROOT` does for the index. The
+  portal service runs from this working tree, so a test host shared its scan
+  lock and overwrote its roadmap and doc-audit caches, which are not keyed by
+  root. The api-host smoke, the auth smoke and the contract suite now set it,
+  and module smoke fails if any of them stops. Two direct writes also moved
+  to the isolated directory. Three contract tests had overwritten the
+  operator's `status-cache.json` and then restored it. The api-host smoke's
+  scan-cancel step starts workers itself; on 2026-09-16 its fixture scan
+  replaced the live roadmap and doc-audit caches with 0 and 1 entries.
+- **Gates.** `tests/Test-RequestThreadBudget.ps1` starts a host with every
+  written root isolated. It measures the route and `/health/live` from the
+  client while a real scan runs, and fails when no measurement overlapped a
+  running scan. The suite runs it as `Request thread budget`. Module smoke
+  fails if code outside a function calls `Invoke-PortfolioAssessmentScan`. It
+  also fails if the assessment route calls the GitHub pass, the assessment or
+  the index read or write, or stops starting the worker. The inline-scan
+  baseline drops from 18 to 14. The api-host smoke waits for the worker's
+  scan before it checks scan counts, forced-refresh reasons and the
+  scan-budget log line. The contract suite requests one scan during setup
+  and waits for it before its tests run. Its scan root is the workspace,
+  which a CI clone uses anyway. On a cold host,
+  `GET /api/operations/repos` answers 409 until the first scan writes an
+  index; Lane 0.21's "a finished scan reaches the page" item now covers
+  that.
 
 ## 2026-09-15 — Four decisions ruled: D-006, D-012, D-021, D-022
 

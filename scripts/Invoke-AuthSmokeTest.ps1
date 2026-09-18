@@ -78,7 +78,9 @@ $env:REPO_MGMT_INDEX_ROOT = Join-Path $smokeRoot 'index'
 $env:REPO_MGMT_QUEUE_PATH = Join-Path $smokeRoot 'roadmap-task-queue.jsonl'
 $env:REPO_MGMT_RUNNER_CONTROL_ROOT = Join-Path $smokeRoot 'runner-control'
 $null = New-Item -ItemType Directory -Path $env:REPO_MGMT_RUNNER_CONTROL_ROOT -Force
-Write-Host ("  index, queue and runner state isolated under {0}" -f $smokeRoot) -ForegroundColor DarkGray
+# Lane 0.21: the scan caches and the background worker's lock.
+$env:REPO_MGMT_CACHE_ROOT = Join-Path $smokeRoot 'cache'
+Write-Host ("  index, queue, runner state and scan caches isolated under {0}" -f $smokeRoot) -ForegroundColor DarkGray
 
 # Every host started here except the TLS step speaks plain HTTP, and Start-Job
 # inherits this process's environment. An inherited REPO_MGMT_TLS_PFX -- set at

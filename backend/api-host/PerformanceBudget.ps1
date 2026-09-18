@@ -38,15 +38,23 @@
 # tripwire in Invoke-ModuleSmokeTest.ps1, which fails if the host grows a class
 # that is missing here.
 #
-#  memory            in-process assessment cache hit: no disk, no scan
-#  portfolio-index   output/index/repos.index.json: one disk read + JSON parse
-#  assessment-cache  index absent, rebuilt from the in-process cache payload
-#  fresh-scan        a full cold rebuild of every signal
+#  memory              in-process assessment cache hit: no disk, no scan
+#  disk                the assessment cache file the worker wrote: one disk
+#                      read + JSON parse (Lane 0.21; the route never scans)
+#  awaiting-first-scan nothing written yet: the worker was kicked and the
+#                      route answered with an empty result at once
+#  portfolio-index     output/index/repos.index.json: one disk read + JSON parse
+#  assessment-cache    index absent, rebuilt from the in-process cache payload
+#  fresh-scan          a full cold rebuild of every signal (no route serves
+#                      this class since Lane 0.21; kept for the worker's
+#                      scan-budget line and any route that regresses to it)
 $script:PortfolioReadBudgetDefaults = @{
-    'memory'           = 2000
-    'portfolio-index'  = 3000
-    'assessment-cache' = 3000
-    'fresh-scan'       = 300000
+    'memory'              = 2000
+    'disk'                = 2000
+    'awaiting-first-scan' = 2000
+    'portfolio-index'     = 3000
+    'assessment-cache'    = 3000
+    'fresh-scan'          = 300000
 }
 
 # A budget below this cannot be met by any real read (JSON serialization of a

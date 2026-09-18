@@ -73,8 +73,24 @@ param(
     [Parameter()]
     [int]$PhaseDelayMs = 0,
 
-    [switch]$ForceAssessment,
-    [switch]$IncludeGithubAssessment
+    # Lane 0.21 (2026-09-15): run the assessment as phase 5 -- the GitHub API
+    # pass, the differential decision, scans of changed roots, the assessment,
+    # the index write and the assessment cache write -- so that
+    # GET /api/portfolio/assessment never does any of it on the request thread.
+    # Without -AssessmentRefresh a scan phase whose cache is within its TTL is
+    # skipped, so a differential request costs only what changed.
+    [Parameter()]
+    [switch]$RunAssessment,
+
+    [Parameter()]
+    [ValidateSet('full', 'differential')]
+    [string]$AssessmentScanMode = 'full',
+
+    [Parameter()]
+    [switch]$AssessmentRefresh,
+
+    [Parameter()]
+    [switch]$IncludeGithub
 )
 
 Set-StrictMode -Version Latest
@@ -84,6 +100,8 @@ $script:ScanStartedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
 $script:LastProgressWrite = [datetime]::MinValue
 $script:ScanReposTotal = $null
 $script:ScanReposDone = 0
+# Four scan phases, plus the assessment when this run carries it.
+$script:ScanPhaseTotal = $(if ($RunAssessment) { 5 } else { 4 })
 
 function Write-ScanProgress {
     param(
@@ -104,7 +122,7 @@ function Write-ScanProgress {
         state         = $State
         phase         = $Phase
         phasesDone    = $PhasesDone
-        phaseTotal    = 4
+        phaseTotal    = $script:ScanPhaseTotal
         reposDone     = $script:ScanReposDone
         reposTotal    = $script:ScanReposTotal
         startedAt     = $script:ScanStartedAtUtc
@@ -177,36 +195,52 @@ try {
     }
 
     $cancelled = $false
-    $statusMs = 0; $roadmapMs = 0; $docMs = 0; $auditMs = 0
-    $result = $null; $roadmapEntries = @(); $docAuditEntries = @(); $roadmapAuditEntries = @()
+    $statusMs = 0; $roadmapMs = 0; $docMs = 0; $auditMs = 0; $assessMs = 0
+    $result = $null; $roadmapEntries = @(); $docAuditEntries = @(); $roadmapAuditEntries = @(); $assessResult = $null
+
+    # Lane 0.21: with an assessment requested and no forced refresh, a phase
+    # whose cache is within its TTL is not re-run. The route used to make this
+    # decision inline for each signal; here it decides what the worker spends,
+    # so a differential request costs the GitHub pass plus what changed.
+    $reuseFreshCache = [bool]($RunAssessment -and -not $AssessmentRefresh)
+    $skippedPhases = [System.Collections.Generic.List[string]]::new()
 
     # Phase 1: inventory (status sweep). Per-repo ticks flow through the
     # existing -OnProgress plumbing into the progress file, so updatedAt keeps
     # moving while the walk and the bounded git sweep run.
     $cancelled = Test-ScanPhaseGate -PhasesDone 0 -NextPhase 'inventory'
     if (-not $cancelled) {
-        $result = Get-StatusAdapterResult -LocalRoots $LocalRoots -MaxDepth $MaxDepth `
-            -IncludeNonGitFolders:$IncludeNonGitFolders -LogPath $LogPath `
-            -OnProgress {
-                param($itemCount)
-                $script:ScanReposDone = [int]$itemCount
-                Write-ScanProgress -State 'running' -Phase 'inventory' -PhasesDone 0
+        $statusCached = if ($reuseFreshCache) { Get-StatusFromCache -Key $cacheKey -TtlSeconds (Get-StatusCacheTtlSeconds -Settings $settings) } else { [pscustomobject]@{ hit = $false } }
+        if ($statusCached.hit) {
+            $skippedPhases.Add('inventory')
+            $result = $statusCached.response
+            $script:ScanReposTotal = @($result.data.repos).Count
+            $script:ScanReposDone = $script:ScanReposTotal
+        }
+        else {
+            $result = Get-StatusAdapterResult -LocalRoots $LocalRoots -MaxDepth $MaxDepth `
+                -IncludeNonGitFolders:$IncludeNonGitFolders -LogPath $LogPath `
+                -OnProgress {
+                    param($itemCount)
+                    $script:ScanReposDone = [int]$itemCount
+                    Write-ScanProgress -State 'running' -Phase 'inventory' -PhasesDone 0
+                }
+
+            if ($null -eq $result -or -not $result.success) {
+                $reason = if ($null -ne $result -and $result.PSObject.Properties.Name -contains 'error') { [string]$result.error } else { 'unknown error' }
+                throw "Status scan failed: $reason"
             }
 
-        if ($null -eq $result -or -not $result.success) {
-            $reason = if ($null -ne $result -and $result.PSObject.Properties.Name -contains 'error') { [string]$result.error } else { 'unknown error' }
-            throw "Status scan failed: $reason"
+            $result = Add-GitHubMetadataToStatusResult -StatusResult $result -Settings $settings
+            $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'background-refresh' `
+                -TtlSeconds (Get-StatusCacheTtlSeconds -Settings $settings) -AgeSeconds 0 -BypassRequested:$false `
+                -CachedAt ((Get-Date).ToUniversalTime().ToString('o')))
+
+            Save-StatusCache -Key $cacheKey -Response $result
+            $script:ScanReposTotal = @($result.data.repos).Count
+            $script:ScanReposDone = $script:ScanReposTotal
+            $statusMs = [int]((Get-Date) - $started).TotalMilliseconds
         }
-
-        $result = Add-GitHubMetadataToStatusResult -StatusResult $result -Settings $settings
-        $result = Add-StatusCacheMeta -Result $result -CacheMeta (Get-StatusCacheMeta -Hit $false -Source 'background-refresh' `
-            -TtlSeconds (Get-StatusCacheTtlSeconds -Settings $settings) -AgeSeconds 0 -BypassRequested:$false `
-            -CachedAt ((Get-Date).ToUniversalTime().ToString('o')))
-
-        Save-StatusCache -Key $cacheKey -Response $result
-        $script:ScanReposTotal = @($result.data.repos).Count
-        $script:ScanReposDone = $script:ScanReposTotal
-        $statusMs = [int]((Get-Date) - $started).TotalMilliseconds
     }
 
     # The roadmap and doc-audit scans belong here for the same reason the status
@@ -218,30 +252,76 @@ try {
         $cancelled = Test-ScanPhaseGate -PhasesDone 1 -NextPhase 'roadmap'
     }
     if (-not $cancelled) {
-        $roadmapStarted = Get-Date
-        $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $LocalRoots -MaxDepth $MaxDepth)
-        Save-RoadmapCache -Entries $roadmapEntries -ScannedAt ((Get-Date).ToUniversalTime().ToString('o'))
-        $roadmapMs = [int]((Get-Date) - $roadmapStarted).TotalMilliseconds
+        $roadmapCached = if ($reuseFreshCache) { Get-RoadmapFromCache -TtlSeconds (Get-RoadmapCacheTtlSeconds -Settings $settings) } else { [pscustomobject]@{ hit = $false } }
+        if ($roadmapCached.hit) {
+            $skippedPhases.Add('roadmap')
+            $roadmapEntries = @($roadmapCached.entries)
+        }
+        else {
+            $roadmapStarted = Get-Date
+            $roadmapEntries = @(Invoke-RoadmapScan -LocalRoots $LocalRoots -MaxDepth $MaxDepth)
+            Save-RoadmapCache -Entries $roadmapEntries -ScannedAt ((Get-Date).ToUniversalTime().ToString('o'))
+            $roadmapMs = [int]((Get-Date) - $roadmapStarted).TotalMilliseconds
+        }
     }
 
     if (-not $cancelled) {
         $cancelled = Test-ScanPhaseGate -PhasesDone 2 -NextPhase 'doc-audit'
     }
     if (-not $cancelled) {
-        $docStarted = Get-Date
-        $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $LocalRoots -MaxDepth $MaxDepth)
-        Save-DocAuditCache -Entries $docAuditEntries -AuditedAt ((Get-Date).ToUniversalTime().ToString('o'))
-        $docMs = [int]((Get-Date) - $docStarted).TotalMilliseconds
+        $docCached = if ($reuseFreshCache) { Get-DocAuditFromCache -TtlSeconds (Get-DocAuditCacheTtlSeconds -Settings $settings) } else { [pscustomobject]@{ hit = $false } }
+        if ($docCached.hit) {
+            $skippedPhases.Add('doc-audit')
+            $docAuditEntries = @($docCached.entries)
+        }
+        else {
+            $docStarted = Get-Date
+            $docAuditEntries = @(Invoke-DocAuditScan -LocalRoots $LocalRoots -MaxDepth $MaxDepth)
+            Save-DocAuditCache -Entries $docAuditEntries -AuditedAt ((Get-Date).ToUniversalTime().ToString('o'))
+            $docMs = [int]((Get-Date) - $docStarted).TotalMilliseconds
+        }
     }
 
     if (-not $cancelled) {
         $cancelled = Test-ScanPhaseGate -PhasesDone 3 -NextPhase 'roadmap-audit-and-assessment'
     }
     if (-not $cancelled) {
-        $auditStarted = Get-Date
-        $roadmapAuditEntries = @(Invoke-RoadmapAuditScan -LocalRoots $LocalRoots -MaxDepth $MaxDepth)
-        Save-RoadmapAuditCache -Entries $roadmapAuditEntries -AuditedAt ((Get-Date).ToUniversalTime().ToString('o'))
-        $auditMs = [int]((Get-Date) - $auditStarted).TotalMilliseconds
+        $auditCached = if ($reuseFreshCache) { Get-RoadmapAuditFromCache -TtlSeconds (Get-RoadmapAuditCacheTtlSeconds -Settings $settings) } else { [pscustomobject]@{ hit = $false } }
+        if ($auditCached.hit) {
+            $skippedPhases.Add('roadmap-audit')
+            $roadmapAuditEntries = @($auditCached.entries)
+        }
+        else {
+            $auditStarted = Get-Date
+            $roadmapAuditEntries = @(Invoke-RoadmapAuditScan -LocalRoots $LocalRoots -MaxDepth $MaxDepth)
+            Save-RoadmapAuditCache -Entries $roadmapAuditEntries -AuditedAt ((Get-Date).ToUniversalTime().ToString('o'))
+            $auditMs = [int]((Get-Date) - $auditStarted).TotalMilliseconds
+        }
+    }
+
+    # Phase 5 (Lane 0.21): the assessment. GET /api/portfolio/assessment ran
+    # this inline - its GitHub API pass, the differential decision, scans of
+    # the changed roots, the assessment, the index write - and held the single
+    # request thread for 28-72 s per page load. Here it reads the caches the
+    # phases above just wrote (or kept) and writes the index and the
+    # assessment cache the route serves.
+    if ($RunAssessment -and -not $cancelled) {
+        $cancelled = Test-ScanPhaseGate -PhasesDone 4 -NextPhase 'assessment'
+    }
+    if ($RunAssessment -and -not $cancelled) {
+        $assessStarted = Get-Date
+        # The mirror writes (assessment snapshot, foundation coverage, scan
+        # history) need the app database open in THIS process; the host opens
+        # it only after -LoadDefinitionsOnly has returned. Non-fatal, as there.
+        try {
+            $dbInit = Initialize-AppDatabase -WorkspaceRoot $WorkspaceRoot
+            if (-not $dbInit.success) { Write-HostLog ("[WARN] status.refresh.worker app database unavailable for the assessment phase - {0}" -f $dbInit.error) }
+        }
+        catch { Write-HostLog ("[WARN] status.refresh.worker app database bootstrap failed - {0}" -f $_.Exception.Message) }
+
+        $assessResult = Invoke-PortfolioAssessmentScan -Settings $settings -Refresh:$AssessmentRefresh -ScanMode $AssessmentScanMode `
+            -IncludeGithub:$IncludeGithub -CachesFresh -CorrelationId ('worker-{0}' -f $PID) -RequestStart $assessStarted
+        $assessMs = [int]((Get-Date) - $assessStarted).TotalMilliseconds
     }
 
     if ($cancelled) {
@@ -250,15 +330,11 @@ try {
         $exitCode = 0
     }
     else {
-        if (Test-ScanPhaseGate -PhasesDone 3 -NextPhase 'assessment') {
-            return
-        }
-        Invoke-BackgroundPortfolioAssessment -ForceFull:$ForceAssessment -LocalRoots $LocalRoots -MaxDepth $MaxDepth -IncludeGithub:$IncludeGithubAssessment -IncludeNonGitFolders:$IncludeNonGitFolders
-        Write-ScanProgress -State 'completed' -Phase 'done' -PhasesDone 4 -Force
+        Write-ScanProgress -State 'completed' -Phase 'done' -PhasesDone $script:ScanPhaseTotal -Force
         $elapsed = [int]((Get-Date) - $started).TotalMilliseconds
-        Write-HostLog ("[TRACE] status.refresh.worker done repos={0} roadmap={1} docAudit={2} roadmapAudit={3} statusMs={4} roadmapMs={5} docAuditMs={6} roadmapAuditMs={7} totalMs={8}" -f `
+        Write-HostLog ("[TRACE] status.refresh.worker done repos={0} roadmap={1} docAudit={2} roadmapAudit={3} statusMs={4} roadmapMs={5} docAuditMs={6} roadmapAuditMs={7} totalMs={8} assessment={9} assessed={10} assessMs={11} skipped={12}" -f `
             @($result.data.repos).Count, @($roadmapEntries).Count, @($docAuditEntries).Count, @($roadmapAuditEntries).Count, `
-            $statusMs, $roadmapMs, $docMs, $auditMs, $elapsed)
+            $statusMs, $roadmapMs, $docMs, $auditMs, $elapsed, [bool]$RunAssessment, $(if ($null -ne $assessResult) { $assessResult.count } else { 'n/a' }), $assessMs, $(if ($skippedPhases.Count -gt 0) { $skippedPhases -join ',' } else { 'none' }))
     }
 }
 catch {
