@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-18 — Lane 0.22: lanes close on evidence; Cancel must be trustworthy
+
+Ben's ruling on the Dispatch Board's two execution lanes. Three planned items
+added to Lane 0.22, each with its check:
+
+- **Lanes close on evidence, not on a click.** The Complete button goes: an
+  operator pressing it asserts work the operator did not do, and it always
+  sent `hasRemainingWork: true`, so it only ever released the lane under the
+  wrong name. The lane observation already computes `finished`/`failed`; a
+  sweep acts on it, the way `Invoke-AgentRunAutoClose` does for agent runs.
+- **Cancel reaches the runner.** Found while checking the ruling: Cancel only
+  edits the ledger — the lane frees and the agent keeps working, its PR
+  arriving later as an orphan. A cancel flag the runner honours at the next
+  phase boundary, a closed draft PR, and an acknowledgement in the lane's
+  history make the button true.
+- **A lane tile shows the phase, the clock and the work order.** Phase n of N
+  from the execution event stream, time-in-phase, stalled flag, and a link to
+  the WorkPacket / trace — never a percentage, which nothing reports.
+
+The two-lane cap (a Release 1.0 constant) is named as an open question for
+the decision register; the register entry waits for a review slot.
+Verified by `tools/Test-RoadmapStructure.ps1 -FailOnError` and
+`tests/Test-RoadmapCheckRunsInCi.ps1 -FailOnError`.
+
 ## 2026-09-17 — The roadmap is the first file an agent reads and the last it writes
 
 Ben's ruling after the Lane 0.21 poll-loop run: a completed item is marked on
