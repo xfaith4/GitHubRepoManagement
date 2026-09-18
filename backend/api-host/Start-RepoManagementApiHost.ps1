@@ -5064,11 +5064,8 @@ function Get-PortfolioAssessmentReadPayload {
     }
     foreach ($entry in @($entries)) {
         if ($null -eq $entry) { continue }
-        if (-not ($entry.PSObject.Properties.Name -contains 'scanDecisionReason')) {
-            $currentValue = [string]$entry.scanDecisionReason
-            $entry | Add-Member -NotePropertyName 'scanDecisionReason' -NotePropertyValue $(
-                if ([string]::IsNullOrWhiteSpace($currentValue)) { 'cache-miss' } else { $currentValue }
-            ) -Force
+        if (-not ($entry.PSObject.Properties.Name -contains 'scanDecisionReason') -or [string]::IsNullOrWhiteSpace([string]$entry.scanDecisionReason)) {
+            $entry | Add-Member -NotePropertyName 'scanDecisionReason' -NotePropertyValue 'cache-miss' -Force
         }
     }
     $source = if ($null -eq $index) { 'awaiting-first-scan' } else { 'portfolio-index' }
