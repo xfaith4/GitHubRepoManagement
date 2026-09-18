@@ -203,20 +203,19 @@ function Wait-ForPortfolioIndex {
     $unaudited = @()
     $entryCount = 0
 
+    $firstPass = $true
     while ((Get-Date) -lt $deadline) {
-        # Two calls, and the order matters. /api/operations/repos serves from the
-        # repos index, and that index is written by the ASSESSMENT route's
-        # index-write step - not by the background worker, which only fills the
-        # scan caches. Polling operations/repos alone would therefore wait
-        # forever: the worker would warm the caches and nothing would ever
-        # rebuild the index from them.
-        #
-        # ?refresh=true, not the plain route: the assessment has its own 180s
-        # cache, so the plain call kept replaying a stale one-repo result and
-        # never rewrote the index. refresh=true skips those cache lookups and
-        # rebuilds from the freshest scan caches - which no longer means
-        # scanning inline, only reading what the worker last wrote.
-        $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
+        # Lane 0.21: the background worker writes the index now (its assessment
+        # phase), so one forced refresh followed by a wait for that scan is the
+        # whole warm-up. Asking again only when the settled index still lacks
+        # what the caller needs keeps this from queueing a refresh per poll,
+        # which would leave a pending scan to collide with the next step.
+        if (-not $firstPass) {
+            $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
+        }
+        $firstPass = $false
+        $remainingSeconds = [int][math]::Max(30, ($deadline - (Get-Date)).TotalSeconds)
+        $null = Wait-ForAssessmentScan -BaseUrl $BaseUrl -TimeoutSeconds $remainingSeconds -HostLogPath $HostLogPath
 
         $probe = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
         $entries = @()
@@ -273,6 +272,98 @@ function Wait-ForPortfolioIndex {
     }
 
     throw "Portfolio index did not warm within ${TimeoutSeconds}s ($detail; $entryCount entr(ies) present).`n  $evidence"
+}
+
+function Wait-ForAssessmentScan {
+    <#
+    .SYNOPSIS
+        Waits for the background assessment scan a request just asked for, then
+        returns the served result.
+    .DESCRIPTION
+        Lane 0.21 (2026-09-15): GET /api/portfolio/assessment answers from the
+        worker's last result at once and kicks the worker; a differential load
+        or a forced refresh is a REQUEST for a scan, not the scan. A step that
+        asserts on the scan it asked for (reuse counts, forced-refresh reasons,
+        the scan-budget log line) waits here for the worker's terminal state and
+        reads the plain route, which never kicks a scan while the result is
+        fresh. Times out loudly rather than hanging.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BaseUrl,
+        [Parameter()]
+        [int]$TimeoutSeconds = 300,
+        [Parameter()]
+        [string]$HostLogPath = '',
+        # Read-shaping only (includeCuration=true); never a scan request.
+        [Parameter()]
+        [string]$ProbeQuery = ''
+    )
+
+    $probeUri = "$BaseUrl/api/portfolio/assessment" + $(if ([string]::IsNullOrWhiteSpace($ProbeQuery)) { '' } else { "?$ProbeQuery" })
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $sawRunning = $false
+    $lastState = ''
+    while ((Get-Date) -lt $deadline) {
+        $status = (Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/scan/status").Json.data
+        $lastState = [string]$status.state
+        if ($lastState -eq 'running') { $sawRunning = $true; Start-Sleep -Milliseconds 500; continue }
+        if ($lastState -in @('failed', 'aborted')) {
+            $tail = ''
+            if (-not [string]::IsNullOrWhiteSpace($HostLogPath) -and (Test-Path -LiteralPath $HostLogPath)) {
+                $tail = "`n    " + (@(Get-Content -LiteralPath $HostLogPath | Where-Object { $_ -match 'status\.refresh|portfolio\.assessment' } | Select-Object -Last 12) -join "`n    ")
+            }
+            throw ("background assessment scan ended '{0}': {1}{2}" -f $lastState, $status.error, $tail)
+        }
+
+        # The plain route: it starts a queued refresh when the worker is idle,
+        # and it never asks for a scan while the result on disk is fresh.
+        $probe = (Invoke-ApiRequest -Method Get -Uri $probeUri).Json.data
+        if ($null -ne $probe -and -not [bool]$probe.refreshing -and [string]$probe.cacheSource -ne 'awaiting-first-scan') {
+            return $probe
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    $hint = if (-not [string]::IsNullOrWhiteSpace($HostLogPath)) { " Look for 'status.refresh' lines in $HostLogPath." } else { '' }
+    throw ("The background assessment scan did not settle within {0}s (last scan state '{1}', sawRunning={2}).{3}" -f $TimeoutSeconds, $lastState, $sawRunning, $hint)
+}
+
+function Invoke-AssessmentScanAndWait {
+    <#
+    .SYNOPSIS
+        Asks for one assessment scan and returns what that scan wrote.
+    .DESCRIPTION
+        Lane 0.21. Settles any scan already in flight first, so the request
+        below owns the single-flight lock; then asserts the route answered at
+        once and started (or queued) a scan; then waits for it and returns the
+        served result. Steps that assert on a scan's output use this, because
+        the route's own response is the PREVIOUS result by design.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$BaseUrl,
+        [Parameter(Mandatory = $true)][string]$PathAndQuery,
+        [Parameter()][ValidateSet('Get', 'Post')][string]$Method = 'Get',
+        [Parameter()][object]$Body = $null,
+        [Parameter()][string]$ProbeQuery = '',
+        [Parameter()][int]$TimeoutSeconds = 300,
+        [Parameter()][string]$HostLogPath = ''
+    )
+
+    $null = Wait-ForAssessmentScan -BaseUrl $BaseUrl -TimeoutSeconds $TimeoutSeconds -HostLogPath $HostLogPath -ProbeQuery $ProbeQuery
+    $requestArgs = @{ Method = $Method; Uri = "$BaseUrl$PathAndQuery" }
+    if ($null -ne $Body) { $requestArgs.Body = $Body }
+    $response = Invoke-ApiRequest @requestArgs
+    Assert-Not503 -Name $PathAndQuery -Response $response
+    if ($response.StatusCode -ne 200 -or $null -eq $response.Json -or $response.Json.success -ne $true) {
+        throw ("{0} {1} expected HTTP 200 success=true, got HTTP {2}. Body={3}" -f $Method.ToUpperInvariant(), $PathAndQuery, $response.StatusCode, $response.Content)
+    }
+    $requested = $response.Json.data.scanRequested
+    if ($null -eq $requested -or -not ([bool]$requested.started -or [bool]$requested.queued)) {
+        throw ("{0} {1} did not start or queue a background scan (scanRequested={2}); the assertions that follow would read the previous result." -f $Method.ToUpperInvariant(), $PathAndQuery, ($requested | ConvertTo-Json -Compress))
+    }
+    $served = Wait-ForAssessmentScan -BaseUrl $BaseUrl -TimeoutSeconds $TimeoutSeconds -HostLogPath $HostLogPath -ProbeQuery $ProbeQuery
+    return [pscustomobject]@{ Response = $response; Served = $served }
 }
 
 function Wait-ApiHostReady {
@@ -410,6 +501,16 @@ Remove-Item -LiteralPath $script:SmokeRunnerControlRoot -Recurse -Force -ErrorAc
 $null = New-Item -ItemType Directory -Path $script:SmokeRunnerControlRoot -Force
 Write-Host ("  runner state isolated to {0} (heartbeat, hold and stop marker; the operator's live runner is never read, faked or held)" -f $script:SmokeRunnerControlRoot) -ForegroundColor DarkGray
 
+# Lane 0.21 — the scan caches and the worker's lock. This gate kicks the
+# background worker on fixture roots, and the portal service runs from this same
+# working tree: sharing the directory, the fixture scan held the operator's scan
+# lock and replaced their roadmap and doc-audit caches (those two are not keyed
+# by root). The host resolves it through Get-ScanCacheDirectory, which honours
+# REPO_MGMT_CACHE_ROOT; keep in step with the job's assignment below.
+$script:SmokeCacheRoot = Join-Path $smokeRoot 'cache'
+Remove-Item -LiteralPath $script:SmokeCacheRoot -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host ("  scan caches and worker lock isolated to {0} (the operator's scan never waits on this gate's)" -f $script:SmokeCacheRoot) -ForegroundColor DarkGray
+
 $job = Start-Job -ScriptBlock {
     param($ScriptPath, $Root, $Log, $ListenPort, $SignalPath, $QueuePath, $SettingsPath)
     # Both overrides are set on the JOB, never on the parent, so a crashed smoke
@@ -434,6 +535,9 @@ $job = Start-Job -ScriptBlock {
     # it would stop the operator's live runner and keep it stopped. Must stay in
     # step with $script:SmokeRunnerControlRoot.
     $env:REPO_MGMT_RUNNER_CONTROL_ROOT = (Join-Path $Root 'output\smoke\api-host\runner-control')
+    # Lane 0.21, same rebuild from $Root: the worker this host starts inherits
+    # the override. Must stay in step with $script:SmokeCacheRoot.
+    $env:REPO_MGMT_CACHE_ROOT = (Join-Path $Root 'output\smoke\api-host\cache')
     # Start-Job inherits the parent environment. Every assertion below speaks
     # plain HTTP to this host, so an inherited REPO_MGMT_TLS_PFX -- which the
     # installed service sets at MACHINE scope -- would wrap the listener in an
@@ -551,27 +655,39 @@ try {
     $scanWorkerCancel = Join-Path $scanFixtureDir 'worker-cancel.marker'
     $scanPsExe = (Get-Process -Id $PID).Path
 
-    $scanControl = Start-Process -FilePath $scanPsExe -ArgumentList @(
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scanWorkerScript,
-        '-WorkspaceRoot', $WorkspaceRoot, '-LocalRoots', $scanFixtureDir, '-MaxDepth', '2',
-        '-LockPath', $scanWorkerLock, '-ProgressPath', $scanWorkerProgress, '-CancelPath', $scanWorkerCancel,
-        '-PhaseDelayMs', '300', '-LogPath', $logPath
-    ) -WindowStyle Hidden -PassThru
-    if (-not $scanControl.WaitForExit(180000)) { throw 'Control worker run did not finish within 180s.' }
-    $scanControlFinal = Get-Content -LiteralPath $scanWorkerProgress -Raw | ConvertFrom-Json
-    if ($scanControl.ExitCode -ne 0 -or [string]$scanControlFinal.state -ne 'completed' -or [int]$scanControlFinal.phasesDone -ne 4) {
-        throw "Control worker run: exit=$($scanControl.ExitCode) state=$($scanControlFinal.state) phases=$($scanControlFinal.phasesDone); expected exit 0, completed, 4/4."
-    }
+    # These two workers are started from THIS process, not the host job, so
+    # they would not inherit the job's REPO_MGMT_CACHE_ROOT. Without it, the
+    # fixture scan replaced the operator's roadmap and doc-audit caches with
+    # zero and one entries (seen 2026-09-16). Set for the two runs only, then
+    # restored; a crash cannot leak it past this child pwsh process.
+    $priorCacheRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_CACHE_ROOT')
+    [Environment]::SetEnvironmentVariable('REPO_MGMT_CACHE_ROOT', $script:SmokeCacheRoot)
+    try {
+        $scanControl = Start-Process -FilePath $scanPsExe -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scanWorkerScript,
+            '-WorkspaceRoot', $WorkspaceRoot, '-LocalRoots', $scanFixtureDir, '-MaxDepth', '2',
+            '-LockPath', $scanWorkerLock, '-ProgressPath', $scanWorkerProgress, '-CancelPath', $scanWorkerCancel,
+            '-PhaseDelayMs', '300', '-LogPath', $logPath
+        ) -WindowStyle Hidden -PassThru
+        if (-not $scanControl.WaitForExit(180000)) { throw 'Control worker run did not finish within 180s.' }
+        $scanControlFinal = Get-Content -LiteralPath $scanWorkerProgress -Raw | ConvertFrom-Json
+        if ($scanControl.ExitCode -ne 0 -or [string]$scanControlFinal.state -ne 'completed' -or [int]$scanControlFinal.phasesDone -ne 4) {
+            throw "Control worker run: exit=$($scanControl.ExitCode) state=$($scanControlFinal.state) phases=$($scanControlFinal.phasesDone); expected exit 0, completed, 4/4."
+        }
 
-    $scanCancelRun = Start-Process -FilePath $scanPsExe -ArgumentList @(
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scanWorkerScript,
-        '-WorkspaceRoot', $WorkspaceRoot, '-LocalRoots', $scanFixtureDir, '-MaxDepth', '2',
-        '-LockPath', $scanWorkerLock, '-ProgressPath', $scanWorkerProgress, '-CancelPath', $scanWorkerCancel,
-        '-PhaseDelayMs', '4000', '-LogPath', $logPath
-    ) -WindowStyle Hidden -PassThru
-    Start-Sleep -Seconds 6
-    Set-Content -LiteralPath $scanWorkerCancel -Value 'cancel'
-    if (-not $scanCancelRun.WaitForExit(180000)) { throw 'Cancel worker run did not finish within 180s.' }
+        $scanCancelRun = Start-Process -FilePath $scanPsExe -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scanWorkerScript,
+            '-WorkspaceRoot', $WorkspaceRoot, '-LocalRoots', $scanFixtureDir, '-MaxDepth', '2',
+            '-LockPath', $scanWorkerLock, '-ProgressPath', $scanWorkerProgress, '-CancelPath', $scanWorkerCancel,
+            '-PhaseDelayMs', '4000', '-LogPath', $logPath
+        ) -WindowStyle Hidden -PassThru
+        Start-Sleep -Seconds 6
+        Set-Content -LiteralPath $scanWorkerCancel -Value 'cancel'
+        if (-not $scanCancelRun.WaitForExit(180000)) { throw 'Cancel worker run did not finish within 180s.' }
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('REPO_MGMT_CACHE_ROOT', $priorCacheRoot)
+    }
     $scanCancelFinal = Get-Content -LiteralPath $scanWorkerProgress -Raw | ConvertFrom-Json
     if ($scanCancelRun.ExitCode -ne 0) { throw "Cancelled worker must exit 0 (operator action, not failure); got $($scanCancelRun.ExitCode)." }
     if ([string]$scanCancelFinal.state -ne 'cancelled' -or [int]$scanCancelFinal.phasesDone -ge 4) {
@@ -719,6 +835,13 @@ try {
     if ($null -eq $automationPortfolioWarm.Json -or $automationPortfolioWarm.Json.success -ne $true) {
         throw "/api/portfolio/assessment warm-up for automation did not return success=true. Body=$($automationPortfolioWarm.Content)"
     }
+    # Lane 0.21: the warm-up answered from the last result (none, on a cold
+    # host) and kicked the worker; the automation route reads the index the
+    # worker writes, so wait for it. 900 s, not the default: the settings copy
+    # still names the operator's roots here, and a cold scan of the real
+    # portfolio took 289 s on 2026-09-16 (72 repositories, the GitHub join
+    # included). A CI clone has no such root and scans the workspace alone.
+    $null = Wait-ForAssessmentScan -BaseUrl $BaseUrl -HostLogPath $logPath -TimeoutSeconds 900
     # POST /api/automation/run — runs the curated-subset doc-refinement. It must
     # never apply anything (appliedCount=0) and must write to the run history.
     $autoRun = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/automation/run" -Body @{}
@@ -2821,10 +2944,17 @@ try {
     if (-not $portfolioFieldsOk) { throw '/api/portfolio/assessment response missing expected fields (entries, summary, signalSources, generatedAt)' }
 
     Write-Host '[STEP] Scan performance budget log (cross-cutting)' -ForegroundColor Cyan
-    $null = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?refresh=true"
+    # Lane 0.21: the worker runs the scan and writes this line; the correlation
+    # id names the worker's pid, so the line proves the worker ran it.
+    $budgetScan = Invoke-AssessmentScanAndWait -BaseUrl $BaseUrl -PathAndQuery '/api/portfolio/assessment?refresh=true' -HostLogPath $logPath
     $hostLogContent = if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath -Raw -ErrorAction SilentlyContinue } else { '' }
-    if ($hostLogContent -notmatch 'scan-budget correlationId=\S+ prepMs=\d+ assessMs=\d+ indexWriteMs=\d+ totalMs=\d+') {
-        throw 'scan performance budget log line (scan-budget prepMs/assessMs/indexWriteMs/totalMs) not found in host log after a scan'
+    if ($hostLogContent -notmatch 'scan-budget correlationId=worker-\d+ prepMs=\d+ assessMs=\d+ indexWriteMs=\d+ totalMs=\d+') {
+        throw 'scan performance budget log line (scan-budget correlationId=worker-<pid> prepMs/assessMs/indexWriteMs/totalMs) not found in host log after a background scan'
+    }
+    # The request that asked for the scan answered without running it.
+    $budgetAskMs = [double]$budgetScan.Response.Json.data.performance.measuredMs
+    if ($budgetAskMs -gt 2000) {
+        throw ("GET /api/portfolio/assessment?refresh=true held the request thread for {0} ms; Lane 0.21 requires it to answer from the last result and leave the scan to the worker." -f $budgetAskMs)
     }
     Write-Host '  scan-budget log ok: per-phase timing (prep=discovery/git/GitHub, assess=audit, indexWrite) emitted' -ForegroundColor DarkGray
 
@@ -3182,16 +3312,13 @@ try {
     }
 
     Write-Host '[STEP] Portfolio assessment differential mode (Release 1.7.5 Phase 7A)' -ForegroundColor Cyan
-    $portfolioDiffResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?scanMode=differential"
-    Assert-Not503 -Name '/api/portfolio/assessment?scanMode=differential' -Response $portfolioDiffResponse
-    $portfolioDiffJson = $portfolioDiffResponse.Json
-    if ($null -eq $portfolioDiffJson -or -not $portfolioDiffJson.success) {
-        throw '/api/portfolio/assessment?scanMode=differential returned invalid success payload'
+    # Lane 0.21: the differential request answers at once and the worker runs
+    # the scan; the mode is asserted on the result that scan wrote.
+    $portfolioDiffScan = Invoke-AssessmentScanAndWait -BaseUrl $BaseUrl -PathAndQuery '/api/portfolio/assessment?scanMode=differential' -HostLogPath $logPath
+    if ([string]$portfolioDiffScan.Response.Json.data.scanRequested.mode -notin @('differential', 'differential-fallback-full')) {
+        throw ("/api/portfolio/assessment?scanMode=differential requested mode '{0}'" -f $portfolioDiffScan.Response.Json.data.scanRequested.mode)
     }
-    if (-not ($portfolioDiffJson.PSObject.Properties.Name -contains 'data') -or $null -eq $portfolioDiffJson.data) {
-        throw '/api/portfolio/assessment?scanMode=differential response missing data payload'
-    }
-    $portfolioDiffData = $portfolioDiffJson.data
+    $portfolioDiffData = $portfolioDiffScan.Served
     $portfolioDiffFieldsOk = $null -ne $portfolioDiffData -and
         ($portfolioDiffData.PSObject.Properties.Name -contains 'entries') -and
         ($portfolioDiffData.PSObject.Properties.Name -contains 'summary') -and
@@ -3255,11 +3382,9 @@ try {
     $warmEntryCount = Wait-ForPortfolioIndex -BaseUrl $BaseUrl -HostLogPath $logPath
     Write-Host ("  portfolio index warmed by the background worker -> {0} entr(ies)" -f $warmEntryCount) -ForegroundColor DarkGray
 
-    $reuseProofResponse = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/assessment?scanMode=differential&includeCuration=true"
-    Assert-Not503 -Name '/api/portfolio/assessment?scanMode=differential&includeCuration=true' -Response $reuseProofResponse
-    $reuseProofJson = $reuseProofResponse.Json
-    if ($null -eq $reuseProofJson -or -not $reuseProofJson.success) { throw 'Differential reuse-proof call returned invalid success payload' }
-    $reuseProofData = $reuseProofJson.data
+    # Lane 0.21: the reuse is the worker's; assert on what its scan wrote.
+    $reuseProofScan = Invoke-AssessmentScanAndWait -BaseUrl $BaseUrl -PathAndQuery '/api/portfolio/assessment?scanMode=differential&includeCuration=true' -ProbeQuery 'includeCuration=true' -HostLogPath $logPath
+    $reuseProofData = $reuseProofScan.Served
     if (-not ($reuseProofData.PSObject.Properties.Name -contains 'scanSummary') -or $null -eq $reuseProofData.scanSummary) {
         throw 'Differential reuse-proof response missing scanSummary'
     }
@@ -3307,14 +3432,13 @@ try {
     Write-Host ("  reuse proof -> count={0} reused={1} reindexed={2} durationMs={3}" -f $reuseProofData.count, $reuseSummary.reused, $reuseSummary.reindexed, $reuseSummary.durationMs) -ForegroundColor DarkGray
 
     Write-Host '[STEP] Refresh All forced full reassessment (Release 2.3 Phase 5E)' -ForegroundColor Cyan
-    $refreshAllResponse = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/portfolio/assessment/refresh-all" -Body @{ reason = 'api-host smoke' }
-    Assert-Not503 -Name '/api/portfolio/assessment/refresh-all' -Response $refreshAllResponse
-    if ($refreshAllResponse.StatusCode -ne 200) {
-        throw "POST /api/portfolio/assessment/refresh-all expected HTTP 200, got $($refreshAllResponse.StatusCode). Body=$($refreshAllResponse.Content)"
+    # Lane 0.21: refresh-all asks the worker for a forced full pass and answers
+    # at once; the forced-refresh reasons are asserted on what that pass wrote.
+    $refreshAllScan = Invoke-AssessmentScanAndWait -BaseUrl $BaseUrl -Method Post -PathAndQuery '/api/portfolio/assessment/refresh-all' -Body @{ reason = 'api-host smoke' } -ProbeQuery 'includeCuration=true' -HostLogPath $logPath
+    if ([string]$refreshAllScan.Response.Json.data.scanRequested.mode -ne 'full') {
+        throw ("POST /api/portfolio/assessment/refresh-all requested mode '{0}', expected 'full'" -f $refreshAllScan.Response.Json.data.scanRequested.mode)
     }
-    $refreshAllJson = $refreshAllResponse.Json
-    if ($null -eq $refreshAllJson -or -not $refreshAllJson.success) { throw '/api/portfolio/assessment/refresh-all returned invalid success payload' }
-    $refreshAllData = $refreshAllJson.data
+    $refreshAllData = $refreshAllScan.Served
     if (-not ($refreshAllData.PSObject.Properties.Name -contains 'generatedAt') -or [string]::IsNullOrWhiteSpace([string]$refreshAllData.generatedAt)) {
         throw '/api/portfolio/assessment/refresh-all response missing generatedAt'
     }

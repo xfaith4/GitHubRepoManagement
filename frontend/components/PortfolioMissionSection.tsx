@@ -25,6 +25,21 @@ function formatSignalLabel(key: string): string {
   }
 }
 
+// Lane 0.21: the assessment route serves the background worker's last result;
+// say where it came from in the operator's words.
+function describeAssessmentSource(source: string): string {
+  switch (source) {
+    case 'memory':
+      return 'Memory cache';
+    case 'disk':
+      return 'Last scan result';
+    case 'awaiting-first-scan':
+      return 'Waiting for the first scan';
+    default:
+      return 'Fresh scan';
+  }
+}
+
 // Each tile's hover definition. Only the counts whose meaning is not obvious
 // from the label carry one.
 const METRIC_TOOLTIPS: Record<string, string> = {
@@ -45,7 +60,7 @@ const METRIC_TOOLTIPS: Record<string, string> = {
  */
 export interface PortfolioMission {
   generatedAt: string;
-  cacheSource: 'memory' | 'fresh-scan';
+  cacheSource: 'memory' | 'disk' | 'awaiting-first-scan' | 'fresh-scan';
   cacheAgeSeconds: number;
   signalSources: Partial<Record<string, PortfolioSignalSource>>;
   totalRepos: number;
@@ -106,7 +121,7 @@ const PortfolioMissionSection: React.FC<PortfolioMissionSectionProps> = ({
       {mission && (
         <div className="text-xs text-gray-500 text-right">
           <div>Generated {new Date(mission.generatedAt).toLocaleTimeString()}</div>
-          <div>{mission.cacheSource === 'memory' ? 'Memory cache' : 'Fresh scan'}{mission.cacheAgeSeconds > 0 ? ` · ${Math.round(mission.cacheAgeSeconds)}s old` : ''}</div>
+          <div>{describeAssessmentSource(mission.cacheSource)}{mission.cacheAgeSeconds > 0 ? ` · ${Math.round(mission.cacheAgeSeconds)}s old` : ''}</div>
         </div>
       )}
       <button

@@ -1390,10 +1390,22 @@ export interface PortfolioAssessmentResult {
   signalSources: Partial<Record<'status' | 'roadmap' | 'docAudit' | 'roadmapAudit' | 'execution' | 'github', PortfolioSignalSource>>;
   generatedAt: string;
   count: number;
-  cacheSource: 'memory' | 'fresh-scan';
+  /** Lane 0.21: the route serves the last result the background worker wrote.
+   *  'awaiting-first-scan' is an honest empty answer while the first scan runs. */
+  cacheSource: 'memory' | 'disk' | 'awaiting-first-scan' | 'fresh-scan';
   cacheAgeSeconds: number;
+  /** A scan is running or was just started; poll the plain route until it clears. */
+  refreshing: boolean;
+  scanRequested?: PortfolioAssessmentScanRequest;
   scanSummary?: PortfolioAssessmentScanSummary;
   performance?: PortfolioReadBudget;
+}
+
+export interface PortfolioAssessmentScanRequest {
+  mode: string;
+  started: boolean;
+  queued: boolean;
+  running: boolean;
 }
 
 // Release 2.3 — Portfolio Analytics, Trend Visualization, and Distribution

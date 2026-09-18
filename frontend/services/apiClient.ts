@@ -2306,9 +2306,21 @@ function normalizePortfolioAssessmentResult(data: any): PortfolioAssessmentResul
     signalSources: d.signalSources ?? {},
     generatedAt: String(d.generatedAt ?? new Date().toISOString()),
     count: Number(d.count ?? entries.length),
-    cacheSource: d.cacheSource === 'memory' ? 'memory' : 'fresh-scan',
+    cacheSource: normalizeAssessmentCacheSource(d.cacheSource),
     cacheAgeSeconds: Number(d.cacheAgeSeconds ?? 0),
-    scanSummary: d.scanSummary
+    // Lane 0.21: the route answers from the worker's last result and says
+    // whether a scan is in flight. A scanSummary with null counts is "not
+    // computed", never zero reused.
+    refreshing: Boolean(d.refreshing),
+    scanRequested: d.scanRequested && typeof d.scanRequested === 'object'
+      ? {
+          mode: String(d.scanRequested.mode ?? ''),
+          started: Boolean(d.scanRequested.started),
+          queued: Boolean(d.scanRequested.queued),
+          running: Boolean(d.scanRequested.running),
+        }
+      : undefined,
+    scanSummary: d.scanSummary && d.scanSummary.reused !== null && d.scanSummary.reused !== undefined
       ? {
           reused: Number((d.scanSummary as PortfolioAssessmentScanSummary)?.reused ?? 0),
           reindexed: Number((d.scanSummary as PortfolioAssessmentScanSummary)?.reindexed ?? 0),
@@ -2317,6 +2329,17 @@ function normalizePortfolioAssessmentResult(data: any): PortfolioAssessmentResul
         }
       : undefined,
   };
+}
+
+function normalizeAssessmentCacheSource(value: unknown): PortfolioAssessmentResult['cacheSource'] {
+  switch (value) {
+    case 'memory':
+    case 'disk':
+    case 'awaiting-first-scan':
+      return value;
+    default:
+      return 'fresh-scan';
+  }
 }
 
 export async function getPortfolioTrend(options: { days?: number } = {}): Promise<PortfolioTrendResult> {
