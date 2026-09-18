@@ -36,6 +36,8 @@ import ErrorBoundary from './ErrorBoundary';
 import PortfolioSummarySection from './PortfolioSummarySection';
 import { type ViewTabBadges } from '../lib/viewTabs';
 import { useAsyncPanel, withPanelTimeout } from '../lib/asyncPanel';
+import { startPollLoop, type PollLoopHandle } from '../lib/pollLoop';
+import { usePollLoop } from '../hooks/usePollLoop';
 import { getPortfolioSnapshot, assignExecutionLane, executeRoadmapDispatch } from '../services/apiClient';
 import ScanProgressChip from './ScanProgressChip';
 import TechInventoryPanel from './TechInventoryPanel';
@@ -330,35 +332,31 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   // (entries + basis) once the scan reaches a terminal state, so the banner
   // clears — or restates its reasons — from the rebuilt index rather than
   // staying frozen on the pre-scan verdict.
-  const scanCompletionWatchRef = useRef(false);
+  const scanCompletionWatchRef = useRef<PollLoopHandle | null>(null);
   const watchScanThenRefreshRanking = () => {
     if (scanCompletionWatchRef.current) return;
-    scanCompletionWatchRef.current = true;
     const pollMs = 5000;
     let remainingPolls = 360; // ~30 min; past that the operator still has Refresh.
-    const poll = async () => {
+    const endWatch = (loop: PollLoopHandle) => {
+      loop.stop();
+      if (scanCompletionWatchRef.current === loop) scanCompletionWatchRef.current = null;
+    };
+    // Lane 0.21 — the poll helper owns the chain. A failed probe is silence,
+    // not an outcome: the helper backs off and keeps listening.
+    scanCompletionWatchRef.current = startPollLoop(async (signal, loop) => {
       if (remainingPolls-- <= 0) {
-        scanCompletionWatchRef.current = false;
+        endWatch(loop);
         return;
       }
-      try {
-        const status = await getPortfolioScanStatus();
-        if (status.state === 'running') {
-          setTimeout(poll, pollMs);
-          return;
-        }
-      } catch {
-        // A failed probe is silence, not an outcome; keep listening.
-        setTimeout(poll, pollMs * 2);
-        return;
-      }
-      scanCompletionWatchRef.current = false;
+      const status = await getPortfolioScanStatus({ signal });
+      if (status.state === 'running') return;
+      endWatch(loop);
       // Cancelled/failed scans keep their completed phases, so refresh on every
       // terminal state — the basis says whatever is now true.
       refreshOperationsRepos(false).catch(() => {/* surfaced in-panel */});
-    };
-    setTimeout(poll, pollMs);
+    }, { intervalMs: pollMs, initialDelayMs: pollMs });
   };
+  useEffect(() => () => { scanCompletionWatchRef.current?.stop(); }, []);
 
   const handleRunPortfolioScan = async () => {
     const result = await startPortfolioScan();
@@ -547,21 +545,20 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   // Release 2.7 Phase D — an overdue scheduler only becomes overdue with the
   // passage of time, so this has to re-poll; a load-once fetch would show the
   // status as it was when the tab was opened and never update.
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      getAutomationStatus().then(setAutomationStatus);
-    }, AUTOMATION_STATUS_REFRESH_MS);
+  // Lane 0.21 — both refreshes ride the poll helper: the next call waits for
+  // the last to settle, and a slow host widens the gap instead of stacking
+  // requests. The first load above already ran, so each loop waits one
+  // interval before its first tick.
+  usePollLoop(async (signal) => {
+    setAutomationStatus(await getAutomationStatus({ signal }));
+  }, { intervalMs: AUTOMATION_STATUS_REFRESH_MS, initialDelayMs: AUTOMATION_STATUS_REFRESH_MS });
 
-    return () => window.clearInterval(intervalId);
-  }, []);
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      refreshExecutionMetrics({ background: true }).catch(() => {/* surfaced in-card */});
-    }, EXECUTION_METRICS_REFRESH_MS);
-
-    return () => window.clearInterval(intervalId);
-  }, [refreshExecutionMetrics]);
+  // The failure is surfaced in-card by refreshExecutionMetrics itself; the
+  // rejection is left to propagate so the loop backs off.
+  usePollLoop(() => refreshExecutionMetrics({ background: true }), {
+    intervalMs: EXECUTION_METRICS_REFRESH_MS,
+    initialDelayMs: EXECUTION_METRICS_REFRESH_MS,
+  });
 
   // Release 1.2 — load dependency graph when Dependencies tab is first opened.
   // (Release 3.5: through the async panel — a failure is an error with a
@@ -631,19 +628,16 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
       .catch(() => {/* silent — maturity badges just won't show */});
   }, [activeView, hasAttemptedRoadmapAuditLoad]);
 
+  const loadingStartedAtRef = useRef(0);
   useEffect(() => {
-    if (!loading) {
-      setLoadingElapsedSec(0);
-      return;
-    }
-
-    const startedAt = Date.now();
-    const timer = setInterval(() => {
-      setLoadingElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
-    }, 250);
-
-    return () => clearInterval(timer);
+    if (loading) loadingStartedAtRef.current = Date.now();
+    else setLoadingElapsedSec(0);
   }, [loading]);
+  // The elapsed counter is a ticker, not a fetch, but it runs on the same
+  // helper so the "no setInterval" rule has no exceptions to keep a list of.
+  usePollLoop(() => {
+    setLoadingElapsedSec(Math.floor((Date.now() - loadingStartedAtRef.current) / 1000));
+  }, { enabled: loading, intervalMs: 250 });
 
   // When repos are re-fetched, clear selection
   useEffect(() => {

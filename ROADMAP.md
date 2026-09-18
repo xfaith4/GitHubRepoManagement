@@ -1215,6 +1215,21 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       (SecureString vs env-var flow), coupled to the Lane 0.2 TLS work —
       **not** mechanical remediation. _(state: planned)_
       `check: pwsh ./scripts/Invoke-LintGate.ps1`
+- [ ] **The roadmap record moves with every shipped change, not only release-claiming ones.**
+      `Test-RoadmapCapabilityRecord.ps1` fires only when a commit subject reads
+      `feat(release-N.M):` or `(phaseN)` and its diff touches `backend/` or
+      `scripts/`. The Lane 0.21 poll-loop commit (`fix(portfolio): … (Lane
+      0.21)`, 2026-09-17) shipped 16 files under that bar and was checked by
+      nobody; `frontend/` never counts. AGENTS.md rule 3 ("the roadmap is the
+      last file you write") therefore binds by contract, not by gate. Widen
+      the predicate: a PR range whose diff touches `backend/`, `scripts/` or
+      `frontend/` source (tests, fixtures and the smoke harnesses excluded)
+      must advance a milestone in `ROADMAP.md` — a `(state:)` moving past
+      `planned`, a `[x]`, or a verbatim move to the archive — whatever the
+      commit prefix. Keep the existing rule that adding `planned` items is
+      not advancement. Prove it red on a fixture range that ships a frontend
+      file with an unmoved roadmap. _(state: planned)_
+      `check: pwsh ./tests/Test-RoadmapCapabilityRecordScope.ps1 -FailOnError`
 - P4 — BOM/PS5.1 hazard: [archived](docs/history/completed-releases.md#closed-2026-09-14-archived-from-roadmapmd).
 - **Deliberately unscheduled (accepted debt, held at baseline):** the naming
   and style tiers (`UseSingularNouns` 90, `UseOutputTypeCorrectly` 136,
@@ -1924,13 +1939,6 @@ keeps one scan in flight. A forced refresh that arrives mid-scan is queued.
 
 **Still open, in order of what the operator waits on:**
 
-- [ ] **Polls never pile up behind a slow host.** The next poll starts only
-      when the previous one settles (a `setTimeout` chain, not `setInterval`).
-      Each poll has an `AbortController` timeout, backs off while calls are slow,
-      and pauses while `document.hidden`. `/api/agent-runs` returned the same
-      147 KB seven times in one load; it answers with an ETag or a `since=`
-      cursor. _(state: planned)_
-      `check: npx vitest run frontend/lib/pollLoop.test.ts`
 - [ ] **A finished scan reaches the page.** The scan ended at 05:17:15 and the
       snapshot regenerated at 05:19:05, but the header still read "Last scan
       01:09 AM · 64.0s scan · 9m ago". When scan status moves to `completed`, the
@@ -2055,6 +2063,67 @@ live state, and one dispatch-eligibility rule. Then:
       Start runner" banner carries the button. Settings never shows "Checking…"
       or an empty provider list indefinitely. _(state: planned)_
       `check: npx vitest run frontend/components/HeaderPopovers.test.tsx`
+- [ ] **Lanes close on evidence, not on a click.** Ben's ruling, 2026-09-18:
+      the Dispatch Board's Complete button goes. An operator pressing Complete
+      on a `running` lane asserts work the operator did not do; the button
+      also always sent `hasRemainingWork: true`, so it never completed
+      anything — it released the lane under the wrong name. The board already
+      observes the verdict (`Execution.LaneObservation.ps1`: `finished` when
+      the PR is merged, `failed` when the run failed or the PR closed
+      unmerged) and Lane 0.17 stopped one step short of acting on it. A sweep
+      over the lane ledger — the pattern `Invoke-AgentRunAutoClose` already
+      uses for agent runs — frees a `finished` lane and returns the repo to
+      `ready` if its roadmap still has open items, `complete` if it does not
+      (a roadmap fact, never a click); a `failed` lane takes the cancel path
+      with its retry count. `POST /api/execution/complete` is removed and the
+      `Complete` control with it. Cancel stays. A lane with no run behind it
+      (`unlinked`) can only be cancelled; L22-ELIG stops it being occupied at
+      all. Done when: a fixture lane whose PR is merged is `ready` after one
+      sweep with a `completed` history record naming the sweep, not an
+      operator; a `failed` fixture lane follows the cancel transition; the
+      complete route answers the SPA fallback (`text/html`), not JSON; the
+      board renders no Complete control. _(state: planned)_
+      `check: pwsh ./tests/Test-LaneClosesOnEvidence.ps1 -FailOnError`
+- [ ] **Cancel reaches the runner.** Cancel on the Dispatch Board only edits
+      the lane ledger (`Invoke-CancelTask`): the lane frees, the agent keeps
+      working, and its pull request arrives later as an orphan the board can
+      no longer attribute. The runner accepts a `cancelled` structured result
+      *from the agent* but nothing carries an operator's cancel *to* it. Ben,
+      2026-09-18: "that needs to be a trustworthy button." A cancel writes a
+      flag under the runner control root (`REPO_MGMT_RUNNER_CONTROL_ROOT`)
+      keyed by `dispatchRunId`; `Invoke-RoadmapTaskRunner.ps1` reads it at
+      every phase boundary and stops there, the way the portfolio scan's
+      cancel is honoured at the worker's next phase; a draft PR the run has
+      opened is closed with a comment naming the cancel; the lane's history
+      records who cancelled, at which phase, and what the runner did with it.
+      Until the runner acknowledges, the tile reads "Cancelling… (honoured at
+      the next phase boundary)", never "cancelled". Done when: a fixture run
+      cancelled during `working` stops before `pushing` and the summary
+      records `cancelled` at that phase; the lane's history carries the
+      acknowledgement; a cancel with no live runner still frees the lane and
+      says so. _(state: planned)_
+      `check: pwsh ./tests/Test-CancelReachesRunner.ps1 -FailOnError`
+- [ ] **A lane tile shows the phase, the clock and the work order.** The two
+      lane tiles read "Running" and nothing else. Agents report no percentage
+      and the product invents no figure (steering contract 2), but the
+      execution event stream already names the phases — QUEUED, DISPATCHED,
+      WORKING, LOCAL_VERIFYING, PUSHING, PR_OPEN, CI_PENDING,
+      CI_PASSED/CI_FAILED, READY_FOR_OPERATOR, MERGING, MERGED,
+      POST_MERGE_VERIFYING, COMPLETE (`Execution.Events.ps1`). Each tile shows
+      the current phase as "phase n of N — <name>", the time it entered that
+      phase, the time since the last observed event, and the `stalled` flag
+      the observation already computes; a ring may fill by phases reached and
+      is labelled as phases, never `%`. The tile links to the work order it is
+      executing — the WorkPacket (`workPacketPath`) and `/api/trace/{id}` via
+      the trace modal — so an operator can read what is being done before
+      cancelling and queueing other work. Open question for the register: the
+      two-lane cap is a Release 1.0 constant; if it stands in for provider
+      capacity it is per-installation state and belongs in Settings (steering
+      contract 8). Done when: a fixture lane at `ci-pending` renders phase,
+      entered-at, elapsed and the trace link; a lane with no events renders
+      "no phase observed" and no ring; the string `%` appears nowhere in the
+      tile. _(state: planned)_
+      `check: npx vitest run frontend/components/ExecutionLaneTile.test.tsx`
 - [ ] **Labels match what they count.** "N need you" counts repositories, not
       holds × codes (it read 63 for 59 repositories). "Blocking a lane" appears
       only where work is under way and stopped. L0-Absent is never shown for a

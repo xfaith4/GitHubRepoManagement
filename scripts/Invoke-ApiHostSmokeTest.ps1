@@ -83,7 +83,9 @@ function Invoke-ApiRequest {
         [Parameter(Mandatory = $true)]
         [string]$Uri,
         [Parameter()]
-        [object]$Body
+        [object]$Body,
+        [Parameter()]
+        [hashtable]$Headers
     )
 
     # Scan routes get the same extended budget the host's deadline gives them;
@@ -112,9 +114,12 @@ function Invoke-ApiRequest {
     # REPO_MGMT_API_KEY is set (Release 2.2 auth), the host enforces it, so the
     # smoke must send it. Unset (CI) means auth is off and no header is sent.
     $smokeApiKey = [Environment]::GetEnvironmentVariable('REPO_MGMT_API_KEY')
+    $requestHeaders = @{}
+    if ($null -ne $Headers) { foreach ($headerName in $Headers.Keys) { $requestHeaders[$headerName] = $Headers[$headerName] } }
     if (-not [string]::IsNullOrWhiteSpace($smokeApiKey)) {
-        $invokeSplat.Headers = @{ 'X-Api-Key' = $smokeApiKey }
+        $requestHeaders['X-Api-Key'] = $smokeApiKey
     }
+    if ($requestHeaders.Count -gt 0) { $invokeSplat.Headers = $requestHeaders }
 
     $response = Invoke-WebRequest @invokeSplat
     $json = $null
@@ -131,6 +136,7 @@ function Invoke-ApiRequest {
         ContentType = [string]$response.Headers['Content-Type']
         Content = [string]$response.Content
         Json = $json
+        Headers = $response.Headers
     }
 }
 
@@ -1975,7 +1981,15 @@ try {
         ($agentRunsJson.data.PSObject.Properties.Name -contains 'count') -and
         ($agentRunsJson.data.PSObject.Properties.Name -contains 'byStatus')
     if (-not $agentRunsShapeOk) { throw '/api/agent-runs returned an unexpected payload shape' }
-    Write-Host ("  /api/agent-runs -> {0} run(s)" -f @($agentRunsJson.data.items).Count) -ForegroundColor DarkGray
+
+    # Lane 0.21 — the list is polled; an unchanged ledger must answer a
+    # conditional GET with 304 and no body, so a poll costs headers, not 147 KB.
+    $agentRunsEtag = [string]($agentRunsResponse.Headers['ETag'] | Select-Object -First 1)
+    if ([string]::IsNullOrWhiteSpace($agentRunsEtag)) { throw '/api/agent-runs answered without an ETag header' }
+    $agentRunsRevalidate = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/agent-runs?limit=10" -Headers @{ 'If-None-Match' = $agentRunsEtag }
+    if ([int]$agentRunsRevalidate.StatusCode -ne 304) { throw "/api/agent-runs with If-None-Match expected HTTP 304, got $($agentRunsRevalidate.StatusCode)" }
+    if (-not [string]::IsNullOrWhiteSpace($agentRunsRevalidate.Content)) { throw '/api/agent-runs answered 304 with a body' }
+    Write-Host ("  /api/agent-runs -> {0} run(s); If-None-Match {1} -> HTTP {2}" -f @($agentRunsJson.data.items).Count, $agentRunsEtag, $agentRunsRevalidate.StatusCode) -ForegroundColor DarkGray
 
     $agentRunMissing = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/agent-runs/does-not-exist"
     Assert-Not503 -Name '/api/agent-runs/{runId} (unknown)' -Response $agentRunMissing

@@ -11,8 +11,9 @@
  * to a disabled "Cancelling…" with the reason in its title instead of
  * pretending the stop is instant.
  */
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { getPortfolioScanStatus, cancelPortfolioScan } from '../services/apiClient';
+import { usePollLoop } from '../hooks/usePollLoop';
 import type { BackgroundScanStatus } from '../types';
 
 const RUNNING_POLL_MS = 2500;
@@ -27,34 +28,29 @@ const ScanProgressChip = () => {
   // note whose expiry is only re-judged every poll tick is precise enough.
   const [nowMs, setNowMs] = useState(0);
 
-  useEffect(() => {
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    async function tick() {
-      let next: BackgroundScanStatus | null;
-      try {
-        next = await getPortfolioScanStatus();
-      } catch {
-        // A status probe that fails is silence, not an alarm; the next tick
-        // retries. The assessment panels carry their own error states.
-        next = null;
-      }
-      if (disposed) return;
-      setNowMs(Date.now());
-      if (next) {
-        setStatus(next);
-        if (next.state !== 'running') setCancelPending(false);
-      }
-      timer = setTimeout(tick, next && next.state === 'running' ? RUNNING_POLL_MS : IDLE_POLL_MS);
+  // Lane 0.21 — the poll helper owns the chain: a running scan is sampled
+  // fast, an idle host slowly, and a slow or failing host backs the loop off.
+  const runningRef = useRef(false);
+  usePollLoop(async (signal) => {
+    let next: BackgroundScanStatus | null = null;
+    let failure: unknown = null;
+    try {
+      next = await getPortfolioScanStatus({ signal });
+    } catch (error) {
+      // A status probe that fails is silence, not an alarm; the helper backs
+      // off and the next tick retries. The assessment panels carry their own
+      // error states.
+      failure = error;
     }
-
-    void tick();
-    return () => {
-      disposed = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, []);
+    if (signal.aborted) return;
+    setNowMs(Date.now());
+    if (next) {
+      setStatus(next);
+      runningRef.current = next.state === 'running';
+      if (next.state !== 'running') setCancelPending(false);
+    }
+    if (failure) throw failure;
+  }, { intervalMs: () => (runningRef.current ? RUNNING_POLL_MS : IDLE_POLL_MS) });
 
   const handleCancel = async () => {
     setCancelPending(true);
