@@ -1,17 +1,8 @@
 # GitHub Repo Management — Active Execution Roadmap
 
-> **Revision 2026-09-18 — MVP boundary and governed autonomy.** Promotes
-> Release 3.7 to active engineering, moves Release 2.9 to a parallel validation
-> track, makes trust defects the MVP critical path, separates verified proposal
-> state from integrated delivery, adds Release 3.9 Governed Autonomous Delivery,
-> and renumbers Adaptive Routing to Release 4.0. No completed capability is
-> reopened; Release 3.8 is reused as the execution substrate.
->
 > **Status:** Active
-> **Active release:** **Release 3.7 — Portfolio Value Proof**
-> **Active field-validation track:** **Release 2.9 — Operator Field Proof + Mobile Completion**. Its engineering is closed; remaining elevated, authenticated, physical-device, and calendar evidence lives in the operator queue and does not block engineering or MVP declaration.
-> **Next capability release:** **Release 3.9 — Governed Autonomous Delivery**
-> **Future optimization release:** **Release 4.0 — Adaptive Routing**
+> **Active release:** **Release 2.9 — Operator Field Proof + Mobile Completion**
+> **Next active release:** **Release 3.7 — Portfolio Value Proof**. Release 3.6 closed 2026-09-14 (archived; its field proof is OQ-1 in the operator queue). 3.7's cohort is selected and concluded; its agent-closable items lead Current focus, and the measured trial waits on OQ-3.
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -22,35 +13,19 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-09-18
+**Last updated:** 2026-09-14
 
-Releases 0.4 through 2.6, 2.8, 3.0 and 3.8 are
-**engineering-complete**; completed milestones belong in the archive. Release
-3.8's detail remains temporarily below only as migration context for Release
-3.9 and is non-dispatchable; G39-01 moves it to the completed-release archive.
+Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
+as is every completed milestone from the releases and lanes still open below.
 Their full text lives in
 [`docs/history/completed-releases.md`](docs/history/completed-releases.md).
 
-**This file carries open work.** Every checkbox in it is something still to do
-— if an item is `[x]` here it is a mistake, not a record (rule restored by the
-2026-08-11 archive pass, recorded in `CHANGELOG.md`). Release 3.8's checkbox-
-free historical block is the sole temporary exception and G39-01 removes it.
+**This file carries open work only.** Every checkbox in it is something still
+to do — if an item is `[x]` here it is a mistake, not a record (rule restored
+by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 
-**Transitional precedence.** Steering revision 2026-09-18 governs now. Until
-G39-01 updates `AGENTS.md`, validators and delivery-loop documentation, any
-older rule that calls CI-green "done," requires `READY_FOR_OPERATOR` for every
-PR, or prohibits mandate-authorized guarded promotion is historical. Continue
-operating in supervised mode; do not simulate guarded behavior before G39-01
-through G39-06 are integrated.
-
-**Current focus (next agent actions), in order.** Every item here is
-agent-closable; the operator queue is a separate file. Take the first
-dependency-ready `[ ]`, confirm its premise still holds, and open one PR for
-that bounded item. Do not begin Release 3.9 implementation before the Release
-3.7 rollout decision is recorded. Do not begin D-022 navigation restructuring
-before the value-proven MVP boundary is crossed.
-
-### MVP critical path A — make the existing loop trustworthy
+**Current focus (next agent actions), in order.** Every item here is agent-closable;
+the operator queue is a separate file. Take the first `[ ]` and open a PR.
 
 - [ ] **Lane 0.21 — the assessment route never holds the request thread.**
       While a scan runs the portal stops answering: 60–72 s per page load,
@@ -83,48 +58,6 @@ before the value-proven MVP boundary is crossed.
       packet that needs the network declares an allowlist the owner approves;
       `network false` is never loosened silently. _(state: planned)_
       `check: pwsh ./tests/Test-PermissionEnvelope.ps1 -FailOnError`
-- [ ] **Lane 0.22 — only actionable roadmap lines become work.** Classify each
-      candidate as `actionable | done-statement | deferred | guidance |
-    fragment`; rank, queue and dispatch only `actionable`. Record excluded
-      lines and reasons. A completed item hash cannot be dispatched again
-      inside the configured cooldown unless an operator override is recorded.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-WorkItemQuality.ps1 -FailOnError`
-- [ ] **Lane 0.22 — stuck work is detected, not noticed.** Apply configured
-      phase limits to runner heartbeat, lane age, dispatch-without-branch,
-      approval-without-queue-entry and scan phase. Surface one diagnosis and
-      one remedy per stuck unit; use human-readable durations. _(state: planned)_
-      `check: pwsh ./tests/Test-StuckWork.ps1 -FailOnError`
-- [ ] **Lane 0.22 — lanes close on integration evidence.** Remove the manual
-      Complete route and control. A verified merged PR closes its lane through
-      reconciliation; failed or closed-unmerged work takes the cancel/failure
-      path; unlinked lanes can only be cancelled. _(state: planned)_
-      `check: pwsh ./tests/Test-LaneClosesOnEvidence.ps1 -FailOnError`
-- [ ] **Lane 0.22 — cancel reaches the runner.** Persist a cancellation request
-      by `dispatchRunId`; observe it at each phase boundary; stop before the
-      next mutating phase; close any draft PR with a reason; and record request,
-      acknowledgement and terminal phase. The surface reads `Cancelling` until
-      acknowledgement. _(state: planned)_
-      `check: pwsh ./tests/Test-CancelReachesRunner.ps1 -FailOnError`
-- [ ] **Operational MVP proof harness and queued field proof.** Add
-      `scripts/Select-OperationalMvpPilot.ps1` and
-      `tests/Test-OperationalMvp.ps1`. Select the highest-ranked repository
-      that is clean, in scope, dispatch-eligible, low risk, backed by a runnable
-      check and not this repository. Drive it through preview, dispatch,
-      implementation, exact-head CI and `READY_FOR_PROMOTION`; write one
-      operator-queue entry naming the verified SHA and exact remaining merge
-      action. After that supervised approval occurs, reconciliation writes
-      `evidence/verified/operational-mvp-<date>.md`; the validator requires the
-      candidate, WorkPacket, run, PR, checks, approval, merge commit, target-
-      branch reachability, roadmap reconciliation, consistent surface states
-      and zero fixture contribution. The engineering milestone closes when the
-      selector, validator, red fixtures and queued proof packet are green; the
-      product boundary crosses only when the real evidence file passes.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-OperationalMvp.ps1 -FixtureMode -FailOnError`
-
-### MVP critical path B — prove portfolio value on real repositories
-
 - [ ] **Accept/reject ledger (steering extension 1, Rung 1).** Every next action
       and top value item is a prediction; every response to one — accept,
       reject, edit — is a label. Capture each with the prediction it answers and
@@ -148,44 +81,21 @@ before the value-proven MVP boundary is crossed.
       constrained to the evidence lines and marked as narration.
       _(state: planned)_
       `check: pwsh ./tests/Test-PortfolioBrief.ps1 -FailOnError`
-- [ ] **3.7 / M6 — execute at least five material improvements.** Use only the
-      approved previews above. For each repository, record the before evidence,
-      accepted action and preview hash, implementation PR, exact acceptance
-      criterion, independent result, merge evidence, operator minutes, agent
-      first-pass result, and outcome-quality judgement. A merge without an
-      independently checked outcome does not count. _(state: planned)_
-      `check: pwsh ./tests/Test-TrialExecution.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MinCountedImprovements 5`
-- [ ] **3.7 / M7 — adjust and decide.** Every false positive or bad
-      recommendation exposed by M6 is either corrected through a versioned
-      rule with `observedOn`, or retained with a written reason. Record the
-      evidence-backed go/no-go decision for the 80+ repository rollout. This
-      decision crosses the value-proven MVP boundary. _(state: planned)_
-      `check: pwsh ./tests/Test-TrialDecision.ps1 -Cohort evidence/trials/release-3.7/cohort.json -FailOnError`
-
-### After value-proven MVP — foundation work before guarded autonomy
-
 - [ ] **One manifest walk (steering extension 4).** Repo type, the technology
       profile and kind signals are three walkers over the same files. One scan
       produces all three views, so they cannot drift and a checkout is read once.
       _(state: planned)_
       `check: pwsh ./tests/Test-ManifestWalk.ps1 -FailOnError`
-- [ ] **D-001 — dependency notion (Release 3.9 prerequisite).** Optional,
-      single-repo, acyclic,
-      keyed on stable item ids, gating dispatch eligibility. Schema + parser +
-      cycle check. This must close before Release 3.9 can schedule a second work
-      unit without operator selection. _(state: planned)_
-      `check: pwsh ./tests/Test-RoadmapDependencies.ps1 -FailOnError`
-
-After these two items, execute Release 3.9 in its numbered milestone order.
-Release 3.9 is fully specified below; do not duplicate its work as lane items.
-
-### Post-MVP product refinement — not on the critical path
-
 - [ ] **Lane 0.19 — surface the operator queue in the console.**
-      `operatorOnlyItemCount` is produced and read nowhere. Render it within
-      Today or the System drawer selected by D-022, not as a new top-level tab.
-      _(state: planned)_
+      `operatorOnlyItemCount` is produced and read nowhere. Render
+      `docs/governance/operator-queue.md` as a Verify tab so parked work is
+      visible somewhere other than this file. _(state: planned)_
       `check: pwsh ./tests/Test-ApiHostSmoke.ps1 -Route /api/operator-queue`
+- [ ] **3.8 / D-001 — dependency notion.** Optional, single-repo, acyclic,
+      keyed on stable item ids, gating dispatch eligibility. Schema + parser +
+      cycle check. Does not wait on the trial: it changes what the contract
+      *can express*, not what runs. _(state: planned)_
+      `check: pwsh ./tests/Test-RoadmapDependencies.ps1 -FailOnError`
 - [ ] **D-022 (1) — one lifecycle the operator sees.** Needs plan → Plan needs
       approval → Ready for agents → Agent working → In review → Healthy /
       Archived, with flags beside it (Uncommitted changes, CI failing, Behind
@@ -222,41 +132,13 @@ Release 3.9 is fully specified below; do not duplicate its work as lane items.
       Nothing is generated in the background. _(state: planned)_
       `check: pwsh ./tests/Test-ProposalBatch.ps1 -FailOnError`
 
-### Product maturity boundaries
-
-These boundaries prevent a later capability from moving an earlier finish line.
-They are cumulative product claims and are emitted only from merged evidence:
-
-1. **Operational MVP — trustworthy supervised delivery.** All items in MVP
-   critical path A are integrated on `main`; one real repository travels from
-   an actionable roadmap unit through preview, dispatch, implementation,
-   exact-head CI, operator-approved merge and post-merge reconciliation; no
-   fixture contributes to the result; and the console shows one consistent
-   eligibility and delivery state throughout. Record the proof under
-   `evidence/verified/operational-mvp-<date>.md` and gate it with
-   `tests/Test-OperationalMvp.ps1`.
-2. **Value-proven MVP — Release 3.7.** At least five cohort repositories are
-   materially stronger by independently checked criteria, the effort and
-   first-pass results are recorded, and M7 contains the evidence-backed rollout
-   decision. This is the public MVP boundary. Field-validation items from 2.9
-   may remain open if they do not contradict the claimed workflow.
-3. **Guarded Autonomy V1 — Release 3.9.** One low-risk phase of at least two
-   work units completes under one active mandate without operator dispatch or
-   approval between ordinary units; every merge is policy-authorized, verified
-   on the intended branch and followed by state refresh; at least one bounded
-   remediation and one decision-ready escalation are proven. This is not a
-   prerequisite for calling Release 3.7 an MVP.
-
-Do not use percentage-complete estimates for these boundaries. Each is false
-until every named condition has merged evidence, then true.
-
-**Forward arc.** Releases 3.0-3.6 established the engineering and conclusion
-foundation; Release 3.7 proves that the product returns more time than it takes.
-Release 3.8 already made execution provider-aware. Release 3.9 moves authority
-from repeated per-PR approval to a bounded, revocable phase mandate and proves
-one low-risk multi-PR phase without operator dispatch between units. Release
-4.0 then optimizes provider choice from evidence. Optimization may not precede
-trustworthy authority and verified integration.
+**Forward arc.** Releases 3.0-3.5 describe the finished product: dispatch that
+runs, the loop closing legibly and without a hand-off, numbers an operator can
+act on, an 80+ repo portfolio that feels immediate, unattended operation.
+Release 3.6 extends it to "every repository ends with an explainable
+conclusion"; Release 3.7 makes the product prove, on ten real repositories,
+that it returns more time than it takes. Release 3.8 makes the execution layer
+provider-aware, so that proof is not capped by one agent's subscription.
 
 ---
 
@@ -298,9 +180,8 @@ The **north-star operator workflow** every release should serve is:
 
 > scan portfolio → index repos → classify every repo → show lifecycle state →
 > identify blockers → repair README/roadmap/structure → rank highest-value
-> next work → establish execution readiness → activate a bounded mandate →
-> dispatch → monitor agent run → validate Actions → evaluate promotion policy →
-> merge when authorized → verify integration → reconcile roadmap and continue
+> next work → refine agent prompt → dispatch → monitor agent run → validate
+> Actions → evaluate merge readiness → update roadmap / report progress
 
 **Product lens (2026-08-23) — the principle every remaining item is ranked
 against.** The product does not prescribe what a repository should become. It
@@ -333,38 +214,26 @@ Every milestone carries exactly one state and exactly one `check:` — the comma
 that decides it. A milestone with no runnable check is not a milestone; it is a
 question, and it goes to `docs/governance/open-decisions.md` instead.
 
-| State      | Meaning                                                            | Advanced by          |
-| ---------- | ------------------------------------------------------------------ | -------------------- |
-| `planned`  | Contract written; no implementation exists on a work branch        | planner/orchestrator |
-| `built`    | Implementation exists; required exact-head CI is not yet green     | implementation agent |
-| `verified` | Required checks ran and passed on the exact applicable PR head SHA | verification service |
+| State      | Meaning                                                                   | Closed by |
+| ---------- | ------------------------------------------------------------------------- | --------- |
+| `planned`  | Contract written (goal, boundary, `check:`); no code on any branch        | agent     |
+| `built`    | Code on a branch; `check:` not yet green in CI                            | agent     |
+| `verified` | `check:` exits 0 in CI on the PR head; evidence linked from the PR        | agent     |
 
 A `built` or `verified` milestone's `check:` must be a step CI runs, with every
 argument the line passes (validator R024). A check CI does not run can never go
 green there, so the state would rest on nobody's word.
 
-These are **proposal states**, not delivery states. `verified` means eligible
-for promotion-policy evaluation; it does not mean merged, integrated or
-complete. Delivery advances separately through `MERGING → MERGED →
-POST_MERGE_VERIFYING → COMPLETE`, and only the orchestrator advances those
-states from repository and policy evidence.
-
-`verified` is the last milestone annotation written on a feature branch. It is
-the only proposal state that may stage `[x]` and move the milestone text to the
-archive in that same PR. On the PR branch, that edit describes the repository
-state the PR proposes. On `main`, the merged roadmap and archive describe the
-integrated state. If the PR does not merge, `main` remains unchanged and no
-completion event may be emitted.
+`verified` is the terminal state for this file. It is the only state that earns `[x]`,
+and `[x]` means the item leaves this file for the archive in the same PR.
 
 **Field proof is not a state.** "Seen working on the live portal", "ran under SYSTEM",
 "confirmed on the phone" are recorded as ratchets in
 [`docs/governance/operator-queue.md`](docs/governance/operator-queue.md) via
 `scripts/Add-OperatorVerification.ps1`. A ratchet may be recorded any time after
-`verified`, may be recorded never, and never blocks a later milestone unless
-the claim being made explicitly requires that proof. Promotion is governed by
-the active posture in §8: supervised work requires operator approval of the
-verified head SHA; guarded work requires a valid mandate plus a replayable
-policy decision for that same SHA. Neither path treats green CI as completion.
+`verified`, may be recorded never, and never blocks a later milestone. The
+promotion boundary — merge to the protected default branch on an operator-approved
+verified head SHA — is unchanged and lives in §8; it gates *merge*, not *the next item*.
 
 **Milestone format.** One bullet, action-first, with the check on its own line:
 
@@ -372,17 +241,14 @@ policy decision for that same SHA. Neither path treats green CI as completion.
       from the index, not just `archived`. _(state: planned)_
       `check: pwsh ./tests/Test-KindDetection.ps1 -FailOnError`
 
-**Checkbox rule.** `[x]` on a PR branch means "verified proposal that will be
-integrated by this PR"; `[x]` on `main` means "integrated milestone." It never
-means that an agent claimed success. An item whose code is merged but whose
-separate field proof is unrecorded is integrated in repository history and open
-in the operator queue — two ledgers, no overlap.
+**Checkbox rule.** `[x]` = `verified`. An item whose code is merged but whose field
+proof is unrecorded is `[x]` here and open in the operator queue — two ledgers, no
+overlap. The old rule ("stays `[ ]` and names the resource it waits on") is retired
+2026-09-13: it made the operator the terminal state of every item and taught agents
+to end each session by asking for verification.
 
-**Archive rule:** once exact-head verification is green and the PR is otherwise
-promotion-eligible, the item moves verbatim to
-`docs/history/completed-releases.md` in the same PR. The execution ledger
-records whether that proposed archival actually integrated. Reconciliation
-treats an archive edit that never merged as no completion at all.
+**Archive rule** unchanged: once `[x]`, the item moves verbatim to
+`docs/history/completed-releases.md` in the same PR.
 
 **Operator-work rule.** Nothing in this file may name an action only the operator can
 take. If a milestone needs SYSTEM rights, a device, an authenticated session, a grant
@@ -394,33 +260,31 @@ its own `check:` and the human half is appended to the operator queue. The valid
 
 ## 4. Release Index
 
-| Version   | Title                                                                    | Status                                                                                                                                               |
-| --------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0.4 - 1.1 | Foundation through Standardization and Guardrails                        | `done` — see [archive](docs/history/completed-releases.md)                                                                                           |
-| 1.2       | Enhanced Portfolio Intelligence                                          | `done` — closed 2026-07-05; see archive                                                                                                              |
-| 1.3 - 1.7 | Frontend build, repo evaluation, README generation, dispatch, git status | `done` — see archive                                                                                                                                 |
-| 1.7.5     | Portfolio Mission Alignment, Indexed Scanning, Value-Ranked Planning     | `done` — shipped 2026-05-28; see archive                                                                                                             |
-| 1.8 - 2.0 | Operations workspace, AI doc cycles, agent-run monitoring                | `done` — see archive                                                                                                                                 |
-| 2.1       | Persistent Data Layer                                                    | `done` (engineering) — closed 2026-08-07; operator sign-off tracked in 2.9                                                                           |
-| 2.2       | API Auth, Network Security, Onboarding, GitHub App                       | `done` (engineering) — 2026-07-05; optional live App-token exchange tracked in 2.9                                                                   |
-| 2.3       | Portfolio Analytics, Trend Visualization, Distribution                   | `done` (engineering) — 2026-07-06; 7/90-day accrual is calendar-gated, tracked in 2.9                                                                |
-| 2.4       | Agent Integration Protocol and AI Repair Loop                            | `done` — 2026-07-05; live submit-PR proof landed 2026-08-09 (2.7 Phase A, PR #96)                                                                    |
-| 2.5       | Mobile-Friendly Operator Experience                                      | `done` (engineering) — 2026-07-05; two surfaces + device proof tracked in 2.9                                                                        |
-| 2.6       | Interface Clarity and Operator Orientation                               | `done` — 2026-07-06; device sign-off tracked in 2.9                                                                                                  |
-| 2.7       | Guarded Scheduled Automation (Curated-Subset, Preview-First)             | `done` — closed 2026-08-11; see archive. Live service install re-homed to 2.9                                                                        |
-| 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                                                                                  |
-| 2.9       | Operator Field Proof + Mobile Completion                                 | `validation` — engineering closed; operator/device/calendar evidence continues off critical path                                                     |
-| 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                                                                            |
-| 3.1       | Closed-Loop Delivery                                                     | `done` 2026-08-15 — manual loop proof recorded; portal + scheduled proofs re-homed to 2.9                                                            |
-| 3.2       | Portfolio Scale and Responsiveness                                       | `done` 2026-08-19 — budget + bounded sweep + observable/cancellable scan + render bound                                                              |
-| 3.3       | Steady-State Operation                                                   | `done` 2026-08-19 — retention, rehearsed restore, honest transport, decision-grade exports                                                           |
-| **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified                                                          |
-| 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9                                                         |
+| Version   | Title                                                                    | Status                                                                                     |
+| --------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| 0.4 - 1.1 | Foundation through Standardization and Guardrails                        | `done` — see [archive](docs/history/completed-releases.md)                                 |
+| 1.2       | Enhanced Portfolio Intelligence                                          | `done` — closed 2026-07-05; see archive                                                    |
+| 1.3 - 1.7 | Frontend build, repo evaluation, README generation, dispatch, git status | `done` — see archive                                                                       |
+| 1.7.5     | Portfolio Mission Alignment, Indexed Scanning, Value-Ranked Planning     | `done` — shipped 2026-05-28; see archive                                                   |
+| 1.8 - 2.0 | Operations workspace, AI doc cycles, agent-run monitoring                | `done` — see archive                                                                       |
+| 2.1       | Persistent Data Layer                                                    | `done` (engineering) — closed 2026-08-07; operator sign-off tracked in 2.9                 |
+| 2.2       | API Auth, Network Security, Onboarding, GitHub App                       | `done` (engineering) — 2026-07-05; optional live App-token exchange tracked in 2.9         |
+| 2.3       | Portfolio Analytics, Trend Visualization, Distribution                   | `done` (engineering) — 2026-07-06; 7/90-day accrual is calendar-gated, tracked in 2.9      |
+| 2.4       | Agent Integration Protocol and AI Repair Loop                            | `done` — 2026-07-05; live submit-PR proof landed 2026-08-09 (2.7 Phase A, PR #96)          |
+| 2.5       | Mobile-Friendly Operator Experience                                      | `done` (engineering) — 2026-07-05; two surfaces + device proof tracked in 2.9              |
+| 2.6       | Interface Clarity and Operator Orientation                               | `done` — 2026-07-06; device sign-off tracked in 2.9                                        |
+| 2.7       | Guarded Scheduled Automation (Curated-Subset, Preview-First)             | `done` — closed 2026-08-11; see archive. Live service install re-homed to 2.9              |
+| 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                        |
+| **2.9**   | **Operator Field Proof + Mobile Completion**                             | **active** — promoted 2026-08-19; mobile UN-DEFERRED (its resume condition was met)        |
+| 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                  |
+| 3.1       | Closed-Loop Delivery                                                     | `done` 2026-08-15 — manual loop proof recorded; portal + scheduled proofs re-homed to 2.9  |
+| 3.2       | Portfolio Scale and Responsiveness                                       | `done` 2026-08-19 — budget + bounded sweep + observable/cancellable scan + render bound    |
+| 3.3       | Steady-State Operation                                                   | `done` 2026-08-19 — retention, rehearsed restore, honest transport, decision-grade exports |
+| **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
+| 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
 | 3.6       | Every Repository Gets an Outcome                                         | `done` — closed 2026-09-14 (D-018 PR 2); see archive. Field proof: OQ-1. Its two non-blockers live on as Current focus M4a and the 2.9 trend accrual |
-| **3.7**   | **Portfolio Value Proof**                                                | **`active`** — trust gates, five measured improvements and rollout decision define MVP                                                               |
-| 3.8       | Provider-Aware Execution                                                 | `done` (engineering) 2026-09-11 — provider-neutral packet, routing, remediation and review                                                           |
-| **3.9**   | **Governed Autonomous Delivery**                                         | **`planned`** — phase mandate, readiness, policy promotion and multi-PR proof                                                                        |
-| 4.0       | Adaptive Routing                                                         | `planned` — optimize provider choice from measured evidence after governed autonomy                                                                  |
+| **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
+| **3.8**   | **Provider-Aware Execution**                                             | **`planned`** 2026-09-06 — Codex/Claude/Copilot behind one provider-neutral task contract  |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
@@ -431,84 +295,94 @@ Release numbers identify scope — they do not dictate sequence. Work through
 open items in the order below, and update this section whenever a lane
 closes or a new dependency appears.
 
-**Critical-path ruling — 2026-09-18.** The product is feature-rich but does
-not yet earn an MVP claim while its primary route blocks the host, fixtures
-pollute operational truth, or dispatch eligibility disagrees by surface. The
-critical path is therefore evidence-first, not release-number-first:
+**Trial sequencing — approved 2026-09-05.** Select the ten by kind now; fix
+and validate the remaining Lane 0.15 truth defects before measured execution.
+Release 3.6 field proof (OQ-1) and operator approvals remain required. Lane
+0.18 acceptance evidence is required for each counted improvement, but an
+independent operator check can supply it; completing all of Lane 0.18 is not
+a prerequisite. **Dependency ordering is no longer blocked:** D-001 was
+answered 2026-09-06 — a managed roadmap may optionally declare dependencies,
+within one repository, acyclic, keyed on stable item ids, gating dispatch
+eligibility. The cohort is unblocked too; see the D-006 note under Release 3.7.
 
-1. **Trustworthy supervised loop.** Close MVP critical path A in the order
-   listed at the top of this file. The first four prevent unsafe or dishonest
-   execution; the next four prevent malformed, stuck, manually completed or
-   un-cancellable work. Record one merged end-to-end proof and cross the
-   Operational MVP boundary.
-2. **Release 3.7 — Portfolio Value Proof.** Capture decisions before the first
-   preview, stage previews without applying them, produce the portfolio brief,
-   execute five independently checked improvements, then record the rollout
-   decision. This crosses the Value-proven MVP boundary.
-3. **Prepare governed autonomy.** Close one-manifest-walk and D-001. D-001 is
-   required before a scheduler may choose a dependent second unit; the manifest
-   walk prevents execution readiness from relying on three drifting scans.
-4. **Release 3.9 — Governed Autonomous Delivery.** Execute G39-01 through
-   G39-09 in order. Later items may be developed on isolated branches only when
-   their declared dependencies are already merged; no stacked branch may
-   assume an unmerged schema or event vocabulary.
-5. **Release 4.0 — Adaptive Routing.** Optimize provider selection only after
-   the guarded-autonomy pilot proves that the control plane can safely execute
-   what the router selects.
+1. **Release 3.7 — Portfolio Value Proof** is the next engineering
+   release (execution contract in §6). The model fixes the first cohort pass
+   exposed — kind detection (M4a and its follow-through), limiting foundation
+   by kind applicability (M4b), next action by the kind of gap (M4c) — and the
+   lifecycle/conclusion consistency contract were verified 2026-09-14 and
+   archived. What remains, in order: the accept/reject ledger, so responses
+   to previews are captured from the first one; M5 prep, staging the
+   previews; the portfolio brief; measured execution; the rollout decision.
+   3.7 needs Ben for the approvals, not for the engineering. Every release
+   from 1.x through 3.6 is engineering-closed; new work is still proposed as a
+   release with its own contract, never appended to a closed one.
+2. **Release 2.9 — the active release.** Its engineering half closed
+   2026-08-26 (archived); what remains is the operator half, batched and
+   waiting on Ben's presence at the machine.
+3. **Release 3.6 field proof** — OQ-1 in the operator queue: eyes on the
+   `Today` landing, the outcome card and the Insights leverage panel.
+   Engineering closed 2026-09-14; the proof ratchets the archived record and
+   holds nothing.
+4. **One batched operator session** — an elevated shell covers the watchdog,
+   the service installer and 2.7's freeze-prevention deploy; one authenticated
+   shell covers the `gh agent-task` run and the re-homed 3.1/3.5 live-portal
+   proofs. Batching is the whole point: the operator, not the code, is the
+   scarce resource.
+5. **Trend accrual** closes itself as calendar time passes, provided capture
+   keeps running.
+6. **Mobile completion (2.9)** — un-deferred 2026-08-19 when its resume
+   condition was met; both engineering items shipped the same day (archived),
+   and the physical-Android proof rides the operator batch above.
 
-Release 2.9 field proof, Release 3.6 surface verification, physical Android
-proof and 90-day trend accrual continue in parallel through the operator queue.
-They ratchet claims but do not hold the engineering queue or either MVP
-boundary unless they expose a contradiction in a claimed workflow.
+**Where Release 3.8 sits — after the trial, not before it.** The value trial
+measures the delivery loop as it exists; Release 3.8 changes what runs inside
+that loop. Defining it now (2026-09-06, from the
+[execution-governance spec](docs/governance/Agent-Execution-Governance.md)) is
+deliberate: the trial's false positives and bad recommendations then land
+against a named target instead of an unwritten one. Two of its dependencies are
+already satisfiable in parallel — D-001's dependency notion and D-003's
+`Checks: Read` grant — and both are listed in the map below.
 
 **Dependency map (agent-closable work only; operator rows live in
 [`operator-queue.md`](docs/governance/operator-queue.md)):**
 
-| Open item                             | Depends on                                                  | Type               |
-| ------------------------------------- | ----------------------------------------------------------- | ------------------ |
-| Lane 0.21 request-thread budget       | nothing                                                     | none               |
-| Lane 0.22 fixture isolation           | nothing                                                     | none               |
-| Lane 0.22 dispatch eligibility        | fixture isolation for truthful live proof                   | hard — engineering |
-| D-012 permission envelope             | nothing                                                     | none               |
-| Lane 0.22 actionable-work filter      | dispatch eligibility contract                               | hard — engineering |
-| Lane 0.22 stuck/close/cancel evidence | fixture isolation; canonical execution events from 3.8      | hard — engineering |
-| Operational MVP proof harness         | all preceding MVP-A engineering gates                       | hard — engineering |
-| Operational MVP field proof           | proof harness; one supervised operator SHA approval         | operator queue     |
-| 3.7 accept/reject ledger              | nothing                                                     | none               |
-| 3.7 M5 previews staged                | ledger; OQ-12 live kind signals                             | sequencing         |
-| 3.7 portfolio brief                   | two conclusion payloads                                     | none               |
-| 3.7 measured execution and decision   | Operational MVP proof; previews; operator approvals in OQ-3 | operator queue     |
-| D-001 dependency notion               | Value-proven MVP ruling                                     | policy sequencing  |
-| Release 3.9 G39-01                    | Value-proven MVP; Steering v3 adopted                       | hard — governance  |
-| Release 3.9 G39-02 through G39-08     | predecessor milestone merged                                | hard — engineering |
-| Release 3.9 G39-09 pilot              | G39-01 through G39-08; low-risk pilot repository selected   | hard — proof       |
-| Release 4.0                           | Guarded Autonomy V1 proof                                   | hard — product     |
-| 2.9 trend accrual                     | calendar time                                               | time-gated         |
+| Open item                                 | Depends on                                             | Type               |
+| ----------------------------------------- | ------------------------------------------------------ | ------------------ |
+| 3.7 accept/reject ledger                  | nothing                                                | none               |
+| 3.7 M5 previews staged                    | the ledger; OQ-12 (live index carries kind signals)    | soft — sequencing  |
+| 3.7 portfolio brief                       | nothing — two conclusion payloads already exist        | none               |
+| 3.7 measured execution + rollout decision | operator approvals (queue item OQ-3)                   | **operator queue** |
+| One manifest walk                         | nothing                                                | none               |
+| 3.8 D-001 dependency notion               | nothing                                                | none               |
+| 3.8 provider-aware scheduler              | 3.7 rollout decision; D-003 grant (OQ-5)               | soft — sequencing  |
+| Lane 0.19 verify tab                      | nothing                                                | none               |
+| Lane 0.5 tab disclosure                   | product decision — `open-decisions.md`                 | hard — design      |
+| 2.9 trend accrual                         | calendar time                                          | time-gated         |
 
 ---
 
 ## 5. Active Release Snapshot
 
-### Active release detail — 3.7 Portfolio Value Proof
+### Active release detail — 2.9 Operator Field Proof + Mobile Completion
 
-Release 3.7 is the active engineering release. Its cohort selection,
-conclusion capture, kind-aware applicability, gap-specific next actions and
-lifecycle/conclusion consistency work are already integrated. Its remaining
-work has two gates before measured execution: the operational loop must first
-be trustworthy enough that the trial does not measure fixture pollution,
-contradictory eligibility or a blocked portal; then every approval must land in
-the accept/reject ledger before an approved preview is applied.
+Release 2.9 became the active release 2026-08-19. Its two halves have opposite
+shapes: **the operator half waits on Ben and cannot be advanced by an agent**
+(SYSTEM rights, a physical device, eyes on a browser, an interactive
+credential prompt — listed, batched, ready), and **the engineering half is
+closed** — the three foundations-first items resequenced 2026-08-23 closed
+2026-08-26 (archived), as did the two mobile engineering items on 2026-08-19.
 
-The full execution contract lives in
-[Release 3.7 below](#release-37--portfolio-value-proof). The top-of-file MVP
-critical path is the authoritative work order. Release 2.9 remains a
-field-validation track only; its operator tasks never displace the first
-dependency-ready engineering item.
+The full execution contract lives in one place,
+[Release 2.9 below](#release-29--operator-field-proof--mobile-completion); this
+heading exists so the validator can resolve the active-release pointer.
 
-**Current focus:** close MVP critical path A, record the Operational MVP proof,
-then finish Release 3.7 M5 through M7. Do not start Release 3.9 implementation
-or the D-022 information-architecture redesign while this sequence remains
-open.
+**Current focus:** the operator batch — it rides Ben's next session at the
+machine. The engineering half is closed: the three foundations-first items
+(the two readiness gates that disagreed about the same repo, the two routes
+that named one concept two ways, the L1/L2 repair path) closed 2026-08-26
+([evidence](evidence/verified/release-2.9-foundations-closed-2026-08-26.md));
+the two mobile engineering items shipped 2026-08-19. Engineering attention
+moves to Release 3.6.
 
 ---
 
@@ -516,10 +390,10 @@ open.
 
 ### Release 2.9 — Operator Field Proof + Mobile Completion
 
-**Status:** VALIDATION TRACK — its engineering is closed. Mobile completion is
-un-deferred, but remaining work requires elevation, authentication, a physical
-device or elapsed calendar time and therefore lives outside the agent critical
-path.
+**Status:** ACTIVE — promoted 2026-08-19 when Release 3.3 closed and left no
+unblocked engineering release behind it. Mobile completion is **un-deferred**
+in the same move: its 2026-08-11 resume condition (a PC workflow that runs to
+completion) has been met three times over.
 
 **Goal:** convert every surface that is `smoke-tested` but still waits on an
 external resource into `operator-verified` with durable evidence. (The three
@@ -654,11 +528,10 @@ half depends on none of these.
 
 ### Release 3.7 — Portfolio Value Proof
 
-**Status:** ACTIVE — defined 2026-08-23; critical path revised 2026-09-18.
-Follows Release 3.6. Measured execution is held until MVP critical path A, the
-decision ledger, staged previews and required operator approvals are ready.
-Its job is to make the product earn an MVP claim against the real portfolio,
-not against its own test suite.
+**Status:** planned — defined 2026-08-23; sequencing approved 2026-09-05.
+Follows Release 3.6. Measured execution is held until the truth checks, live
+operator verification and ten-category cohort are ready. Its job is to make
+the product earn its next release against the real portfolio, not itself.
 
 Preparation and per-repository evidence: [trial record](evidence/trials/release-3.7/README.md)
 and `evidence/trials/release-3.7/cohort.json`. Nine candidates are named; the
@@ -744,21 +617,21 @@ carries `modelVersion` and the index SHA it was drawn under.
 
 **Still open:**
 
-- **M6 — execute at least five improvements** through preview → approve →
-  execute → validate, recording operator minutes, agent first-pass
-  result, and whether the repository is materially stronger afterwards —
-  appropriate-as-is or archive counts as a conclusion outcome, not automatically
-  as one of the five improvements. Each counted improvement needs an
-  independently checked acceptance criterion and before/after evidence;
-  merge evidence alone is insufficient. The dispatchable checkbox and check
-  are in Current focus; this paragraph is the release contract, not a
-  second work item. Validation is the M6 `check:` in Current focus.
-- **M7 — adjust and decide** — every false positive or bad recommendation the
-  executed improvements expose is either fixed as a rule change carrying
-  `observedOn` or recorded with its reason, and the go/no-go for the full
-  rollout is recorded with the leverage numbers behind it. The check asserts
-  that record, never a distribution over the cohort (steering §6). The
-  dispatchable checkbox and validation command are in Current focus.
+- [ ] **Execute at least five improvements** through preview → approve →
+      execute → validate, recording operator minutes, agent first-pass
+      result, and whether the repository is materially stronger afterwards —
+      appropriate-as-is or archive counts as a conclusion outcome, not automatically
+      as one of the five improvements. Each counted improvement needs an
+      independently checked acceptance criterion and before/after evidence;
+      merge evidence alone is insufficient. _(state: planned)_
+      `check: pwsh ./tests/Test-TrialExecution.ps1 -Cohort evidence/trials/release-3.7/cohort.json -MinCountedImprovements 5`
+- [ ] **Adjust and decide** — every false positive or bad recommendation the
+      executed improvements expose is either fixed as a rule change carrying
+      `observedOn` or recorded with its reason, and the go/no-go for the full
+      rollout is recorded with the leverage numbers behind it. The check asserts
+      that record, never a distribution over the cohort (steering §6).
+      _(state: planned)_
+      `check: pwsh ./tests/Test-TrialDecision.ps1 -Cohort evidence/trials/release-3.7/cohort.json -FailOnError`
 
 #### Acceptance criteria
 
@@ -785,10 +658,8 @@ arbiter for any product fix the nine expose.
 prevents it); counting a repair as an improvement when the repository is not
 stronger (outcome quality is recorded, not assumed).
 
-**Dependencies:** MVP critical path A; the decision ledger and staged previews;
-the operator's approvals and measured effort. Release 3.6 field proof (OQ-1)
-continues in parallel and blocks only if it contradicts the cohort evidence.
-**D-006 no longer blocks the
+**Dependencies:** Lane 0.15 truth validation; Release 3.6 field proof (OQ-1);
+the operator's approvals and measured effort. **D-006 no longer blocks the
 cohort** (decided 2026-09-06): external management is owner intent and may not
 be inferred, so a category with no natural member is recorded as unrepresented
 rather than filled by a substitute. The trial proceeds with nine named
@@ -803,11 +674,8 @@ complete 2026-09-11. The design authority is
 [`docs/governance/Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md);
 this block carries only milestones and gates. It supersedes the 2026-07-07
 decisions in [`docs/execution-orchestrator-design.md`](docs/execution-orchestrator-design.md),
-whose P0 is the only part ever built. It was originally specified to follow
-Release 3.7 but engineering closed ahead of the measured trial. Statements in
-this historical block that keep merge as an explicit operator action describe
-the 3.8 boundary; Release 3.9 deliberately supersedes that boundary without
-rewriting what 3.8 proved.
+whose P0 is the only part ever built. Follows Release 3.7 — the value trial
+measures the loop that exists, and this release changes what runs inside it.
 
 **Goal:** the work contract becomes provider-neutral and the scheduler becomes
 provider-aware. A task carries objective, scope, acceptance criteria,
@@ -827,224 +695,218 @@ to the queue — never fails it — when a provider is exhausted.
 
 #### Engineering milestones
 
-**Historical record — do not dispatch these bullets.** All were integrated by
-2026-09-11. G39-01 moves this block verbatim to
-`docs/history/completed-releases.md`; it remains here only so the contract
-migration can cite the exact 3.8 boundary it supersedes.
-
-- **Give a task a provider-neutral contract and a structured result.** A
-  `WorkPacket` (objective, scope paths, acceptance criteria, verification
-  commands, permission envelope) persisted outside the commit-eligible tree,
-  which each adapter renders into its own prompt.
-  [`Roadmap.Dispatcher.ps1`](backend/modules/roadmap/Roadmap.Dispatcher.ps1)
-  builds prose today and nothing reads a result back. A run producing no
-  structured `ExecutionResult` fails by name instead of reaching
-  `awaiting-review`. _(state: built 2026-09-07 — H38-01 WorkPacket schema v1
-  under output/work-packets/; H38-02 dispatch and approval both save one and
-  carry workPacketPath; H38-03 ExecutionResult schema v1, a headless run with
-  no/invalid result is failed by name; H38-04 Adapter.Claude.ps1 parses
-  stream-json, session_id and usage recorded on the run's result.json;
-  H38-05 ConvertTo-WorkPacketPrompt renders the packet with criteria
-  verbatim, enforcement waits on D-012)_
-  `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- **Persist capacity per provider, in the provider's own unit.** Named
-  windows with `remainingRatio`, `resetAt` and a confidence rank; reserves
-  and ranking weights live in `backend/config/`, not in code.
-  [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1) keeps the
-  portfolio work-unit quota and gains no token conversion it cannot source.
-  A limit re-queues the task with workspace, branch, attempt and session
-  intact. _(state: built 2026-09-07 — H38-07 added
-  agent-providers.json (schemaVersion v1) and Get-AgentProviderConfig;
-  ranking weights and tieBreak are the decided D-013 values; corrected the
-  same day — `providers.<name>.supported` replaces `enabled`, a repository fact
-  CI can verify, because whether a provider is installed and funded is
-  per-installation state detected at runtime and shown in Settings, never
-  committed on every operator's behalf; H38-08
-  Execution.ProviderCapacity.ps1 — one record per provider under
-  output/provider-capacity/, native units preserved, confidence from the
-  spec's six-source ladder, and a merge that refuses to let a worse source
-  overwrite a better one; H38-09 Resolve-ProviderCapacityVerdict applies the
-  D-011 reserves (15% short, 20% weekly, decided 2026-09-07 and no longer
-  provisional; remediation may use the weekly reserve; operator override
-  recorded in the reason) — enforcement stays OFF because the per-task cost
-  estimate is still a guess, so verdicts are recorded and refuse nobody;
-  H38-10 a matched limit signal writes status=queued with capacityWait and
-  sets the provider's cooldownUntil — branch, attempt and session survive,
-  and the run does not commit; before this a limit fell through to
-  verify-commit-push and called an exhausted subscription ready for
-  review; H38-11 Test-RunnerClaimAllowed — no claim during cooldown or with
-  the one local slot busy, an unknown target refused by name rather than run
-  as claude, auto deferred to the router; a running summary counts only
-  while the heartbeat pid is live, and startup marks orphans
-  failed/orphaned with branch and session kept; H38-12 usage observations
-  accumulate as rank-4 evidence without ever moving a window ratio — token
-  telemetry is not subscription capacity — and GET /api/providers reports
-  the record, the verdict and its reason per provider; H38-13 closed the
-  milestone — six module-smoke sections green in one run, capacity and
-  cooldown documented in local-task-runner.md, and the delivery-loop
-  addendum names where a wait is persisted)_
-  `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- **Route between providers, and add the Codex adapter.** One registry
-  replaces the `claude`/`copilot` pair hardcoded in
-  [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1),
-  [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) and
-  `frontend/types.ts`, and reconciles the third vocabulary
-  (`operator-runner`) the approval route writes. Eligibility then ranking,
-  selection reason recorded, presence counts derived from the registry
-  rather than naming providers. _(state: built 2026-09-08 —
-  H38-14 Execution.ProviderRegistry.ps1 is the one token list (claude,
-  codex, copilot, auto); the queue module and the runner delegate to it,
-  and the two ValidateSet attributes that cannot are gated against it so
-  drift fails a smoke rather than rejecting a valid provider unnoticed;
-  Invoke-QueuedTask now refuses a known token it has no branch for, so the
-  wider vocabulary cannot run Claude Code in codex's place; H38-15
-  seven-function adapter contract gated per supported provider, naming
-  every missing function at once; Adapter.Copilot.ps1 holds the three moved
-  runner functions unchanged, asserted byte-identical, and a cloud dispatch
-  now writes an ExecutionResult like every other provider; H38-15b provider
-  availability detected per installation (PATH probe, and deliberately no
-  authentication — proving an account works would spend its quota) and
-  surfaced in GET /setup/prerequisites, which the setup wizard already
-  renders, plus GET /api/providers; the operator opt-out lives in an
-  untracked installation.local.json that a gate refuses to let become
-  tracked; H38-16 Adapter.Codex.ps1 from a synthetic codex exec --json
-  transcript, with the thread id and the terminal turn matched exactly
-  rather than by pattern — item.id and item.completed both match the loose
-  forms and mean something else entirely; the runner runs codex tasks
-  through the same branch, launch, parse, verify and commit path, with the
-  provider held in a variable at every launch and ledger site so a codex
-  run is never recorded, rested or billed as a claude one; H38-17
-  Resolve-ProviderSelection is eligibility THEN ranking with the reason
-  recorded — every Stage 1 condition is kept per candidate whether it
-  passed or failed and the first failure becomes ineligibleBecause, so a
-  provider that is never chosen is explainable without reading a log;
-  Stage 2 weights eight factors each normalised to [0,1] and a tie names
-  the rule that broke it. An unenforced capacity verdict is recorded as
-  advisory and does not exclude, because D-011 left the per-task estimate
-  provisional and refusing work on a guessed cost would block real
-  execution on an unmeasured number. The runner resolves `auto` at CLAIM
-  time, not enqueue time, since capacity and cooldowns move in between,
-  and writes selectedProvider and selectionReason onto the run summary;
-  with no eligible provider the entry stays queued rather than failing.
-  dispatch.autoEnabled and defaultTarget are now true/auto (D-013), and
-  the config tripwire inverted to guard that rather than disappearing;
-  H38-18 dispatch/execute takes a target (default from config, auto
-  refused when the config disables it), approval reports the real token,
-  backlog is counted per registry token — queuedClaude/queuedCopilot
-  unchanged; H38-19 ProviderToken union, queuedByProvider on the presence
-  payload, preview names the intended provider; H38-19b Settings shows each
-  provider as available, not installed, switched off or not in this build,
-  and the opt-out writes per-machine state that is never committed.)_
-  `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- **Move push and PR opening to Repo Manager; bind approval to the verified
-  SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
-  opens the pull request and monitors CI on a cadence without holding an
-  execution slot — which also closes Lane 0.17's open "nothing refreshes the
-  board" non-blocker. A head change after verification invalidates
-  `READY_FOR_OPERATOR`. Merge stays an explicit operator action **for the
-  3.8 contract**; G39-01 and G39-06 supersede this state and boundary.
-  _(state: built 2026-09-08 — H38-21 `Resolve-PostImplementationTransition`
-  and `Invoke-RunnerBranchPush` in
-  [`scripts/Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
-  push after a complete, verified result (`autoPush` per provider, default on
-  for local providers); awaiting-review survives at off or on push failure,
-  and the default branch is refused before git is asked. H38-22
-  `Invoke-DeliveryReconciliation` and `POST /api/delivery/reconcile` in
-  [`backend/api-host/Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
-  open pending PRs with the host's token and refresh CI; the runner calls it
-  every fourth poll. H38-23 `Invoke-AgentRunRefresh` in
-  [`backend/modules/agent-runs/AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1)
-  records `prHeadSha` and `verifiedHeadSha` only when CI passed on that exact
-  head; a moved head clears it and emits `run.head-moved`. H38-24
-  `POST /api/agent-runs/{id}/approve` stores `operatorApproval` bound to
-  `verifiedHeadSha`, and `Get-MergeReadinessEvaluation` in
-  [`backend/modules/agent-runs/MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1)
-  refuses `no-verified-head`, `no-operator-approval` and
-  `head-moved-since-approval`. H38-25 the merge control in
-  [`frontend/components/OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
-  shows and approves the verified SHA and disables on head drift. H38-24b
-  risk-based independent review in
-  [`backend/modules/execution/Execution.ReviewPolicy.ps1`](backend/modules/execution/Execution.ReviewPolicy.ps1)
-  — high risk requires a different provider, medium risk requires one on
-  four named triggers, and the reviewer is never the implementer. All six
-  are gated in
-  [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1)
-  and [`OperationsWorkspaceView.test.tsx`](frontend/components/OperationsWorkspaceView.test.tsx))_
-  `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- **Remediate from evidence, and hand off between providers.** Attempt and
-  remediation counts survive a restart; a CI failure builds a
-  `RemediationPacket`, resumes the original session where capacity allows,
-  and otherwise transfers a `HandoffPacket` of durable evidence to another
-  eligible provider. No provider depends on another's conversation.
-  _(state: built 2026-09-09 — H38-27 `attempt` and `remediationCount` live on the run summary, written with the claim so a crash cannot lose them, and `Write-RemediationAttempt` in
-  [`backend/modules/execution/Execution.WorkPacket.ps1`](backend/modules/execution/Execution.WorkPacket.ps1)
-  persists the incremented count before it evaluates the cap; an
-  unwritable summary throws rather than returning a verdict. H38-28b
-  provider and model are separate fields across registry, capacity and
-  routing records, with a pre-packet record's model marked inferred rather
-  than observed; every provider declares `unknown` explicitly, because no
-  model identifier is determinable without running a CLI (R12); H38-28
-  `New-RemediationPacket` carries the CI failures as acceptance criteria
-  and the prior session/provider, with the original criteria surviving
-  verbatim as a superset; H38-29 `Resolve-RemediationRoute` resumes the
-  original session when it exists, the provider supports it and
-  remediation capacity allows, and `Resolve-RemediationLaunch` evaluates
-  the cap first so a halted attempt never builds an argument vector;
-  H38-30 `New-HandoffPacket` carries only durable evidence — a
-  `priorResult` holding a transcript is refused by name and by length —
-  and a switch excludes the previous provider through the router's new
-  `-Exclude` and starts a fresh session; H38-31 the reconcile tick enqueues
-  one remediation per failing CI run, idempotent on the Actions run URL,
-  cap checked first, target read from `dispatch.defaultTarget` rather than
-  any literal — the host enqueues and never executes, so resume-versus-
-  handoff stays a claim-time decision made against the capacity that is
-  true then)_
-  `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- **Normalize execution events onto the Dispatch Board.** Provider output
-  converts to the canonical `execution.*` vocabulary, reconciled with
-  [`roadmap-events.md`](standards/roadmap/roadmap-events.md) so exactly one
-  is canonical. New states arrive as a mapped dimension in
-  [`status-vocabulary.md`](docs/reference/status-vocabulary.md), keeping the
-  Release 3.5 rule that no two dimensions share a word. Per D-008 this is
-  the one surface that dispatches. _(state: built 2026-09-11 —
-  H38-34 `Execution.Events.ps1` defines the 14-type canonical
-  `execution.*` vocabulary; `New-ExecutionEvent` rejects unknown types so a
-  producer typo fails immediately; `Test-ExecutionEvent` validates all
-  required envelope fields; `Get-DeliveryState` maps run-summary and
-  lane-verdict strings to the ALL_CAPS delivery states from the spec,
-  returns `$null` for unknown inputs, and is case-insensitive.
-  `docs/reference/status-vocabulary.md` now documents the sixth dimension
-  with its full state progression; the ALL_CAPS invariant is gated in the
-  smoke so no delivery state word can collide with the five existing
-  dimensions. `roadmap-events.md` is complementary and non-overlapping:
-  `execution.*` events are per-agent-run step events; `roadmap-events.jsonl`
-  is phase-level lifecycle history.)_
-  `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- **Amendments from the execution strategy — the three that are cheap now
-  and expensive later.** Absorbed into
-  [`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
-  on 2026-09-08. These three are in 3.8 **only** because a packet that has
-  not been written yet is their natural home; deferring them means reopening
-  work that has already shipped. Everything else the strategy adds is
-  Release 4.0. **(a)** Cost, duration and first-pass telemetry join the
-  canonical `execution.*` vocabulary as it is defined, not after — adding
-  them later is a second vocabulary migration through the reconciliation
-  that follows it, and no run executed before then can be costed
-  retroactively. **(b)** Provider and model become separate fields before
-  the resume path encodes provider-only session assumptions. **(c)**
-  Risk-based independent review enters the approval flow while that flow is
-  being built, rather than reopening the approve-binds-to-SHA contract and
-  its frontend afterwards. _(state: built 2026-09-11 —
-  **(a)** H38-35: `New-ExecutionCompletedPayload` adds `startTime`,
-  `completionTime`, `durationSeconds`, `cost` (with unit), `firstPassSuccess`,
-  `inputTokens`, `outputTokens`, and `attemptCount` to the
-  `execution.completed` event payload; duration is computed from timestamps
-  when both are present, cost is `$null` when no unit-cost is measurable
-  (subscription allowances carry no per-token price), and the payload
-  attaches to a full `execution.completed` event via `New-ExecutionEvent`.
-  **(b)** Delivered 2026-09-08 as H38-28b. **(c)** Delivered 2026-09-08 as
-  H38-24b.)_
-  `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Give a task a provider-neutral contract and a structured result.** A
+      `WorkPacket` (objective, scope paths, acceptance criteria, verification
+      commands, permission envelope) persisted outside the commit-eligible tree,
+      which each adapter renders into its own prompt.
+      [`Roadmap.Dispatcher.ps1`](backend/modules/roadmap/Roadmap.Dispatcher.ps1)
+      builds prose today and nothing reads a result back. A run producing no
+      structured `ExecutionResult` fails by name instead of reaching
+      `awaiting-review`. _(state: built 2026-09-07 — H38-01 WorkPacket schema v1
+      under output/work-packets/; H38-02 dispatch and approval both save one and
+      carry workPacketPath; H38-03 ExecutionResult schema v1, a headless run with
+      no/invalid result is failed by name; H38-04 Adapter.Claude.ps1 parses
+      stream-json, session_id and usage recorded on the run's result.json;
+      H38-05 ConvertTo-WorkPacketPrompt renders the packet with criteria
+      verbatim, enforcement waits on D-012)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Persist capacity per provider, in the provider's own unit.** Named
+      windows with `remainingRatio`, `resetAt` and a confidence rank; reserves
+      and ranking weights live in `backend/config/`, not in code.
+      [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1) keeps the
+      portfolio work-unit quota and gains no token conversion it cannot source.
+      A limit re-queues the task with workspace, branch, attempt and session
+      intact. _(state: built 2026-09-07 — H38-07 added
+      agent-providers.json (schemaVersion v1) and Get-AgentProviderConfig;
+      ranking weights and tieBreak are the decided D-013 values; corrected the
+      same day — `providers.<name>.supported` replaces `enabled`, a repository fact
+      CI can verify, because whether a provider is installed and funded is
+      per-installation state detected at runtime and shown in Settings, never
+      committed on every operator's behalf; H38-08
+      Execution.ProviderCapacity.ps1 — one record per provider under
+      output/provider-capacity/, native units preserved, confidence from the
+      spec's six-source ladder, and a merge that refuses to let a worse source
+      overwrite a better one; H38-09 Resolve-ProviderCapacityVerdict applies the
+      D-011 reserves (15% short, 20% weekly, decided 2026-09-07 and no longer
+      provisional; remediation may use the weekly reserve; operator override
+      recorded in the reason) — enforcement stays OFF because the per-task cost
+      estimate is still a guess, so verdicts are recorded and refuse nobody;
+      H38-10 a matched limit signal writes status=queued with capacityWait and
+      sets the provider's cooldownUntil — branch, attempt and session survive,
+      and the run does not commit; before this a limit fell through to
+      verify-commit-push and called an exhausted subscription ready for
+      review; H38-11 Test-RunnerClaimAllowed — no claim during cooldown or with
+      the one local slot busy, an unknown target refused by name rather than run
+      as claude, auto deferred to the router; a running summary counts only
+      while the heartbeat pid is live, and startup marks orphans
+      failed/orphaned with branch and session kept; H38-12 usage observations
+      accumulate as rank-4 evidence without ever moving a window ratio — token
+      telemetry is not subscription capacity — and GET /api/providers reports
+      the record, the verdict and its reason per provider; H38-13 closed the
+      milestone — six module-smoke sections green in one run, capacity and
+      cooldown documented in local-task-runner.md, and the delivery-loop
+      addendum names where a wait is persisted)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Route between providers, and add the Codex adapter.** One registry
+      replaces the `claude`/`copilot` pair hardcoded in
+      [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1),
+      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) and
+      `frontend/types.ts`, and reconciles the third vocabulary
+      (`operator-runner`) the approval route writes. Eligibility then ranking,
+      selection reason recorded, presence counts derived from the registry
+      rather than naming providers. _(state: built 2026-09-08 —
+      H38-14 Execution.ProviderRegistry.ps1 is the one token list (claude,
+      codex, copilot, auto); the queue module and the runner delegate to it,
+      and the two ValidateSet attributes that cannot are gated against it so
+      drift fails a smoke rather than rejecting a valid provider unnoticed;
+      Invoke-QueuedTask now refuses a known token it has no branch for, so the
+      wider vocabulary cannot run Claude Code in codex's place; H38-15
+      seven-function adapter contract gated per supported provider, naming
+      every missing function at once; Adapter.Copilot.ps1 holds the three moved
+      runner functions unchanged, asserted byte-identical, and a cloud dispatch
+      now writes an ExecutionResult like every other provider; H38-15b provider
+      availability detected per installation (PATH probe, and deliberately no
+      authentication — proving an account works would spend its quota) and
+      surfaced in GET /setup/prerequisites, which the setup wizard already
+      renders, plus GET /api/providers; the operator opt-out lives in an
+      untracked installation.local.json that a gate refuses to let become
+      tracked; H38-16 Adapter.Codex.ps1 from a synthetic codex exec --json
+      transcript, with the thread id and the terminal turn matched exactly
+      rather than by pattern — item.id and item.completed both match the loose
+      forms and mean something else entirely; the runner runs codex tasks
+      through the same branch, launch, parse, verify and commit path, with the
+      provider held in a variable at every launch and ledger site so a codex
+      run is never recorded, rested or billed as a claude one; H38-17
+      Resolve-ProviderSelection is eligibility THEN ranking with the reason
+      recorded — every Stage 1 condition is kept per candidate whether it
+      passed or failed and the first failure becomes ineligibleBecause, so a
+      provider that is never chosen is explainable without reading a log;
+      Stage 2 weights eight factors each normalised to [0,1] and a tie names
+      the rule that broke it. An unenforced capacity verdict is recorded as
+      advisory and does not exclude, because D-011 left the per-task estimate
+      provisional and refusing work on a guessed cost would block real
+      execution on an unmeasured number. The runner resolves `auto` at CLAIM
+      time, not enqueue time, since capacity and cooldowns move in between,
+      and writes selectedProvider and selectionReason onto the run summary;
+      with no eligible provider the entry stays queued rather than failing.
+      dispatch.autoEnabled and defaultTarget are now true/auto (D-013), and
+      the config tripwire inverted to guard that rather than disappearing;
+      H38-18 dispatch/execute takes a target (default from config, auto
+      refused when the config disables it), approval reports the real token,
+      backlog is counted per registry token — queuedClaude/queuedCopilot
+      unchanged; H38-19 ProviderToken union, queuedByProvider on the presence
+      payload, preview names the intended provider; H38-19b Settings shows each
+      provider as available, not installed, switched off or not in this build,
+      and the opt-out writes per-machine state that is never committed.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
+      SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
+      opens the pull request and monitors CI on a cadence without holding an
+      execution slot — which also closes Lane 0.17's open "nothing refreshes the
+      board" non-blocker. A head change after verification invalidates
+      `READY_FOR_OPERATOR`. Merge stays an explicit operator action.
+      _(state: built 2026-09-08 — H38-21 `Resolve-PostImplementationTransition`
+      and `Invoke-RunnerBranchPush` in
+      [`scripts/Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
+      push after a complete, verified result (`autoPush` per provider, default on
+      for local providers); awaiting-review survives at off or on push failure,
+      and the default branch is refused before git is asked. H38-22
+      `Invoke-DeliveryReconciliation` and `POST /api/delivery/reconcile` in
+      [`backend/api-host/Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+      open pending PRs with the host's token and refresh CI; the runner calls it
+      every fourth poll. H38-23 `Invoke-AgentRunRefresh` in
+      [`backend/modules/agent-runs/AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1)
+      records `prHeadSha` and `verifiedHeadSha` only when CI passed on that exact
+      head; a moved head clears it and emits `run.head-moved`. H38-24
+      `POST /api/agent-runs/{id}/approve` stores `operatorApproval` bound to
+      `verifiedHeadSha`, and `Get-MergeReadinessEvaluation` in
+      [`backend/modules/agent-runs/MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1)
+      refuses `no-verified-head`, `no-operator-approval` and
+      `head-moved-since-approval`. H38-25 the merge control in
+      [`frontend/components/OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
+      shows and approves the verified SHA and disables on head drift. H38-24b
+      risk-based independent review in
+      [`backend/modules/execution/Execution.ReviewPolicy.ps1`](backend/modules/execution/Execution.ReviewPolicy.ps1)
+      — high risk requires a different provider, medium risk requires one on
+      four named triggers, and the reviewer is never the implementer. All six
+      are gated in
+      [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1)
+      and [`OperationsWorkspaceView.test.tsx`](frontend/components/OperationsWorkspaceView.test.tsx))_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Remediate from evidence, and hand off between providers.** Attempt and
+      remediation counts survive a restart; a CI failure builds a
+      `RemediationPacket`, resumes the original session where capacity allows,
+      and otherwise transfers a `HandoffPacket` of durable evidence to another
+      eligible provider. No provider depends on another's conversation.
+      _(state: built 2026-09-09 — H38-27 `attempt` and `remediationCount` live on the run summary, written with the claim so a crash cannot lose them, and `Write-RemediationAttempt` in
+      [`backend/modules/execution/Execution.WorkPacket.ps1`](backend/modules/execution/Execution.WorkPacket.ps1)
+      persists the incremented count before it evaluates the cap; an
+      unwritable summary throws rather than returning a verdict. H38-28b
+      provider and model are separate fields across registry, capacity and
+      routing records, with a pre-packet record's model marked inferred rather
+      than observed; every provider declares `unknown` explicitly, because no
+      model identifier is determinable without running a CLI (R12); H38-28
+      `New-RemediationPacket` carries the CI failures as acceptance criteria
+      and the prior session/provider, with the original criteria surviving
+      verbatim as a superset; H38-29 `Resolve-RemediationRoute` resumes the
+      original session when it exists, the provider supports it and
+      remediation capacity allows, and `Resolve-RemediationLaunch` evaluates
+      the cap first so a halted attempt never builds an argument vector;
+      H38-30 `New-HandoffPacket` carries only durable evidence — a
+      `priorResult` holding a transcript is refused by name and by length —
+      and a switch excludes the previous provider through the router's new
+      `-Exclude` and starts a fresh session; H38-31 the reconcile tick enqueues
+      one remediation per failing CI run, idempotent on the Actions run URL,
+      cap checked first, target read from `dispatch.defaultTarget` rather than
+      any literal — the host enqueues and never executes, so resume-versus-
+      handoff stays a claim-time decision made against the capacity that is
+      true then)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Normalize execution events onto the Dispatch Board.** Provider output
+      converts to the canonical `execution.*` vocabulary, reconciled with
+      [`roadmap-events.md`](standards/roadmap/roadmap-events.md) so exactly one
+      is canonical. New states arrive as a mapped dimension in
+      [`status-vocabulary.md`](docs/reference/status-vocabulary.md), keeping the
+      Release 3.5 rule that no two dimensions share a word. Per D-008 this is
+      the one surface that dispatches. _(state: built 2026-09-11 —
+      H38-34 `Execution.Events.ps1` defines the 14-type canonical
+      `execution.*` vocabulary; `New-ExecutionEvent` rejects unknown types so a
+      producer typo fails immediately; `Test-ExecutionEvent` validates all
+      required envelope fields; `Get-DeliveryState` maps run-summary and
+      lane-verdict strings to the ALL_CAPS delivery states from the spec,
+      returns `$null` for unknown inputs, and is case-insensitive.
+      `docs/reference/status-vocabulary.md` now documents the sixth dimension
+      with its full state progression; the ALL_CAPS invariant is gated in the
+      smoke so no delivery state word can collide with the five existing
+      dimensions. `roadmap-events.md` is complementary and non-overlapping:
+      `execution.*` events are per-agent-run step events; `roadmap-events.jsonl`
+      is phase-level lifecycle history.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Amendments from the execution strategy — the three that are cheap now
+      and expensive later.** Absorbed into
+      [`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
+      on 2026-09-08. These three are in 3.8 **only** because a packet that has
+      not been written yet is their natural home; deferring them means reopening
+      work that has already shipped. Everything else the strategy adds is
+      Release 3.9. **(a)** Cost, duration and first-pass telemetry join the
+      canonical `execution.*` vocabulary as it is defined, not after — adding
+      them later is a second vocabulary migration through the reconciliation
+      that follows it, and no run executed before then can be costed
+      retroactively. **(b)** Provider and model become separate fields before
+      the resume path encodes provider-only session assumptions. **(c)**
+      Risk-based independent review enters the approval flow while that flow is
+      being built, rather than reopening the approve-binds-to-SHA contract and
+      its frontend afterwards. _(state: built 2026-09-11 —
+      **(a)** H38-35: `New-ExecutionCompletedPayload` adds `startTime`,
+      `completionTime`, `durationSeconds`, `cost` (with unit), `firstPassSuccess`,
+      `inputTokens`, `outputTokens`, and `attemptCount` to the
+      `execution.completed` event payload; duration is computed from timestamps
+      when both are present, cost is `$null` when no unit-cost is measurable
+      (subscription allowances carry no per-token price), and the payload
+      attaches to a full `execution.completed` event via `New-ExecutionEvent`.
+      **(b)** Delivered 2026-09-08 as H38-28b. **(c)** Delivered 2026-09-08 as
+      H38-24b.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 
 #### Acceptance criteria
 
@@ -1065,8 +927,7 @@ migration can cite the exact 3.8 boundary it supersedes.
 - Concurrency above one local execution slot, raised only after capacity
   accounting, session persistence, CI reconciliation and restart recovery are
   proven.
-- Automatic merge was out of scope for Release 3.8. Release 3.9 may add
-  mandate-authorized guarded promotion without changing what 3.8 proved.
+- Automatic merge. The promotion boundary stays an explicit operator action.
 
 **Validation plan:** module smoke covers the pure decision tables — eligibility,
 ranking, capacity arithmetic, handoff construction — offline, in the shape
@@ -1078,287 +939,19 @@ envelope (the contract forbids it and a gate asserts it); equating provider
 token telemetry with remaining subscription allowance; reserves set so high that
 ordinary work starves.
 
-**Historical dependency note:** 3.8 closed provider routing and recovery
-without claiming autonomous dependent-unit scheduling. D-001 therefore remains
-open and is reassigned as a hard Release 3.9 prerequisite. D-003's `Checks:
-Read` grant remains necessary wherever check-run detail is available; Release
-3.7 supplies the measured baseline for later comparison, not a reason to reopen
-3.8.
+**Dependencies:** D-001 for the dependency clause of eligibility; D-003's
+`Checks: Read` grant for check-run-level CI evidence; Release 3.7's trial for
+the measured baseline this release changes.
 
 ---
 
-### Release 3.9 — Governed Autonomous Delivery
+### Release 3.9 — Adaptive Routing
 
-**Status:** planned — introduced 2026-09-18 from Steering contracts 8 and
-12-14. Begins only after the Release 3.7 rollout decision, one-manifest-walk
-and D-001 are integrated. Execute G39-01 through G39-09 in order; a later item
-may not invent a provisional form of an earlier contract.
-
-**Goal:** the owner authorizes a bounded phase once. Repo Manager then selects
-each dependency-ready work unit, prepares and dispatches it, verifies the exact
-result, remediates ordinary failures, promotes eligible PRs under deterministic
-policy, verifies each merge, reconciles the roadmap and continues until the
-phase completes or a decision genuinely exceeds the mandate.
-
-This release does not give an agent permission to merge. It gives the
-orchestrator a versioned, revocable authority contract and gives deterministic
-policy the responsibility to decide whether independently collected evidence
-satisfies it.
-
-#### Product outcomes
-
-- Routine roadmap execution no longer waits for repeated approval already
-  granted at the phase boundary.
-- The owner can see exactly what was authorized, what authority remains, why
-  execution advanced, and why it paused.
-- A provider session may disappear without losing the mandate, selected unit,
-  branch, PR, verification, remediation or reconciliation state.
-- No green check, model statement or roadmap checkbox can independently create
-  a `COMPLETE` delivery event.
-
-#### Canonical artifacts and ownership
-
-Use these paths unless the repository already contains an exact canonical
-equivalent; if it does, migrate that equivalent rather than create a second
-authority:
-
-| Concern                     | Canonical artifact                                                             |
-| --------------------------- | ------------------------------------------------------------------------------ |
-| mandate schema              | `standards/execution/execution-mandate.schema.json`                            |
-| readiness schema            | `standards/execution/execution-readiness.schema.json`                          |
-| escalation schema           | `standards/execution/execution-escalation.schema.json`                         |
-| deterministic policy config | `backend/config/execution-policy.json` (`schemaVersion: v1`)                   |
-| mandate decisions           | `backend/modules/execution/Execution.Mandate.ps1`                              |
-| readiness decisions         | `backend/modules/execution/Execution.Readiness.ps1`                            |
-| scheduling decisions        | `backend/modules/execution/Execution.Scheduler.ps1`                            |
-| promotion decisions         | `backend/modules/execution/Execution.PromotionPolicy.ps1`                      |
-| escalation decisions        | `backend/modules/execution/Execution.Escalation.ps1`                           |
-| mutable local state         | `output/execution-mandates/<mandateId>/`                                       |
-| append-only transitions     | `output/execution-mandates/mandate-events.jsonl`                               |
-| UI                          | existing Dispatch Board and work-detail surfaces; no new top-level destination |
-
-State under `output/` is operational and gitignored. Schemas, policy defaults,
-tests and synthetic fixtures are source-controlled. Never store credentials,
-provider transcripts or repository file contents in a mandate or escalation.
-
-#### Engineering milestones
-
-- [ ] **G39-01 — align every operating contract with governed completion.**
-      Update `AGENTS.md`, `docs/reference/status-vocabulary.md`, the delivery-
-      loop documentation, roadmap template/schema/audit rules and the gates that
-      currently equate `[x]` or CI-green with delivery. Preserve the three
-      proposal states (`planned`, `built`, `verified`); define delivery as
-      `MERGING → MERGED → POST_MERGE_VERIFYING → COMPLETE`. Replace
-      `READY_FOR_OPERATOR` as a universal state with `READY_FOR_PROMOTION`;
-      render "Ready for operator" only when the active posture is supervised.
-      A roadmap archive edit on a PR head is prospective until that PR merges.
-      Prove red fixtures for: CI green but unmerged, merged wrong head, merged
-      wrong target branch, and an implementation agent attempting to emit
-      `COMPLETE`. _(state: planned)_
-      `check: pwsh ./tests/Test-GovernedCompletionContract.ps1 -FailOnError`
-
-- [ ] **G39-02 — create the versioned execution-mandate contract and durable
-      store.** Implement schema validation, canonical serialization, content
-      hashing, optimistic revision checks and append-only lifecycle events. A
-      mandate contains, at minimum: `schemaVersion`, `mandateId`, `repositoryId`,
-      `targetBranch`, `roadmapPath`, normalized `planFingerprint`, authorized
-      phase and work-unit ids, allowed operations, forbidden paths, network
-      policy, risk ceiling, required checks, review policy, promotion mode,
-      merge method, concurrency limit, work-unit/attempt/remediation/time/cost
-      budgets, issuer, issue/expiry timestamps, status, revision and reason.
-      Status is exactly `draft | active | paused | revoked | expired |
-    completed`; only compare-and-swap on the expected revision may mutate it.
-      Create functions to draft, validate, activate, pause, revoke, expire and
-      complete; reject an unknown field rather than silently ignore authority.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-ExecutionMandate.ps1 -FailOnError`
-
-- [ ] **G39-03 — calculate one execution-readiness verdict.** Return one
-      object `{ ready, reasons[], evidence[], checkedAt, repositorySnapshot,
-    planFingerprint, policyVersion }`; every reason has a stable code and a
-      human explanation. Evaluate four groups: **Plan** (bounded outcome,
-      stable ids, dependencies, criteria, checks and scope); **Verification**
-      (expected jobs exist, execute on the applicable head and cannot pass by
-      skip/neutral); **Execution** (clean isolated workspace, provider and
-      credentials available, durable recovery, budgets and one integration
-      slot); **Authority** (branch rules compatible, allowed operations and
-      forbidden paths explicit, pause/revoke available). Missing or unreadable
-      evidence fails closed. Activation calls this evaluator; no UI or route
-      may maintain a second readiness rule. _(state: planned)_
-      `check: pwsh ./tests/Test-ExecutionReadiness.ps1 -FailOnError`
-
-- [ ] **G39-04 — expose mandate preview and lifecycle without widening
-      authority.** Add read, draft-preview, activate, pause and revoke API
-      routes under `/api/execution/mandates`; require the existing authenticated
-      mutation path and anti-forgery controls. Preview shows the exact roadmap
-      fingerprint, work units, operations, forbidden paths, network policy,
-      promotion mode, risk ceiling and every budget. Activation is one explicit
-      operator action against the displayed mandate hash. Pause/revoke prevents
-      new claims immediately; a running task observes it at its next phase
-      boundary before another mutation. Expiry is deterministic from the stored
-      timestamp. Add the panel to the existing work detail; do not create a new
-      navigation destination. _(state: planned)_
-      `check: pwsh ./tests/Test-MandateLifecycle.ps1 -FailOnError`
-
-- [ ] **G39-05 — schedule only authorized dependency-ready work and survive
-      restart.** Extend D-001's acyclic work graph with a pure selector whose
-      inputs are mandate, normalized plan, current integration state and active
-      work. Select only authorized, incomplete units whose dependencies are
-      verified integrated; use declared priority then stable roadmap order as
-      the tie-break. Permit one integration operation per repository and reuse
-      the existing isolated-worktree mechanism. Persist selection before
-      dispatch. Re-running after a crash returns the existing worktree, branch,
-      run and PR; it never creates a duplicate. After each merge, refresh the
-      repository, invalidate stale evidence and recompute the normalized plan
-      fingerprint. Normalization ignores progress-only changes (checkbox/state,
-      Built/Evidence lines and movement to completed history) but includes
-      objective, scope, dependencies, acceptance criteria, check and permission
-      changes; a material difference pauses `plan-drift` instead of silently
-      inheriting prior approval. _(state: planned)_
-      `check: pwsh ./tests/Test-AuthorizedScheduler.ps1 -FailOnError`
-
-- [ ] **G39-06 — make promotion deterministic and posture-aware.** Implement
-      `supervised` and `guarded`; reject `extended` in schema v1. Both require:
-      active non-expired mandate, exact verified head SHA, required checks that
-      actually executed and passed, required independent review whose evidence
-      is produced outside the implementation result (and, when model-based, by
-      a provider or reviewer identity other than the implementer), mergeable
-      current head, permission-envelope
-      compliance, risk at or below the mandate ceiling, remaining budgets, no
-      unresolved escalation and no head movement after evidence collection.
-      Supervised additionally requires operator approval bound to that SHA.
-      Guarded requires the mandate to authorize policy promotion. Regardless of
-      mode, owner review remains mandatory for `.github/workflows/**`, CI gates,
-      `docs/governance/**`, branch protection, credentials/permissions,
-      production deployment, destructive data change, `backend/config/**`, a
-      `modelVersion` change or any diff classified as altering what the product
-      claims. Never bypass repository rules; wait for required human review or
-      a merge queue when GitHub requires it. Record every policy input and
-      result before merge, then verify the actual merge commit is reachable
-      from the intended target branch before emitting `COMPLETE`. _(state:
-      planned)_
-      `check: pwsh ./tests/Test-PromotionPolicy.ps1 -FailOnError`
-
-- [ ] **G39-07 — bound remediation and produce decision-ready escalations.**
-      Reuse Release 3.8's `RemediationPacket`, `HandoffPacket`, attempt counters
-      and provider switching; do not create a parallel retry engine. Classify
-      failure as `transient | implementation | authority | plan | evidence |
-    budget`. Transient and implementation failures may retry only inside the
-      stored attempt/remediation/time/cost budgets and only after changed
-      remediation or new evidence. All others pause the affected unit and write
-      one escalation containing: mandate/work-unit/run ids, exact limit or rule,
-      evidence references, smallest proposed deviation, impact, safe state,
-      available operator decisions and the consequence of each. Mandatory
-      escalations include ambiguity, material scope expansion, exhausted
-      budgets, missing evidence, unresolved independent-review risk, production,
-      destructive data, credentials, permissions, governance, CI policy and
-      canonical-claim changes. The UI never asks only "May I continue?"
-      _(state: planned)_
-      `check: pwsh ./tests/Test-ExecutionEscalation.ps1 -FailOnError`
-
-- [ ] **G39-08 — reconcile integration, authority consumption and phase
-      completion.** After every verified merge, atomically record merge commit,
-      target branch, completed unit, consumed attempts/time/cost, remaining
-      mandate scope and the refreshed plan fingerprint. Update the roadmap view
-      from repository state; never write completion from an agent result. If
-      eligible work remains, queue exactly one next unit; if none remains and
-      every authorized unit is integrated, complete the mandate; if a unit is
-      blocked, keep the mandate active or paused according to the recorded
-      reason. Startup reconciliation repairs interrupted `MERGING`, `MERGED` and
-      `POST_MERGE_VERIFYING` states idempotently. Expose a single trace from
-      mandate → unit → run → PR → checks/review → policy → merge → next unit.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-PostMergeReconciliation.ps1 -FailOnError`
-
-- [ ] **G39-09 — prove one guarded multi-PR phase on a low-risk real
-      repository.** Select the pilot deterministically: local clean checkout,
-      protected default branch compatible with automation, not this repository,
-      not archived/excluded, no production deploy/migration/secrets/workflows/
-      governance/config changes, at least two dependency-ordered actionable
-      units, and runnable acceptance checks already present or explicitly in
-      scope. `scripts/Select-GuardedAutonomyPilot.ps1` emits candidates and
-      reasons; choose the highest-ranked eligible candidate, not a flattering
-      substitute. The operator previews and activates one phase mandate. Repo
-      Manager then completes at least two PRs without another dispatch or
-      routine approval, including exact-head verification, policy promotion,
-      merge verification, roadmap reconciliation and next-unit selection.
-      Demonstrate bounded remediation with a controlled failing fixture before
-      the real run, and demonstrate decision-ready escalation with a separate
-      fixture that requests a forbidden-path change; do not manufacture either
-      event in the real repository. Record the complete proof in
-      `evidence/verified/guarded-autonomy-pilot-<date>.md` with mandate id/hash,
-      plan fingerprint, work units, PRs, merge commits, checks, reviews, policy
-      decisions, transitions, operator touches, elapsed time and final state.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-GuardedAutonomyPilot.ps1 -EvidencePath evidence/verified/guarded-autonomy-pilot-*.md -FailOnError`
-
-#### Acceptance criteria
-
-- One activation authorizes a pinned phase; no routine action asks for approval
-  already present in the mandate.
-- A material roadmap change, expired/revoked mandate, moved head, skipped check,
-  failed independent review, forbidden path or exhausted budget prevents
-  promotion with a stable reason code.
-- The implementation provider cannot verify, review, authorize, merge or mark
-  complete its own result through its structured output.
-- Every lifecycle transition is reconstructible from mandate revision, policy
-  version, repository state and evidence; model prose is never the sole reason.
-- Restarting at any phase produces no duplicate worktree, branch, run, PR,
-  remediation or merge.
-- The pilot completes at least two real PRs and proves remediation and
-  escalation through controlled fixtures.
-
-#### Out of scope
-
-- Extended autonomy across multiple phases or repositories.
-- More than one integration operation per repository.
-- Bypassing branch protection, required human review or GitHub authorization.
-- Autonomous changes to governance, CI, product-claim config, credentials,
-  permissions, production systems or destructive data.
-- Adaptive provider optimization, pricing inference or learned routing; those
-  belong to Release 4.0.
-- Rewriting roadmap objectives or acceptance criteria during execution.
-
-#### Validation plan
-
-Every decision function is pure over fixtures before it is connected to a
-mutation. Each new gate is shown red against at least one violating fixture.
-Module smoke covers schemas, state transitions, normalization, readiness,
-scheduling, promotion and escalation; API-host smoke covers authenticated
-lifecycle routes and restart reconciliation; frontend unit tests cover preview,
-pause/revoke, posture labels and escalation rendering. The real pilot is the
-only acceptance evidence for the end-to-end claim and may not be replaced by a
-smoke fixture.
-
-#### Risks
-
-- A plan fingerprint that changes on ordinary progress would revoke every
-  mandate after its first PR; normalization is therefore an explicit contract.
-- A fingerprint that ignores objective, scope, dependency, criterion, check or
-  permission changes would allow approval to drift; all remain hash inputs.
-- Treating a green/skipped/neutral check alike would promote unverified work;
-  the verifier records which expected jobs actually executed.
-- Giving the orchestration credential branch-protection bypass would erase the
-  independent boundary this release exists to prove; it is forbidden.
-- A pilot selected because it is easy rather than because it is the highest
-  eligible candidate would not prove general operation.
-
-**Dependencies:** Value-proven MVP decision; D-001; one manifest walk; Release
-3.8's WorkPacket, provider adapters, exact-head verification, independent
-review, remediation/handoff and canonical execution events; GitHub repository
-rules compatible with the chosen posture. Missing external authorization is an
-operator-queue item, not authority to weaken a gate.
-
----
-
-### Release 4.0 — Adaptive Routing
-
-**Status:** planned — renumbered from 3.9 on 2026-09-18. Design authority is
+**Status:** planned — defined 2026-09-08. Design authority is
 [`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md),
 which absorbed Ben's _Multi-Provider Agent Execution Strategy_ the same day.
-Follows Release 3.9, and cannot precede it: every milestone consumes telemetry
-that 3.8 records, while its selected work must still pass the authority,
-readiness and integration controls that 3.9 proves.
+Follows Release 3.8, and cannot precede it: every milestone here consumes
+telemetry that 3.8 is what starts recording.
 
 **Goal:** Release 3.8 routes on _capacity_. This release routes on _evidence_.
 The router learns which provider actually completes this repository's workload,
@@ -1446,10 +1039,9 @@ to replace; a performance store confident on too little history — the router
 must keep distinguishing "unmeasured" from "measured as bad", as it already does
 for capacity; enforcement switched on before consumption is measured.
 
-**Dependencies:** Release 3.8 for the telemetry these milestones read,
-especially cost and duration in the canonical event vocabulary; Release 3.9
-for the mandate, readiness and policy-controlled promotion path that safely
-executes the work the adaptive router selects.
+**Dependencies:** Release 3.8 for the telemetry these milestones read, and in
+particular the 3.8 amendment that puts cost and duration into the canonical
+event vocabulary as it is defined.
 
 ---
 
@@ -1634,7 +1226,7 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       `Test-RoadmapCapabilityRecord.ps1` fires only when a commit subject reads
       `feat(release-N.M):` or `(phaseN)` and its diff touches `backend/` or
       `scripts/`. The Lane 0.21 poll-loop commit (`fix(portfolio): … (Lane
-    0.21)`, 2026-09-17) shipped 16 files under that bar and was checked by
+      0.21)`, 2026-09-17) shipped 16 files under that bar and was checked by
       nobody; `frontend/` never counts. AGENTS.md rule 3 ("the roadmap is the
       last file you write") therefore binds by contract, not by gate. Widen
       the predicate: a PR range whose diff touches `backend/`, `scripts/` or
@@ -2254,7 +1846,7 @@ reaches into a user session at all.
 **The remaining three shipped 2026-09-13; recorded as prose, because a `[x]` in
 this file is a mistake, not a record.**
 
-_The action, not the command._ `POST /api/roadmap/runner/start` and
+*The action, not the command.* `POST /api/roadmap/runner/start` and
 `POST /api/roadmap/runner/stop`
 ([`Automation.RunnerControl.ps1`](backend/modules/automation/Automation.RunnerControl.ps1))
 replace the pasted remedy everywhere it was offered: the header popover, the
@@ -2273,7 +1865,7 @@ cannot run while the operator is logged out, so only the heartbeat may say a
 runner exists, and the console watches for it and says plainly when it never
 arrives.
 
-_The kill switch._ `roadmap-task-runner.hold.json` is the durable half the stop
+*The kill switch.* `roadmap-task-runner.hold.json` is the durable half the stop
 marker could never be — the marker is consumed by the runner honoring it, so on
 its own "stop" would have lasted one repeat interval. The runner reads the hold
 before anything else and leaves, making each five-minute repeat a two-second
@@ -2290,7 +1882,7 @@ stopped. Same shape as the gate that twice emptied the portfolio index, with a
 worse recovery, and asserted rather than assumed: the gate fails if a hold ever
 appears in the operator's own output directory.
 
-_One pane._ [`RunnerControlPanel.tsx`](frontend/components/RunnerControlPanel.tsx)
+*One pane.* [`RunnerControlPanel.tsx`](frontend/components/RunnerControlPanel.tsx)
 leads the Insights tab with runner state, queued total, claimable now, stranded
 count, oldest-queued age, the per-provider backlog and the live runner's
 identity — the two facts that arrive on one route and had never been rendered
@@ -2437,7 +2029,7 @@ live state, and one dispatch-eligibility rule. Then:
 
 - [ ] **Only actionable roadmap lines become work.** Before ranking, each
       candidate is classified `actionable | done-statement | deferred | guidance |
-    fragment`. Only `actionable` is ranked, queued or offered for dispatch, and
+      fragment`. Only `actionable` is ranked, queued or offered for dispatch, and
       each repository shows "Excluded (n)" with the reason for each line. A run
       that completes writes its item back as done, and the same item hash cannot
       be dispatched again inside a cooldown unless the operator overrides.
@@ -2493,7 +2085,7 @@ live state, and one dispatch-eligibility rule. Then:
       the lane ledger (`Invoke-CancelTask`): the lane frees, the agent keeps
       working, and its pull request arrives later as an orphan the board can
       no longer attribute. The runner accepts a `cancelled` structured result
-      _from the agent_ but nothing carries an operator's cancel _to_ it. Ben,
+      *from the agent* but nothing carries an operator's cancel *to* it. Ben,
       2026-09-18: "that needs to be a trustworthy button." A cancel writes a
       flag under the runner control root (`REPO_MGMT_RUNNER_CONTROL_ROOT`)
       keyed by `dispatchRunId`; `Invoke-RoadmapTaskRunner.ps1` reads it at
@@ -2512,8 +2104,8 @@ live state, and one dispatch-eligibility rule. Then:
       lane tiles read "Running" and nothing else. Agents report no percentage
       and the product invents no figure (steering contract 2), but the
       execution event stream already names the phases — QUEUED, DISPATCHED,
-      WORKING, LOCAL*VERIFYING, PUSHING, PR_OPEN, CI_PENDING,
-      CI_PASSED/CI_FAILED, READY_FOR_PROMOTION, MERGING, MERGED,
+      WORKING, LOCAL_VERIFYING, PUSHING, PR_OPEN, CI_PENDING,
+      CI_PASSED/CI_FAILED, READY_FOR_OPERATOR, MERGING, MERGED,
       POST_MERGE_VERIFYING, COMPLETE (`Execution.Events.ps1`). Each tile shows
       the current phase as "phase n of N — <name>", the time it entered that
       phase, the time since the last observed event, and the `stalled` flag
@@ -2527,7 +2119,7 @@ live state, and one dispatch-eligibility rule. Then:
       contract 8). Done when: a fixture lane at `ci-pending` renders phase,
       entered-at, elapsed and the trace link; a lane with no events renders
       "no phase observed" and no ring; the string `%` appears nowhere in the
-      tile. *(state: planned)\_
+      tile. _(state: planned)_
       `check: npx vitest run frontend/components/ExecutionLaneTile.test.tsx`
 - [ ] **Labels match what they count.** "N need you" counts repositories, not
       holds × codes (it read 63 for 59 repositories). "Blocking a lane" appears
@@ -2569,8 +2161,7 @@ live state, and one dispatch-eligibility rule. Then:
 Full list in [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md);
 headline guardrails for the active release and near-term roadmap:
 
-- Do not auto-dispatch tasks without one canonical readiness verdict and an
-  active mandate that contains the selected work unit.
+- Do not auto-dispatch tasks without a visible readiness model.
 - Do not silently mark roadmap items complete based only on code churn.
 - Prefer preview-first workflows before write-back or autonomous mutation.
 - Preserve genuine completion history when rewriting roadmaps.
@@ -2584,18 +2175,12 @@ headline guardrails for the active release and near-term roadmap:
   Actions result, validation evidence, and unresolved blockers.
 - Do not let dashboard badges become decorative; every badge must drill
   into the source data or explanation that produced it.
-- Promotion is posture-aware. In `supervised`, merge remains an explicit
-  operator action bound to the verified head SHA. In `guarded`, deterministic
-  policy may promote only when the active mandate explicitly authorizes it and
-  every G39-06 input passes. `extended` is unsupported until separately proved.
-- Governance, CI, branch protection, credentials/permissions, production,
-  destructive data, `backend/config/**`, `modelVersion` and product-claim
-  changes always require owner review regardless of posture.
+- Do not merge automatically; merge must remain an explicit operator action
+  after readiness passes.
 - **Do not leave a control enabled that cannot succeed.** A disabled control
   names its unmet precondition; an enabled one is a promise.
-- **Do not emit delivery completion while an item still names an outstanding
-  integration proof.** Split independently verifiable work. A `[x]` and archive
-  edit on a PR branch is a proposed post-merge state, not proof that it landed.
+- **Do not mark an item `[x]` while it still names an outstanding proof.**
+  Split it: archive the shipped half, keep the unproven half open.
 - **A pull request that ships a capability updates the milestone that claims it,
   in the same pull request** (recorded 2026-08-15 after
   [PR #134](https://github.com/xfaith4/GitHubRepoManagement/pull/134) left six
@@ -2608,13 +2193,10 @@ headline guardrails for the active release and near-term roadmap:
   workspace, branch, attempt count and session identifier intact. It must never
   mark the roadmap item failed, and `CAPACITY_WAIT` is a normal operating state.
   Ordinary roadmap work may not consume a provider's configured reserve.
-- **Promotion authority applies to a verified head SHA, never a pull request
-  number.** Any head change invalidates verification and the prior operator or
-  policy decision. Supervised work requires renewed operator approval; guarded
-  work requires a fresh deterministic evaluation under the unchanged mandate.
-- **A mandate cannot widen itself.** Material plan drift, expiry, revocation,
-  exhausted budget or a forbidden operation pauses the affected work before
-  the next mutation and produces a decision-ready escalation.
+- **Operator approval applies to a verified head SHA, not a pull request
+  number.** Any change to the pull request head after verification invalidates
+  readiness and requires re-approval. Agent execution may be autonomous;
+  promotion to the protected default branch is not.
 
 ---
 
@@ -2631,30 +2213,18 @@ toward it.
 
 ## 10. Definition of Done
 
-**A milestone is verified when its `check:` exits 0 in CI on the exact PR head;
-it is delivered only when that verified change is merged into the intended
-target branch and the integration is independently reconciled.** Nothing less
-may emit `COMPLETE`.
-
-Every milestone delivery therefore requires:
+**A milestone is done when its `check:` exits 0 in CI on the PR head.** Nothing
+else. Everything below is what a `check:` must cover to be admitted, so that the
+sentence above stays true:
 
 - the check exercises real behaviour — a route returning mock data fails it
 - the check is in the repository and runs under `-FailOnError` in the smoke workflow
-- every expected job actually ran on the applicable head; skipped, neutral,
-  stale or unrelated status is not success
 - affected docs changed in the same PR when behaviour changed (`Test-RoadmapCapabilityRecord.ps1`)
-- the milestone it closes is staged as `[x]` and archived in the same PR so the
-  target branch receives code and its proposed record atomically
+- the milestone it closes is marked `[x]` and archived in the same PR
 - a signal it adds to a dashboard resolves to source data (`Test-BadgeProvenance.ps1`, or add it)
-- promotion eligibility is recorded from operator approval or deterministic
-  mandate policy against the same verified SHA
-- the actual merge commit is reachable from the intended target branch, and
-  post-merge reconciliation records the milestone, roadmap and next-unit state
 
-**A release is done when every milestone is integrated on the intended branch
-and its execution history can reconstruct that fact.** Field proof for the
-release is a separate line in the operator queue and does not hold the release
-unless that proof is part of the release's explicit product claim.
+**A release is done when every milestone in it is `[x]`.** Field proof for the
+release is a separate line in the operator queue and does not hold the release.
 
 A check you cannot write is a design decision you have not made. Record it in
 `open-decisions.md`, take the next item, and do not ask the operator in chat.

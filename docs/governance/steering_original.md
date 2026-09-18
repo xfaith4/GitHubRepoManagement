@@ -1,13 +1,5 @@
 # Steering — GitHub Repo Manager
 
-> **Revision 2026-09-18 — governed autonomy.** This revision separates the
-> owner's authority over direction and risk from the Repo Manager's authority
-> to execute an approved plan. It introduces version-bound execution mandates,
-> execution-readiness gates, policy-controlled merging, independently verified
-> completion, bounded remediation, and explicit escalation. It does not relax
-> owner review for governance, CI, product claims, production impact,
-> credentials, destructive changes, or material scope expansion.
-
 You are developing GitHub Repo Manager. Read this before the roadmap, and
 re-read it whenever a choice feels like a matter of taste. It is not the
 roadmap; the roadmap says what to build next. This says what the product is
@@ -17,21 +9,17 @@ for, what it must never do, and what "proved" means — in that order.
 
 ## 1. What this product is
 
-A portfolio of repositories is illegible and difficult to advance by default.
-This product makes it legible and operable: for every repository it produces a
-verdict a person can act on — what it is, whether it needs them, what to do
-next — and **every verdict carries the evidence it was drawn from.** When the
-owner authorizes a bounded, execution-ready plan, the product may also carry
-that plan through verified integration without repeatedly asking for authority
-it has already been given.
+A portfolio of repositories is illegible by default. This product makes it
+legible: for every repository it produces a verdict a person can act on —
+what it is, whether it needs them, what to do next — and **every verdict
+carries the evidence it was drawn from.**
 
 The product's most valuable answer is often "nothing here needs you." Its
 second most valuable answer is "I can't tell, and here is exactly why."
 Both are outcomes. Neither is a failure.
 
-The thesis, in two lines: **a number without a basis is a lie waiting to be
-believed. An action without a mandate is authority waiting to be exceeded.**
-Everything below follows from those statements.
+The thesis, in one line: **a number without a basis is a lie waiting to be
+believed.** Everything below follows from that.
 
 ---
 
@@ -79,15 +67,12 @@ that weakens one is wrong even if every test passes.
    *observe* a mismatch ("README says library, manifests say app"). It may
    not conclude what the owner meant.
 
-8. **The owner governs; authorized systems execute.** Preference, risk
-   posture, product direction, and the boundaries of authority belong to the
-   owner. Once the owner approves a versioned roadmap scope and an execution
-   mandate, the orchestrator may perform the authorized work without asking
-   again at every branch, PR, check, or eligible merge. A question outside the
-   mandate goes in `docs/governance/open-decisions.md` with the safe default
-   used while work continued, if one exists; otherwise the affected work
-   pauses. A question whose answer differs per installation is not a decision
-   — it is state to be detected and shown in setup and Settings.
+8. **Agents surface; the owner rules.** A question that turns on
+   preference, risk posture, or product direction goes in
+   `docs/governance/open-decisions.md` with the default you proceeded under.
+   You do not invent an answer and you do not stall. A question whose answer
+   differs per installation is not a decision — it is state to be detected
+   and shown in setup and Settings.
 
 9. **Regenerable output never enters source control.** Fixtures are small,
    synthetic, and hand-authored under `tests/fixtures/`. `evidence/verified/`
@@ -106,28 +91,6 @@ that weakens one is wrong even if every test passes.
     a verdict; a learned insight reaches one by becoming inspectable
     evidence, owner-recorded state, or a versioned rule. It says only that
     the path in is always visible and always replayable.
-
-12. **Authorization is bound to an immutable plan, never implied by momentum.**
-    An execution mandate names the repository, roadmap revision or content
-    hash, authorized phases and work units, allowed operations, exclusions,
-    verification policy, retry and cost budgets, merge authority, expiry, and
-    revocation state. A material plan change invalidates or narrows the
-    mandate; prior approval does not silently follow rewritten scope.
-
-13. **Completion is a verified integration event.** An agent's claim, a local
-    test, a green check, an approved review, or a checked roadmap box is not
-    delivery. A work unit becomes complete only when the intended commit is
-    verified as integrated into the intended branch and its required evidence
-    is recorded. The roadmap describes the proposed and integrated repository
-    state; execution history proves what actually happened.
-
-14. **No component authorizes itself.** The implementation agent may propose
-    a plan, write code, explain a failure, and recommend a merge. It may not
-    accept its own completion claim as evidence or grant itself broader
-    authority. Verification, review, policy evaluation, and state transition
-    are separate logical responsibilities. Deterministic code owns permission
-    checks and lifecycle transitions even when models perform the engineering
-    work around them.
 
 ---
 
@@ -174,15 +137,6 @@ Rung 1 is passed when, against a named index SHA:
 - a single exported file (the portfolio brief) lets a reader who has never
   seen the product know what changed since the last run, why it matters,
   and what to do next — with the evidence chain visible for every claim.
-- at least one low-risk phase containing two or more work units has run under
-  one execution mandate from selection through verified merge and next-unit
-  selection without operator dispatch between units;
-- that trial demonstrates durable resume, bounded remediation of an ordinary
-  failure, post-merge revalidation, roadmap reconciliation, and an escalation
-  that names the exact authority or evidence missing; and
-- every autonomous transition can be reconstructed from the mandate, policy
-  version, repository state, evidence records, and transition log. A model's
-  prose is never the only explanation for why execution advanced.
 
 ### Rung 2A — other developers' portfolios
 
@@ -280,92 +234,6 @@ Three rules keep the boundary from eroding at the edges:
    conclusion may link to observations; it may not blend them. The
    architecture is only as separate as the UI keeps it.
 
-### The execution engine is not a third brain
-
-Canonical judgement says what a repository is and needs. Investigative
-intelligence finds what may deserve attention. The execution engine advances
-approved work. It has authority to act, not authority to redefine the product,
-rewrite the roadmap's intent, or promote an observation into a verdict.
-
-Its inputs are explicit and versioned:
-
-1. **The roadmap is the work contract.** A phase names an outcome; work units
-   name independently verifiable increments, dependencies, acceptance
-   criteria, expected checks, and material constraints. One work unit normally
-   maps to one PR, but a phase may span several PRs and a justified PR may
-   contain more than one tightly coupled unit.
-2. **The execution mandate is the authority contract.** It binds approval to
-   an exact roadmap revision and declares what the system may do: create
-   branches and worktrees, edit in-scope files, commit, push, open and update
-   PRs, remediate failures, and merge when the named policy permits. It also
-   declares what it may not do and how much time, cost, concurrency, and retry
-   authority it has.
-3. **Execution history is the evidence contract.** It records the selected
-   unit, branch, commits, PR, checks that actually ran, review result, policy
-   decision, merge commit, timestamps, retries, deviations, and final
-   reconciliation. It is durable outside any provider session and makes every
-   transition idempotent and recoverable.
-
-The roadmap and execution history must not impersonate each other. A checked
-item on a feature branch describes the state that PR proposes to integrate. It
-does not prove the integration occurred. Conversely, execution history may
-prove that a PR merged, but it may not silently alter the roadmap's promised
-scope. When a work unit changes roadmap progress or commitments, code and
-roadmap update travel in the same PR; the verified merge reconciles both.
-
-Before a mandate becomes active, the repository passes an explicit
-**execution-readiness gate**:
-
-- **Plan:** purpose and outcomes are understood; scope is pinned; work units,
-  dependencies, acceptance criteria, and phase boundaries are machine-readable
-  enough to schedule without inventing product decisions.
-- **Verification:** relevant tests exist or their creation is in scope; the
-  expected CI checks and evidence sources are known; a skipped or neutral check
-  cannot masquerade as required behavior having executed; verification does
-  not depend only on the implementing agent's report.
-- **Execution:** a clean isolated workspace can be prepared; credentials and
-  provider access are available; concurrency, retry, recovery, and cost limits
-  are set; repeated runs cannot duplicate a PR, commit, or merge.
-- **Authority:** repository protections permit the intended mode; allowed and
-  forbidden operations are explicit; the owner can pause or revoke the
-  mandate; exceptions have named escalation routes.
-
-Once active, the orchestrator self-advances one dependency-ready work unit at
-a time through preparation, implementation, local verification, independent
-review, push, PR, CI, policy evaluation, permitted merge, merge verification,
-and reconciliation. It then refreshes the repository state and selects the
-next eligible unit. Dependent work never advances on an unverified predecessor.
-Multiple repositories may progress in parallel; initially, only one integration
-operation runs per repository, even when implementation occurs concurrently in
-isolated worktrees.
-
-The orchestrator, not the coding agent, decides whether evidence satisfies the
-mandate. Ordinary failures — compilation, tests, lint, formatting, in-scope
-merge conflicts, session interruption, and transient provider failure — may be
-repaired and retried within a finite budget. A retry must contain new evidence
-or a changed remediation; replaying the same failed action is not progress.
-
-Execution pauses with a decision-ready escalation when any of these is true:
-
-- acceptance criteria are ambiguous or required evidence is unavailable;
-- work would materially expand scope or invalidate an approved dependency;
-- retry, time, cost, or concurrency limits are exhausted;
-- the action affects production, destructive data, credentials, permissions,
-  branch protection, governance, CI policy, or what the product claims about
-  itself;
-- independent review identifies unresolved material risk; or
-- the actual repository state no longer matches the mandate's pinned basis.
-
-An escalation states the blocked unit, the precise limit exceeded, supporting
-evidence, the smallest proposed deviation, its impact, and the decisions the
-owner can take. It never asks only, "May I continue?"
-
-Autonomy has three postures: **supervised** (operator merge per PR), **guarded**
-(phase mandate with policy-controlled merges), and **extended** (multiple
-preauthorized phases with revalidation after every merge). Guarded autonomy is
-the first target. Extended autonomy is earned from recorded execution evidence;
-it is not enabled because the architecture theoretically supports it.
-
 ### The extensions
 
 These move the product along the ladder. Each is listed with the rung it
@@ -398,53 +266,28 @@ serves. Prefer the lowest rung that is not yet passed.
    evidence chain. Deterministic first; an LLM narration, if ever, is
    constrained to the evidence lines and marked as narration.
 
-6. **Execution mandate and readiness contract** (Rung 1). Pin authorization
-   to the approved roadmap revision; define allowed operations, exclusions,
-   budgets, revocation, and merge mode; and produce a readiness verdict whose
-   evidence a person can inspect. A well-written roadmap is necessary but not
-   sufficient evidence that a repository can run unattended.
-
-7. **The self-advancing work-unit scheduler and durable state** (Rung 1).
-   Select dependency-ready units, prepare isolated workspaces, dispatch the
-   next session, persist state outside providers, and make every transition
-   idempotent. Resume must recover the existing branch, PR, evidence, and
-   mandate rather than create replacements.
-
-8. **Independent verification and policy-controlled merge** (Rung 1).
-   Collect what actually executed, run review outside the implementer's
-   completion claim, evaluate repository protections and mandate policy in
-   deterministic code, merge only when permitted, then verify the merge commit
-   on the intended branch. Green is evidence; policy decides whether it is
-   sufficient.
-
-9. **Bounded remediation and decision-ready escalation** (Rung 1). Repair
-   ordinary in-scope failures within finite retry, time, and cost budgets.
-   Escalate ambiguity, material deviation, exhausted limits, and protected
-   operations with the exact decision required. Validate this on one low-risk
-   two- or three-PR phase before increasing authority.
-
-10. **Trajectory** (Rung 1 → 2A). Improving / stable / decaying / dormant
+6. **Trajectory** (Rung 1 → 2A). Improving / stable / decaying / dormant
    from maturity history and commit cadence. It changes the *question* the
    product asks the owner, never the verdict it draws.
 
-11. **The portfolio graph** (Rung 2A). Dependencies between owned repos
+7. **The portfolio graph** (Rung 2A). Dependencies between owned repos
    (module manifests, package deps, submodules) and duplication across them.
    Gives `unblockPotential` a real basis and surfaces consolidation
    candidates. First thing a stranger's portfolio makes visible that the
    owner's did not.
 
-12. **Per-signal provenance** (Rung 2B → 3). Stamp field groups with their
+8. **Per-signal provenance** (Rung 2B → 3). Stamp field groups with their
    producer's fingerprint so staleness is per field and rescans are
    incremental. Unnecessary at 60 repositories; necessary at 600.
 
-13. **The peer reference base** (Rung 2B). The existing extraction run over
+9. **The peer reference base** (Rung 2B). The existing extraction run over
    a public corpus in stages (100 → 1,000 → more only on evidence), feeding
    the investigative brain. Peers chosen by kind and scale; every peer
    observation carries its group definition, sample size, and
    `canonicalEffect: none`. Produces questions and rule proposals with
    `observed-on`; produces no verdicts.
 
-14. **One metric schema under `standards/`** (Rung 3). Promote the snapshot
+10. **One metric schema under `standards/`** (Rung 3). Promote the snapshot
    metric shape to a schema, migrate Leverage and Analytics to it, and list
    every contract the product holds against itself on a surface a buyer can
    read.
@@ -453,36 +296,17 @@ serves. Prefer the lowest rung that is not yet passed.
 
 ## 5. Working rules
 
-- Without an active mandate, next action is the first `[ ]` in Current focus:
-  read the groundwork before touching it and run the check named beside it.
-  With an active mandate, next action is the highest-priority dependency-ready
-  work unit inside its scope. Selection is recorded; ordering is never invented
-  silently by an implementation agent.
+- Next action is the first `[ ]` in Current focus. Read the groundwork
+  before touching it. Its check is named beside it; run it.
 - Every milestone ships with its `check:`. `verified` means that check is
   green in CI. Operator verification is a separate fact in the queue and the
   JSONL log; never imply one from the other.
-- A green check is accepted only when the expected job actually ran against
-  the applicable commit and produced the evidence the acceptance criterion
-  names. `skipped`, `neutral`, stale, or unrelated status is not silently
-  upgraded into proof.
-- When a work unit changes planned progress or commitments, update the roadmap
-  in the same PR as the implementation. The branch may describe its proposed
-  post-merge state. Record delivery only after the merge commit is verified on
-  the intended branch.
 - When you find a fact the roadmap or a doc has wrong, correct the doc in
   the same PR and say so in the handoff. When you find your own notes
   wrong, say that too.
-- Execution records and human handoffs state: what merged, what is in CI, what
-  changed beyond the work unit's explicit request, what the agent got wrong,
-  what decisions were parked, what authority was consumed, and the next
-  eligible action with its check.
-- The implementing agent does not approve its own review, interpret policy in
-  its own favor, or transition its work to complete. The verifier records
-  evidence; the reviewer assesses it; the policy engine determines eligibility;
-  the orchestrator performs the authorized transition.
-- Revalidate after every merge: confirm the merge commit, refresh repository
-  and roadmap state, invalidate stale evidence, reassess dependencies, and
-  confirm the next unit remains inside the active mandate.
+- Handoffs state: what merged, what is in CI, what you changed that the
+  owner did not ask for, what you got wrong, what decisions you parked, and
+  the next action with its check.
 - Do not add a keyword rule, a threshold, or a kind rule to make one
   repository come out right. Add it because the evidence line shows a
   pattern, record the repository it was observed on, and bump
@@ -491,10 +315,8 @@ serves. Prefer the lowest rung that is not yet passed.
   workflow you believe CI needs goes to `.github/workflows-proposed/` or a
   named section of the handoff, marked as waiting; the owner applies it.
 - At most two unmerged review PRs in the stack at once. Beyond that, build
-  the next authorized item only when its workspace and dependency state are
-  safe, and wait rather than stacking a third. Only one integration operation
-  per repository runs at a time until recorded evidence justifies a different
-  policy (revised 2026-09-18).
+  the next item on its branch and wait for the owner rather than stacking a
+  third (2026-09-14).
 
 ---
 
@@ -508,18 +330,6 @@ serves. Prefer the lowest rung that is not yet passed.
   did not write it.
 - A green CI run described as operator verification.
 - A merge on green of a change to what the product says about itself.
-- A roadmap checkbox, agent handoff, PR approval, or green check described as
-  delivered before the intended merge is independently verified.
-- Asking the owner to approve a routine action already authorized by the active
-  mandate.
-- Continuing because prior steps were authorized when the current action is
-  outside the mandate or based on a materially changed roadmap.
-- An implementation agent accepting its own completion claim as verification
-  or choosing to widen its own authority.
-- Retrying the same failed action without changed remediation, new evidence,
-  or remaining budget.
-- A merge whose eligibility exists only in model prose rather than replayable
-  policy evaluation and recorded evidence.
 - Reproducing the owner's own repo layout as the standard other people are
   graded against.
 - A peer-group prevalence cited as the basis of a verdict about one

@@ -76,7 +76,7 @@ $smokeRoot = Join-Path $WorkspaceRoot 'output\smoke\api-host'
 $null = New-Item -ItemType Directory -Path $smokeRoot -Force
 $logPath = Join-Path $smokeRoot 'api-host-smoke.log'
 
-function Invoke-ApiRequest {
+function Invoke-RawApiRequest {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Method,
@@ -138,6 +138,45 @@ function Invoke-ApiRequest {
         Json = $json
         Headers = $response.Headers
     }
+}
+
+# Assessment requests now return the published index immediately. Tests that
+# assert scan outcomes explicitly await the worker, then read its publication.
+# Request-thread timing is independently enforced by Test-RequestThreadBudget.
+function Wait-SmokeAssessmentScan {
+    $deadline = (Get-Date).AddSeconds($ScanRequestTimeoutSec)
+    do {
+        $status = Invoke-RawApiRequest -Method Get -Uri "$BaseUrl/api/portfolio/scan/status"
+        if ($status.StatusCode -ne 200) { throw "Scan status failed: $($status.Content)" }
+        $state = $status.Json.data
+        if ($state.state -ne 'running') {
+            if ($state.state -in @('failed', 'aborted', 'cancelled')) { throw "Assessment worker $($state.state): $($state.error)" }
+            return
+        }
+        Start-Sleep -Milliseconds 200
+    } while ((Get-Date) -lt $deadline)
+    throw 'Timed out awaiting assessment worker publication.'
+}
+
+function Invoke-ApiRequest {
+    param([string]$Method, [string]$Uri, [object]$Body, [hashtable]$Headers)
+    $isAssessment = ([uri]$Uri).AbsolutePath -in @('/api/portfolio/assessment', '/api/portfolio/assessment/refresh-all')
+    if ($isAssessment -and ($Uri -match 'refresh=true|refresh-all|scanMode=differential')) {
+        Wait-SmokeAssessmentScan
+        if ($Uri -match 'scanMode=differential' -and $Uri -notmatch 'refresh=true') {
+            $kick = Invoke-RawApiRequest -Method Post -Uri "$BaseUrl/api/portfolio/scan" -Body @{}
+            if ($kick.StatusCode -ne 200) { throw "Scan start failed: $($kick.Content)" }
+        }
+    }
+    $result = Invoke-RawApiRequest -Method $Method -Uri $Uri -Body $Body -Headers $Headers
+    if ($isAssessment -and $result.StatusCode -eq 200) {
+        if ($result.Json.data.refresh.state -eq 'running' -or $result.Json.data.refreshAccepted) {
+            Wait-SmokeAssessmentScan
+            $readUri = $Uri.Replace('/assessment/refresh-all', '/assessment').Replace('refresh=true', 'refresh=false')
+            $result = Invoke-RawApiRequest -Method Get -Uri $readUri -Headers $Headers
+        }
+    }
+    return $result
 }
 
 function Assert-Not503 {

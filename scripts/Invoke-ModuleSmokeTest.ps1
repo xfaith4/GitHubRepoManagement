@@ -79,7 +79,7 @@ $apiHostText = Get-Content -LiteralPath $apiHostPath -Raw
 #   Invoke-RoadmapAuditScan  - these two ARE the scan implementations; they
 #   Invoke-DocAuditScan        compose Invoke-RoadmapScan rather than adding a
 #                              new place a request can block.
-$scanAllowedInFunctions = @('Invoke-GitOperation', 'Invoke-RoadmapAuditScan', 'Invoke-DocAuditScan')
+$scanAllowedInFunctions = @('Invoke-GitOperation', 'Invoke-RoadmapAuditScan', 'Invoke-DocAuditScan', 'Invoke-BackgroundPortfolioAssessment')
 
 # Ratchet, not a clean sheet. GET /api/status and GET /api/portfolio/assessment
 # are fixed and asserted below; the remaining routes still scan inline and are
@@ -94,7 +94,7 @@ $scanAllowedInFunctions = @('Invoke-GitOperation', 'Invoke-RoadmapAuditScan', 'I
 # because the lens widened, not because the code got worse. Recorded plainly
 # rather than quietly re-baselined, since a baseline nobody can explain is a
 # baseline nobody will lower.
-$inlineScanBaseline = 18
+$inlineScanBaseline = 14
 
 # All three portfolio sweeps, not just the status one. GET
 # /api/portfolio/assessment reported prepMs=40669 from Invoke-RoadmapScan alone

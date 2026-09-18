@@ -15,7 +15,7 @@ Minimal local PowerShell API host for adapter contracts.
 - `GET /api/persistence/status`
 - Every accepted request has a bounded host deadline (180 seconds by default,
   configurable via `REPO_MGMT_REQUEST_TIMEOUT_SECONDS`, clamped to 30-3600).
-  Routes whose work is a full-portfolio scan — `/api/portfolio/assessment`,
+  Routes on the legacy scan-deadline tier — `/api/portfolio/assessment`,
   `/api/operations/repos`, `/api/automation/run`, `/api/digest/*`,
   `/api/reconcile`, `/api/docreview/run`, `/api/badges/*`, `/api/v1/agent/*` —
   run on an extended tier instead (900 seconds by default, configurable via
@@ -80,7 +80,8 @@ Notes:
 - CORS headers are enabled for local frontend integration.
 - `GET /health/ready` and `GET /health/dependencies` always return HTTP 200 and surface degraded state in the response payload.
 - `GET /api/persistence/status` reports the Release 2.1 SQLite persistence layer: provider capability detection (OS-shipped `winsqlite3.dll` on Windows, `libsqlite3` on WSL/Linux/macOS — no external dependency), `output/app.db` bootstrap state, schema tables, and the count of agent-run events mirrored by the dual-write seam. JSON/JSONL stores remain authoritative during the rollout; a missing SQLite provider degrades gracefully.
-- `GET /api/portfolio/assessment` returns the normalized portfolio lifecycle/readiness model used by Portfolio Mission, Work Queue ranking, and collection reporting.
+- `GET /api/portfolio/assessment` reads the last atomically published index. It never calls GitHub, scans changed roots, or writes assessment evidence on the request thread. Missing/stale data starts the background worker; `available`, `unavailableReason`, `stale`, `staleness`, `cacheAgeSeconds`, and `refresh` distinguish first-scan, old evidence, running and failed states. With no index, `generatedAt` and `summary` are null. `includeGithub` and `includeCuration` retain their read filters; `scanMode` no longer makes a GET perform a scan.
+- `POST /api/portfolio/assessment/refresh-all` (and GET `refresh=true`) starts a full background assessment and immediately returns the existing publication. `refreshAccepted=true` means a new full worker started; false means a running worker or launch failure prevented it. Poll `/api/portfolio/scan/status` until completed, then read the assessment again. An existing differential worker does not satisfy a full-refresh request. The frontend handles this wait explicitly. The worker reports completed only after publishing the assessment and index; an index write failure reports failed.
 - `GET /api/operations/repos` returns the repo-specific indexed portfolio records consumed by the Operations tab, with a warm assessment-cache fallback when the persisted index is not available yet.
 - `GET /api/operations/repos/:repoId` returns full Operations detail for one repo, including docs/roadmap audit findings, structure findings, and dispatch context used by the audit findings panel.
 - `POST /api/operations/repos/:repoId/curation` persists operator-authored curation state (`none`, `favorite`, `portfolio-candidate`, `archived-ignore`) keyed by stable repo identity; writes primary data to SQLite when available and mirrors to `output/index/repo-curation.json`.

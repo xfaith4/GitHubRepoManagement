@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Refreshes the portfolio status cache out of process, so no HTTP request
     ever waits on a portfolio scan.
@@ -71,7 +71,10 @@ param(
     # Test hook: stretch each phase so the smoke can prove a cancel lands
     # mid-scan deterministically. Production callers never pass it.
     [Parameter()]
-    [int]$PhaseDelayMs = 0
+    [int]$PhaseDelayMs = 0,
+
+    [switch]$ForceAssessment,
+    [switch]$IncludeGithubAssessment
 )
 
 Set-StrictMode -Version Latest
@@ -139,6 +142,16 @@ try {
     $WorkspaceRoot = $callerWorkspaceRoot
     $LogPath = $callerLogPath
 
+    # Definitions-only loading deliberately skips the host's database bootstrap.
+    # Assessment history now belongs to this process, so initialize its store too.
+    try {
+        $persistenceInit = Initialize-AppDatabase -WorkspaceRoot $WorkspaceRoot
+        if (-not $persistenceInit.success) {
+            Write-HostLog ("WARN status.refresh persistence unavailable: {0}" -f $persistenceInit.error)
+        }
+    } catch {
+        Write-HostLog ("WARN status.refresh persistence bootstrap failed: {0}" -f $_.Exception.Message)
+    }
     $settings = Get-HostSettings
     $cacheKey = Get-StatusCacheKey -LocalRoots $LocalRoots -MaxDepth $MaxDepth -IncludeNonGitFolders ([bool]$IncludeNonGitFolders)
 
@@ -222,7 +235,7 @@ try {
     }
 
     if (-not $cancelled) {
-        $cancelled = Test-ScanPhaseGate -PhasesDone 3 -NextPhase 'roadmap-audit'
+        $cancelled = Test-ScanPhaseGate -PhasesDone 3 -NextPhase 'roadmap-audit-and-assessment'
     }
     if (-not $cancelled) {
         $auditStarted = Get-Date
@@ -237,6 +250,10 @@ try {
         $exitCode = 0
     }
     else {
+        if (Test-ScanPhaseGate -PhasesDone 3 -NextPhase 'assessment') {
+            return
+        }
+        Invoke-BackgroundPortfolioAssessment -ForceFull:$ForceAssessment -LocalRoots $LocalRoots -MaxDepth $MaxDepth -IncludeGithub:$IncludeGithubAssessment -IncludeNonGitFolders:$IncludeNonGitFolders
         Write-ScanProgress -State 'completed' -Phase 'done' -PhasesDone 4 -Force
         $elapsed = [int]((Get-Date) - $started).TotalMilliseconds
         Write-HostLog ("[TRACE] status.refresh.worker done repos={0} roadmap={1} docAudit={2} roadmapAudit={3} statusMs={4} roadmapMs={5} docAuditMs={6} roadmapAuditMs={7} totalMs={8}" -f `
