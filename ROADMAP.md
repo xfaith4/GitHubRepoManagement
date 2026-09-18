@@ -1222,6 +1222,21 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       (SecureString vs env-var flow), coupled to the Lane 0.2 TLS work —
       **not** mechanical remediation. _(state: planned)_
       `check: pwsh ./scripts/Invoke-LintGate.ps1`
+- [ ] **The roadmap record moves with every shipped change, not only release-claiming ones.**
+      `Test-RoadmapCapabilityRecord.ps1` fires only when a commit subject reads
+      `feat(release-N.M):` or `(phaseN)` and its diff touches `backend/` or
+      `scripts/`. The Lane 0.21 poll-loop commit (`fix(portfolio): … (Lane
+      0.21)`, 2026-09-17) shipped 16 files under that bar and was checked by
+      nobody; `frontend/` never counts. AGENTS.md rule 3 ("the roadmap is the
+      last file you write") therefore binds by contract, not by gate. Widen
+      the predicate: a PR range whose diff touches `backend/`, `scripts/` or
+      `frontend/` source (tests, fixtures and the smoke harnesses excluded)
+      must advance a milestone in `ROADMAP.md` — a `(state:)` moving past
+      `planned`, a `[x]`, or a verbatim move to the archive — whatever the
+      commit prefix. Keep the existing rule that adding `planned` items is
+      not advancement. Prove it red on a fixture range that ships a frontend
+      file with an unmoved roadmap. _(state: planned)_
+      `check: pwsh ./tests/Test-RoadmapCapabilityRecordScope.ps1 -FailOnError`
 - P4 — BOM/PS5.1 hazard: [archived](docs/history/completed-releases.md#closed-2026-09-14-archived-from-roadmapmd).
 - **Deliberately unscheduled (accepted debt, held at baseline):** the naming
   and style tiers (`UseSingularNouns` 90, `UseOutputTypeCorrectly` 136,

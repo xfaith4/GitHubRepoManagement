@@ -20,10 +20,11 @@ consumes JSON config from `backend/config/` and writes append-only state to
 `output/`. Everything this project emits should be decision-grade — a report
 or exported file must show what happened, why it matters, and what to do next.
 
-## Read the roadmap before you build
+## The roadmap is the first file you read and the last file you write
 
 `ROADMAP.md` is an execution contract, not a wish list, and it is the most
-common way an agent wastes a day. Two rules make it safe to act on:
+common way an agent wastes a day. **A run opens by reading it and closes by
+updating it** (rule 3 below; 2026-09-17). Three rules make it safe to act on:
 
 1. **A `- [ ]` checkbox means "not finished". It does NOT mean "nothing
    exists."** An item carries a state clause — `_(state: planned | built |
@@ -40,6 +41,19 @@ common way an agent wastes a day. Two rules make it safe to act on:
    [`docs/history/completed-releases.md`](docs/history/completed-releases.md).
    A grep that finds nothing in `ROADMAP.md` means "moved" as often as it
    means "missing" — check the archive before concluding anything is absent.
+
+3. **Every run that ships anything ends with `ROADMAP.md` advanced, and it is
+   among the last files the run writes.** Before the run closes, the item the
+   work belongs to reads `_(state: built)_` with a **Built:** line naming the
+   branch; once its `check:` is green in CI on the PR head it reads `[x]`
+   `_(state: verified)_` and moves to the archive in the same PR. The only
+   thing that may hold the record at `built` is a CI validation still
+   pending — never "I'll record it next session." A run that leaves the code
+   merged and the roadmap unmoved has taught the next agent to rebuild it.
+   Enforced for release-claiming commits by
+   [`tools/Test-RoadmapCapabilityRecord.ps1`](tools/Test-RoadmapCapabilityRecord.ps1);
+   Lane 0.8 carries the item that widens the gate to lane work and
+   `frontend/`, so until it lands this rule binds by contract, not by gate.
 
 The same applies to any deferred instruction (a queued task, a handoff note, a
 scheduled prompt): **verify its premise still holds before acting on it, and

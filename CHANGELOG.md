@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-17 — The roadmap is the first file an agent reads and the last it writes
+
+Ben's ruling after the Lane 0.21 poll-loop run: a completed item is marked on
+the roadmap as part of finishing the work, not afterwards. Nothing in the
+standard or the operating contract had said so in one sentence.
+
+- **`AGENTS.md`** — the section "Read the roadmap before you build" becomes
+  "The roadmap is the first file you read and the last file you write", with
+  a third rule: every run that ships anything ends with `ROADMAP.md` advanced
+  (`built` + **Built:** line; `[x]` `verified` + archive once CI is green in
+  the same PR), and only a pending CI validation may hold the record at
+  `built`.
+- **Roadmap standard** — `ROADMAP_TEMPLATE.md` (both `standards/roadmap/` and
+  the self-contained `spec/roadmap-contract/` copy) gains authoring rule 7,
+  "this file opens and closes every agent run", so every roadmap the product
+  generates or repairs carries the rule.
+- **Gate gap recorded, not papered over.** `Test-RoadmapCapabilityRecord.ps1`
+  binds only `feat(release-N.M):`-style commits touching `backend/` or
+  `scripts/`; the poll-loop commit shipped 16 files under that bar and
+  `frontend/` never counts. Lane 0.8 gains a planned item to widen the
+  predicate, with its check named. Until it lands the rule binds by contract.
+- Verified by `tools/Test-RoadmapStructure.ps1 -FailOnError`,
+  `tests/Test-RoadmapCheckRunsInCi.ps1 -FailOnError` and the module smoke
+  (the template is parsed by the roadmap fixtures).
+
 ## 2026-09-17 — Lane 0.21: polls never pile up behind a slow host
 
 `/api/agent-runs` was fetched seven times in one page load, 147 KB each,
