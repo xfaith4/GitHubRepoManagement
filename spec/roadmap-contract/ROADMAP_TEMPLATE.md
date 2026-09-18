@@ -63,6 +63,15 @@ AUTHORING RULES (not rendered as a section; parsers and agents should still read
    filling this out by hand because no tooling exists yet, treat it as a
    best-effort mirror of release status + known blockers, not a separate
    judgment call.
+
+7. THIS FILE OPENS AND CLOSES EVERY AGENT RUN. An agent reads this file before
+   it builds anything (a `[ ]` means "not finished", not "nothing exists"), and
+   it updates this file as one of the LAST files it writes before the run ends:
+   the item the work belongs to is checked `[x]` or its status advanced, in the
+   same change set as the code. The only reason the record may lag the code is
+   a CI validation that has not yet finished — record the item as built and
+   awaiting that check, never "to be recorded later." A run that merges code
+   and leaves this file unmoved teaches the next agent to rebuild what exists.
 -->
 
 ## 1. Product Intent
