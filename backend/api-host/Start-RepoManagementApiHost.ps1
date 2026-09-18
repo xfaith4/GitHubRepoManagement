@@ -5062,6 +5062,15 @@ function Get-PortfolioAssessmentReadPayload {
     if ($ForceRefresh -or ($Query.ContainsKey('includeCuration') -and (Parse-Bool -Value $Query.includeCuration -Default $false))) {
         $entries = @(Add-PortfolioCurationToAssessments -Assessments $entries)
     }
+    foreach ($entry in @($entries)) {
+        if ($null -eq $entry) { continue }
+        if (-not ($entry.PSObject.Properties.Name -contains 'scanDecisionReason')) {
+            $currentValue = [string]$entry.scanDecisionReason
+            $entry | Add-Member -NotePropertyName 'scanDecisionReason' -NotePropertyValue $(
+                if ([string]::IsNullOrWhiteSpace($currentValue)) { 'cache-miss' } else { $currentValue }
+            ) -Force
+        }
+    }
     $source = if ($null -eq $index) { 'awaiting-first-scan' } else { 'portfolio-index' }
     $signals = @{}
     if ($null -ne $index) {
@@ -11137,7 +11146,11 @@ try {
                 'GET /api/portfolio/assessment' {
                     $q = Parse-QueryString -Query $req.Query
                     $payload = Get-PortfolioAssessmentReadPayload -Query $q -ForceRefresh:$forcedRefreshAll
-                    Write-HostLog (Format-PortfolioReadBudgetLog -Result $payload.performance -CorrelationId $correlationId -Route '/api/portfolio/assessment')
+                    $settings = Get-HostSettings
+                    $readBudget = New-PortfolioReadBudgetResult -CacheSource ([string]$payload.cacheSource) `
+                        -MeasuredMs ([double]((Get-Date) - $requestStart).TotalMilliseconds) -Settings $settings
+                    $payload.performance = $readBudget
+                    Write-HostLog (Format-PortfolioReadBudgetLog -Result $readBudget -CorrelationId $correlationId -Route '/api/portfolio/assessment')
                     Add-MetricCounter -Name 'api_requests_total'
                     Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{

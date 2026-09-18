@@ -36,12 +36,6 @@ Their full text lives in
 2026-08-11 archive pass, recorded in `CHANGELOG.md`). Release 3.8's checkbox-
 free historical block is the sole temporary exception and G39-01 removes it.
 
-**Transitional precedence.** Steering revision 2026-09-18 governs now. Until
-G39-01 updates `AGENTS.md`, validators and delivery-loop documentation, any
-older rule that calls CI-green "done," requires `READY_FOR_OPERATOR` for every
-PR, or prohibits mandate-authorized guarded promotion is historical. Continue
-operating in supervised mode; do not simulate guarded behavior before G39-01
-through G39-06 are integrated.
 
 **Current focus (next agent actions), in order.** Every item here is
 agent-closable; the operator queue is a separate file. Take the first
@@ -516,7 +510,7 @@ open.
 
 ### Release 2.9 — Operator Field Proof + Mobile Completion
 
-**Status:** VALIDATION TRACK — its engineering is closed. Mobile completion is
+**Status:** validation — its engineering is closed. Mobile completion is
 un-deferred, but remaining work requires elevation, authentication, a physical
 device or elapsed calendar time and therefore lives outside the agent critical
 path.
@@ -1226,7 +1220,7 @@ provider transcripts or repository file contents in a mandate or escalation.
       current head, permission-envelope
       compliance, risk at or below the mandate ceiling, remaining budgets, no
       unresolved escalation and no head movement after evidence collection.
-      Supervised additionally requires operator approval bound to that SHA.
+      Supervised additionally requires owner-reviewed approval bound to that SHA.
       Guarded requires the mandate to authorize policy promotion. Regardless of
       mode, owner review remains mandatory for `.github/workflows/**`, CI gates,
       `docs/governance/**`, branch protection, credentials/permissions,
