@@ -5064,9 +5064,33 @@ function Get-PortfolioAssessmentReadPayload {
     }
     foreach ($entry in @($entries)) {
         if ($null -eq $entry) { continue }
-        if (-not ($entry.PSObject.Properties.Name -contains 'scanDecisionReason') -or [string]::IsNullOrWhiteSpace([string]$entry.scanDecisionReason)) {
-            $entry | Add-Member -NotePropertyName 'scanDecisionReason' -NotePropertyValue 'cache-miss' -Force
+        $currentReason = [string](Get-ObjectPropertyValue -InputObject $entry -PropertyName 'scanDecisionReason' -Default '')
+        if ([string]::IsNullOrWhiteSpace($currentReason) -or $currentReason -in @('cache-miss', 'cache-invalid')) {
+            # The entry is present in the warm index — it was fully assessed
+            # during a previous scan and is now being served from that cached
+            # result without being re-assessed.  'cache-miss' / 'cache-invalid'
+            # captured the scan-time decision (e.g. the very first run had no
+            # previous index to compare to), but from the read path's perspective
+            # the entry is reused from cache.
+            $entry | Add-Member -NotePropertyName 'scanDecisionReason' -NotePropertyValue 'reused-cache' -Force
         }
+    }
+    # Build a scanSummary that is consistent with the normalized per-entry
+    # scanDecisionReason values.  The summary stored in the index reflects the
+    # scan that produced it; the read path may have promoted 'cache-miss' /
+    # 'cache-invalid' entries to 'reused-cache', so recompute rather than
+    # forwarding a now-mismatched stored value.
+    $readScanSummaryReused = @($entries | Where-Object {
+        $null -ne $_ -and [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'scanDecisionReason' -Default '') -eq 'reused-cache'
+    }).Count
+    $readScanSummaryReindexed = @($entries | Where-Object {
+        $null -ne $_ -and [string](Get-ObjectPropertyValue -InputObject $_ -PropertyName 'scanDecisionReason' -Default '') -notin @('reused-cache', '')
+    }).Count
+    $readScanSummary = [pscustomobject]@{
+        reused    = $readScanSummaryReused
+        reindexed = $readScanSummaryReindexed
+        failed    = 0
+        durationMs = [int]((Get-Date) - $started).TotalMilliseconds
     }
     $source = if ($null -eq $index) { 'awaiting-first-scan' } else { 'portfolio-index' }
     $signals = @{}
@@ -5091,7 +5115,7 @@ function Get-PortfolioAssessmentReadPayload {
         cacheAgeSeconds = $age
         stale = $isStale
         staleness = $staleness
-        scanSummary = $(if ($signals.ContainsKey('scanSummary')) { $signals.scanSummary } else { $null })
+        scanSummary = $readScanSummary
         refresh = $state
         refreshAccepted = $refreshStarted
         performance = New-PortfolioReadBudgetResult -CacheSource 'portfolio-index' -MeasuredMs ((Get-Date) - $started).TotalMilliseconds -Settings $settings
