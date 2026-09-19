@@ -8816,7 +8816,8 @@ try {
 
                 # Re-read rather than predict: the response is what the next
                 # GET /api/providers will say, not what this route hoped.
-                $refreshedAvailability = Test-AgentProviderAvailability -Provider $optOutProvider -WorkspaceRoot $WorkspaceRoot
+                $refreshedAvailability = Test-AgentProviderAvailability -Provider $optOutProvider -WorkspaceRoot $WorkspaceRoot `
+                    -RunnerDetection (Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot).providerDetection -DeferToRunner
                 $refreshedPayload = [ordered]@{}
                 foreach ($availabilityProperty in @($refreshedAvailability.PSObject.Properties | ForEach-Object { $_.Name })) {
                     if ($availabilityProperty -eq 'provider') { continue }
@@ -9485,6 +9486,10 @@ try {
                     # state, and re-reading it three times per request would let
                     # a mid-request edit report two different answers.
                     $providerInstallState = Get-InstallationState -WorkspaceRoot $WorkspaceRoot
+                    # This host runs as LocalSystem and cannot see the
+                    # operator's User PATH; the runner, which launches the
+                    # CLIs from the operator's account, reports what it found.
+                    $providerRunnerDetection = (Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot).providerDetection
                     $providerRows = @()
                     foreach ($providerName in @($providerConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
                         $entry = $providerConfig.providers.$providerName
@@ -9500,7 +9505,8 @@ try {
                         # reported beside the verdict, because "no capacity
                         # record" and "the CLI is not installed here" are
                         # different answers to why a provider is never chosen.
-                        $availability = Test-AgentProviderAvailability -Provider $providerName -WorkspaceRoot $WorkspaceRoot -InstallationState $providerInstallState
+                        $availability = Test-AgentProviderAvailability -Provider $providerName -WorkspaceRoot $WorkspaceRoot -InstallationState $providerInstallState `
+                            -RunnerDetection $providerRunnerDetection -DeferToRunner
                         $availabilityPayload = [ordered]@{}
                         foreach ($availabilityProperty in @($availability.PSObject.Properties | ForEach-Object { $_.Name })) {
                             if ($availabilityProperty -eq 'provider') { continue }
@@ -9954,8 +9960,10 @@ try {
                         $prereqProviderConfig = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot)
                         if ($null -ne $prereqProviderConfig) {
                             $prereqState = Get-InstallationState -WorkspaceRoot $WorkspaceRoot
+                            $prereqRunnerDetection = (Get-RunnerPresence -WorkspaceRoot $WorkspaceRoot).providerDetection
                             foreach ($prereqProvider in @($prereqProviderConfig.providers.PSObject.Properties | ForEach-Object { $_.Name })) {
-                                $prereqAvailability = Test-AgentProviderAvailability -Provider $prereqProvider -WorkspaceRoot $WorkspaceRoot -InstallationState $prereqState
+                                $prereqAvailability = Test-AgentProviderAvailability -Provider $prereqProvider -WorkspaceRoot $WorkspaceRoot -InstallationState $prereqState `
+                                    -RunnerDetection $prereqRunnerDetection -DeferToRunner
                                 $checks += @{
                                     id       = ('provider-{0}' -f $prereqProvider)
                                     label    = ('{0}{1} agent CLI' -f $prereqProvider.Substring(0, 1).ToUpperInvariant(), $prereqProvider.Substring(1))

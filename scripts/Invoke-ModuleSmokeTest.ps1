@@ -3339,6 +3339,65 @@ if ($LASTEXITCODE -eq 0) {
     }
     if ((Get-AgentProviderCommandName -Provider 'copilot') -ne 'gh') { throw 'The stub was not reverted; copilot runs through the GitHub CLI' }
 
+    # The portal runs as LocalSystem and cannot see the operator's User PATH,
+    # where per-user installs of claude and codex live; it told Settings both
+    # were "not installed" on a machine where the runner launched them. With
+    # -DeferToRunner the runner's heartbeat report is the answer, and a host
+    # miss with no report is "unchecked", never "not installed".
+    $avRunnerReport = [pscustomobject]@{
+        checkedAt = '2026-09-19T12:00:00Z'
+        providers = [pscustomobject]@{
+            claude = [pscustomobject]@{ installed = $true; commandPath = 'C:\Users\op\.local\bin\claude.exe' }
+            codex  = [pscustomobject]@{ installed = $false; commandPath = '' }
+        }
+    }
+    $avDeferCommandName = ${function:Get-AgentProviderCommandName}
+    try {
+        Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value { param([Parameter(Mandatory)][string]$Provider) $null = $Provider; return 'definitely-not-a-real-command-38b' }
+        $avByRunner = Test-AgentProviderAvailability -Provider 'claude' -WorkspaceRoot $avWs -RunnerDetection $avRunnerReport -DeferToRunner
+        if (-not $avByRunner.available -or $avByRunner.detectedBy -ne 'runner') { throw "The runner's report must win over the host's own PATH; got available=$($avByRunner.available) detectedBy='$($avByRunner.detectedBy)'" }
+        if ($avByRunner.commandPath -ne 'C:\Users\op\.local\bin\claude.exe') { throw "The runner's path must travel with the row; got '$($avByRunner.commandPath)'" }
+
+        $avRunnerMiss = Test-AgentProviderAvailability -Provider 'codex' -WorkspaceRoot $avWs -RunnerDetection $avRunnerReport -DeferToRunner
+        if ($avRunnerMiss.installed -or $avRunnerMiss.detectedBy -ne 'runner') { throw 'A runner that looked and missed is the answer: not installed, by the runner' }
+        if ($avRunnerMiss.detail -notmatch 'runner did not find') { throw "The reason must say the runner looked; got '$($avRunnerMiss.detail)'" }
+
+        # copilot is absent from the report, and the host finds nothing itself.
+        $avUnchecked = Test-AgentProviderAvailability -Provider 'copilot' -WorkspaceRoot $avWs -RunnerDetection $avRunnerReport -DeferToRunner
+        if ($avUnchecked.detectedBy -ne 'unchecked' -or $avUnchecked.available) { throw "No report and a host miss must be unchecked and unavailable; got '$($avUnchecked.detectedBy)'" }
+        if ($avUnchecked.detail -notmatch '^not checked yet') { throw "The unchecked reason must not claim the CLI is missing; got '$($avUnchecked.detail)'" }
+        if ((Test-AgentProviderAvailability -Provider 'claude' -WorkspaceRoot $avWs -RunnerDetection $null -DeferToRunner).detectedBy -ne 'unchecked') { throw 'With no runner report at all, a host miss is unchecked' }
+
+        # The report survives the heartbeat's JSON round-trip. detectedBy, not
+        # installed, is the assertion: a parse failure falls back to the local
+        # probe, which would make an installed-only check pass vacuously.
+        $avRoundTrip = ($avRunnerReport | ConvertTo-Json -Depth 6) | ConvertFrom-Json
+        if ((Test-AgentProviderAvailability -Provider 'claude' -WorkspaceRoot $avWs -RunnerDetection $avRoundTrip -DeferToRunner).detectedBy -ne 'runner') { throw 'The runner report must still be read after a JSON round-trip' }
+
+        # Without -DeferToRunner (the runner itself) its own PATH is the answer.
+        $avLocal = Test-AgentProviderAvailability -Provider 'claude' -WorkspaceRoot $avWs -RunnerDetection $avRunnerReport
+        if ($avLocal.detectedBy -ne 'local' -or $avLocal.installed) { throw 'Without -DeferToRunner the calling process probes its own PATH and ignores any report' }
+
+        # A host that CAN see the CLI (Machine PATH, like gh) still answers.
+        Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value { param([Parameter(Mandatory)][string]$Provider) $null = $Provider; return 'git' }
+        $avHostHit = Test-AgentProviderAvailability -Provider 'copilot' -WorkspaceRoot $avWs -RunnerDetection $avRunnerReport -DeferToRunner
+        if (-not $avHostHit.installed -or $avHostHit.detectedBy -ne 'local' -or [string]::IsNullOrWhiteSpace($avHostHit.commandPath)) { throw 'A host hit with no runner report must read installed, local, with its path' }
+
+        # The runner's report is built from the same probe, one entry per provider.
+        $avDetection = Get-AgentProviderDetection -WorkspaceRoot $avWs
+        $avDetectionKeys = @($avDetection.providers.Keys) | Sort-Object
+        $avDetectionExpected = @(@(Get-AgentProviderToken -WorkspaceRoot $avWs) | Where-Object { $_ -ne 'auto' }) | Sort-Object
+        if (($avDetectionKeys -join ',') -ne ($avDetectionExpected -join ',')) { throw "Detection must cover every provider and only providers: '$($avDetectionKeys -join ',')'" }
+        foreach ($avKey in $avDetectionKeys) {
+            $avEntry = $avDetection.providers[$avKey]
+            if ($avEntry.installed -isnot [bool]) { throw "Detection must answer booleans; '$avKey' did not" }
+            if (-not $avEntry.installed -or [string]::IsNullOrWhiteSpace($avEntry.commandPath)) { throw "With the git stub every provider resolves; '$avKey' reported no path" }
+        }
+    }
+    finally {
+        Set-Item -Path 'function:\Get-AgentProviderCommandName' -Value $avDeferCommandName
+    }
+
     # A21 TRIPWIRE. This fails the moment someone adds a login probe, which is
     # the point: proving an account works means spending its quota.
     foreach ($avProvider in @('claude', 'codex', 'copilot')) {
@@ -3948,13 +4007,16 @@ Write-Step 'Runner claim gate — smoke: cooldown, one local slot, and liveness 
     $clBeatOld = New-RunnerHeartbeat -QueuePath 'C:\q.jsonl' -PollSeconds 15 -ClaimedCount 2 -Mode 'interactive' -BeatAt '2026-09-10T12:00:00Z' -StopFilePath 'C:\stop'
     if (@($clBeatOld.Keys) -contains 'providerCooldowns') { throw 'The heartbeat must not gain keys when the caller supplied none' }
     if (@($clBeatOld.Keys) -contains 'localSlotsInUse') { throw 'The heartbeat must not gain keys when the caller supplied none' }
+    if (@($clBeatOld.Keys) -contains 'providerDetection') { throw 'The heartbeat must not gain keys when the caller supplied none' }
     $clBeatNew = New-RunnerHeartbeat -QueuePath 'C:\q.jsonl' -PollSeconds 15 -ClaimedCount 2 -Mode 'interactive' -BeatAt '2026-09-10T12:00:00Z' -StopFilePath 'C:\stop' `
-        -ProviderCooldowns @{ claude = '2026-09-10T13:00:00Z'; codex = $null; copilot = $null } -LocalSlotsInUse 1
+        -ProviderCooldowns @{ claude = '2026-09-10T13:00:00Z'; codex = $null; copilot = $null } -LocalSlotsInUse 1 `
+        -ProviderDetection ([ordered]@{ checkedAt = '2026-09-10T12:00:00Z'; providers = [ordered]@{ claude = [ordered]@{ installed = $true; commandPath = 'C:\c.exe' } } })
     foreach ($clKey in @($clBeatOld.Keys)) {
         if ("$($clBeatNew[$clKey])" -ne "$($clBeatOld[$clKey])") { throw "Heartbeat key '$clKey' changed when the new fields were added" }
     }
     if (@($clBeatNew.providerCooldowns.Keys).Count -ne 3) { throw 'providerCooldowns carries one entry per provider' }
     if ($clBeatNew.localSlotsInUse -ne 1) { throw 'localSlotsInUse is a number the portal can read' }
+    if ($clBeatNew.providerDetection.providers.claude.commandPath -ne 'C:\c.exe') { throw 'providerDetection rides the heartbeat so the portal can show what the runner can launch' }
 
     Remove-Item -LiteralPath $clWs -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -8350,6 +8412,16 @@ Write-Step 'Runner presence — smoke: queueing into an empty room is visible (R
     $fromJson = Resolve-RunnerPresence -Heartbeat $jsonBeat -Now $presenceNow
     if ($fromJson.secondsSinceBeat -lt 0) { throw 'Heartbeat age went negative — the UTC double-conversion bug is back' }
     if ([math]::Abs($fromJson.secondsSinceBeat - 5) -gt 2) { throw "Heartbeat age wrong after a JSON round-trip: $($fromJson.secondsSinceBeat)s" }
+
+    # The runner's provider report reaches the host through presence, stale or
+    # not: a stopped runner's last look is still the only look from the
+    # operator's account. No report is $null, which the host reads as unchecked.
+    if ($null -ne $absent.providerDetection -or $null -ne $fromJson.providerDetection) { throw 'A heartbeat without a provider report must carry providerDetection = $null' }
+    $detectBeat = New-RunnerHeartbeat -QueuePath 'C:\q.jsonl' -PollSeconds 15 -BeatAt $presenceNow.AddMinutes(-30).ToString('o') `
+        -ProviderDetection ([ordered]@{ checkedAt = $presenceNow.ToString('o'); providers = [ordered]@{ codex = [ordered]@{ installed = $true; commandPath = 'C:\npm\codex.cmd' } } })
+    $detectPresence = Resolve-RunnerPresence -Heartbeat (($detectBeat | ConvertTo-Json -Depth 6) | ConvertFrom-Json) -Now $presenceNow
+    if ($detectPresence.state -ne 'stale') { throw 'The provider-report fixture was meant to be stale' }
+    if ([string]$detectPresence.providerDetection.providers.codex.commandPath -ne 'C:\npm\codex.cmd') { throw 'Presence must carry the runner provider report through, even when stale' }
 
     # Backlog counts only entries still sitting at `queued`. The queue file is
     # append-only, so counting every line would report every task ever

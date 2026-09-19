@@ -172,6 +172,7 @@ function Resolve-RunnerPresence {
             message          = ('No operator runner has ever reported in. Queued work will sit at "queued" until one runs: ' + $StartCommand)
             startCommand     = $StartCommand
             evaluatedAt      = $nowUtc.ToString('o')
+            providerDetection = $null
         }
     }
 
@@ -196,6 +197,7 @@ function Resolve-RunnerPresence {
             message          = 'A runner heartbeat exists but carries no readable timestamp, so its liveness cannot be confirmed. Treating it as absent.'
             startCommand     = $StartCommand
             evaluatedAt      = $nowUtc.ToString('o')
+            providerDetection = (_Runner_GetField -Obj $Heartbeat -Name 'providerDetection' -Default $null)
         }
     }
 
@@ -229,6 +231,10 @@ function Resolve-RunnerPresence {
         message          = $message
         startCommand     = $StartCommand
         evaluatedAt      = $nowUtc.ToString('o')
+        # Which provider CLIs the runner's account can launch. Carried even
+        # when stale: a stopped runner's last look is still the only look
+        # anyone had from the operator's account.
+        providerDetection = (_Runner_GetField -Obj $Heartbeat -Name 'providerDetection' -Default $null)
     }
 }
 

@@ -6843,3 +6843,34 @@ same test fails against `origin/main`'s host. Field proof (the live portal
 answering while its own worker scans) needs the elevated service restart that
 loads the new host; it is not a gate on this milestone. Lane 0.21's remaining
 items stay open in ROADMAP.md.
+
+## Lane 0.22 — verified milestones (lane still open; moved from ROADMAP.md under the §3 archive rule)
+
+- [x] **Settings reports the CLIs the runner can launch.** Operator report,
+      2026-09-19: Settings read "Not installed" for claude and codex on a
+      machine where both were installed. The portal service runs as
+      LocalSystem, whose PATH is the Machine PATH alone; claude
+      (`~\.local\bin`) and codex (`%APPDATA%\npm`) sit on the User PATH, and
+      only `gh` (copilot) is under Program Files. The runner, a scheduled task
+      under the operator's own logon, could launch all three. The runner now
+      probes each provider CLI once at start (`Get-AgentProviderDetection`)
+      and carries the result on its heartbeat. `Test-AgentProviderAvailability
+      -DeferToRunner` answers from that report, and a host miss with no report
+      reads "Not checked yet", never "Not installed". Settings shows where the
+      runner found each CLI. No setting to fill in: the process that does the
+      work reports what it can launch. Done when: the module smoke proves the
+      runner's report wins over the host's PATH and survives the heartbeat
+      round-trip, and that a host miss without a report is `unchecked`;
+      Settings renders the path and the unchecked state.
+      *(state: verified)*
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+
+Verified 2026-09-19: `CI Smoke` passed on the head of #315 (`f98b575`, run
+35437575987). Its canonical test suite includes the module smoke, the
+api-host smoke and the SettingsModal tests. On the operator's machine, the
+runner-side probe found claude at `C:\Users\benfu\.local\bin\claude.exe`,
+codex at `...\AppData\Roaming\npm\codex.ps1` and gh at `C:\Program
+Files\GitHub CLI\gh.exe`. The live portal shows this only after the elevated
+service restart that loads the new host and a runner restart that writes the
+report. That field proof is not a gate on this milestone. Lane 0.22's other
+items stay open in ROADMAP.md.

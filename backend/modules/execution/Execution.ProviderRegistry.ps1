@@ -307,10 +307,28 @@ function Get-AgentProviderCommandName {
 
       supported  a REPOSITORY fact -- a conforming adapter exists in this build.
                  Same for everyone, and CI can verify it.
-      installed  a MACHINE fact -- the CLI is on this PATH. Different on every
-                 installation, so it is detected here and never committed.
+      installed  a MACHINE fact -- the CLI is on the PATH of the process that
+                 runs the work. Different on every installation, so it is
+                 detected and never committed.
       optedOut   an OPERATOR fact -- switched off deliberately, stored in an
                  untracked per-installation file (A22).
+
+    **Whose PATH.** The runner launches the CLIs, in the operator's own logon
+    session. The portal service runs as LocalSystem, whose PATH is the Machine
+    PATH alone -- and CLIs installed per user (claude under ~\.local\bin, codex
+    under %APPDATA%\npm) are on the User PATH only. The portal probing its own
+    PATH told Settings both were "not installed" on a machine where the runner
+    launched them fine. So the portal passes -DeferToRunner with the report
+    the runner carries on its heartbeat (Get-AgentProviderDetection), and
+    `detectedBy` says which process answered:
+
+      runner     the runner's report -- the authority, since it does the work.
+      local      this process probed its own PATH (the runner itself, a
+                 script, or the portal when the CLI is on the Machine PATH).
+      unchecked  -DeferToRunner, no runner report, and this process found
+                 nothing. A miss from a process that is not the one doing the
+                 work proves nothing about the one that is, so this is never
+                 reported as "not installed".
 
     **Nothing here authenticates.** There is no probe of whether the account
     works, because the only way to prove that is to USE the account, and that
@@ -330,7 +348,11 @@ function Test-AgentProviderAvailability {
     param(
         [Parameter(Mandatory)][string]$Provider,
         [string]$WorkspaceRoot = '',
-        [object]$InstallationState = $null
+        [object]$InstallationState = $null,
+        # The heartbeat's `providerDetection`, or $null when no runner has
+        # reported. Read only with -DeferToRunner.
+        [object]$RunnerDetection = $null,
+        [switch]$DeferToRunner
     )
 
     $supported = $false
@@ -342,7 +364,20 @@ function Test-AgentProviderAvailability {
     }
 
     $commandName = Get-AgentProviderCommandName -Provider $Provider
-    $installed = [bool](Get-Command -Name $commandName -ErrorAction SilentlyContinue)
+    $runnerEntry = $null
+    if ($DeferToRunner) {
+        $runnerEntry = _APR_Field -Obj (_APR_Field -Obj $RunnerDetection -Name 'providers' -Default $null) -Name $Provider -Default $null
+    }
+    if ($null -ne $runnerEntry) {
+        $installed = [bool](_APR_Field -Obj $runnerEntry -Name 'installed' -Default $false)
+        $commandPath = [string](_APR_Field -Obj $runnerEntry -Name 'commandPath' -Default '')
+        $detectedBy = 'runner'
+    }
+    else {
+        $commandPath = Get-AgentProviderCommandPath -Provider $Provider
+        $installed = -not [string]::IsNullOrWhiteSpace($commandPath)
+        $detectedBy = if ($DeferToRunner -and -not $installed) { 'unchecked' } else { 'local' }
+    }
 
     $optedOut = $false
     $state = $InstallationState
@@ -356,10 +391,14 @@ function Test-AgentProviderAvailability {
 
     $available = ($supported -and $installed -and -not $optedOut)
 
+    # An unchecked CLI ranks below a deliberate opt-out: "you switched it off"
+    # is known, "nobody has looked yet" is not.
     $detail = 'available'
     if (-not $supported) { $detail = 'no adapter in this build' }
-    elseif (-not $installed) { $detail = ("the {0} CLI was not found on PATH" -f $commandName) }
+    elseif (-not $installed -and $detectedBy -eq 'runner') { $detail = ("the runner did not find the {0} CLI on its PATH" -f $commandName) }
+    elseif (-not $installed -and $detectedBy -eq 'local') { $detail = ("the {0} CLI was not found on PATH" -f $commandName) }
     elseif ($optedOut) { $detail = 'switched off in Settings' }
+    elseif (-not $installed) { $detail = ("not checked yet: the {0} CLI is not on the portal service's PATH, and no runner has reported what the operator's account can launch" -f $commandName) }
 
     return [pscustomobject]@{
         provider      = $Provider
@@ -369,6 +408,63 @@ function Test-AgentProviderAvailability {
         authenticated = 'unknown'
         available     = $available
         detail        = $detail
+        detectedBy    = $detectedBy
+        commandPath   = $commandPath
+    }
+}
+
+<#
+.SYNOPSIS
+    Where this process would launch a provider's CLI from, or '' if nowhere.
+#>
+function Get-AgentProviderCommandPath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$Provider)
+
+    # SilentlyContinue is the probe, not a concealed failure: "not found" is
+    # the answer being asked for.
+    $resolved = Get-Command -Name (Get-AgentProviderCommandName -Provider $Provider) -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $resolved) { return '' }
+    # A function or alias has no file; its name is still what gets invoked.
+    if ([string]::IsNullOrWhiteSpace([string]$resolved.Source)) { return [string]$resolved.Name }
+    return [string]$resolved.Source
+}
+
+<#
+.SYNOPSIS
+    What the calling process can launch, provider by provider, and from where.
+
+.DESCRIPTION
+    The runner calls this once at startup and carries the answer on its
+    heartbeat, so the portal -- which runs as LocalSystem and cannot see the
+    operator's User PATH -- reports what the process that does the work can
+    actually launch. See Test-AgentProviderAvailability -DeferToRunner.
+
+    Once, not per poll: a process's PATH is fixed when it starts, so a CLI
+    installed after the runner started cannot be launched by it either.
+#>
+function Get-AgentProviderDetection {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param(
+        [string]$WorkspaceRoot = '',
+        [datetime]$Now = [datetime]::UtcNow
+    )
+
+    $providers = [ordered]@{}
+    foreach ($token in @(Get-AgentProviderToken -WorkspaceRoot $WorkspaceRoot)) {
+        # `auto` names no CLI.
+        if ($token -eq 'auto') { continue }
+        $path = Get-AgentProviderCommandPath -Provider $token
+        $providers[$token] = [ordered]@{
+            installed   = (-not [string]::IsNullOrWhiteSpace($path))
+            commandPath = $path
+        }
+    }
+    return [ordered]@{
+        checkedAt = $Now.ToUniversalTime().ToString('o')
+        providers = $providers
     }
 }
 

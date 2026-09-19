@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-19 — Settings reports the agent CLIs the runner can launch (Lane 0.22)
+
+Settings read "Not installed" for claude and codex on a machine where both
+were installed. The portal service runs as LocalSystem, whose PATH is the
+Machine PATH alone. claude (`~\.local\bin`) and codex (`%APPDATA%\npm`) sit on
+the User PATH, so only copilot's `gh`, under Program Files, was found. The
+runner is a scheduled task under the operator's own logon and could launch all
+three.
+
+- **The runner reports what it can launch.** At start it probes each provider
+  CLI once (`Get-AgentProviderDetection`) and carries the result, with the
+  path, on its heartbeat as `providerDetection`.
+- **The host answers from that report.** `Test-AgentProviderAvailability
+  -DeferToRunner` uses the runner's report in `GET /api/providers`, the opt-out
+  route and `GET /setup/prerequisites`. Each row now carries `detectedBy`
+  (`runner`, `local` or `unchecked`) and `commandPath`. When no runner has
+  reported and the host finds nothing on its own PATH, the row is
+  `unchecked`, never "not installed".
+- **Settings says who looked.** Each provider shows where the runner found it.
+  A provider no runner has checked reads "Not checked yet" and keeps its
+  Switch off control. A provider the runner could not find says the runner
+  looked.
+
+Nothing needs configuring. The fix goes live after the elevated service
+restart and once the runner restarts on the new code.
+
 ## 2026-09-16 — The assessment route no longer holds the request thread (Lane 0.21)
 
 The host serves one connection at a time. Each
