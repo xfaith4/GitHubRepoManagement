@@ -86,6 +86,17 @@ After G39-06, the active execution posture controls promotion:
 it and a run that changes implementation or roadmap state closes by reconciling
 it.
 
+### Reading open roadmap items
+
+- A roadmap checkbox means "not finished", not "nothing exists." Open items can
+  already have code, gates, or evidence behind them, so **Verify before you build**.
+- A completed capability may have moved out of `ROADMAP.md` and into
+  [`docs/history/completed-releases.md`](docs/history/completed-releases.md);
+  absence from the active roadmap is not evidence of absence from the
+  repository.
+- Open items past `planned` must still name an artifact, linked path, or
+  command. That rule is enforced by `RQ014-OPEN-ITEM-NO-ARTIFACT`.
+
 ### Selecting work
 
 - Without an active mandate, take the first dependency-ready item in Current
