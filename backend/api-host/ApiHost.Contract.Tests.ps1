@@ -528,7 +528,16 @@ Describe 'Portfolio snapshot route - Release 3.5 milestones 1+2' {
         $checked = 0
         foreach ($endpoint in @('/api/portfolio/snapshot', '/api/execution/metrics', '/api/roadmap/runner', '/api/portfolio/assessment', '/api/operations/repos')) {
             $response = Invoke-ContractApiRequest -Method GET -Path $endpoint
-            $response.StatusCode | Should -Be 200
+            if ($endpoint -eq '/api/operations/repos') {
+                # The assessment route now starts a background refresh, so the
+                # operations payload can still be warming when this check runs.
+                # Both responses are valid wire contracts that must carry an
+                # explicit timezone basis.
+                $response.StatusCode | Should -BeIn @(200, 409) -Because $endpoint
+            }
+            else {
+                $response.StatusCode | Should -Be 200 -Because $endpoint
+            }
             $checked += Assert-JsonTimestampBasis -Json $response.Content -Context $endpoint
         }
         $checked | Should -BeGreaterThan 0 -Because 'a timestamp gate must examine actual wire values'
