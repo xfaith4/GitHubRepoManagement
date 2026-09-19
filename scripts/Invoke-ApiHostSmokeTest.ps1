@@ -4314,6 +4314,16 @@ A release should not be marked `done` unless:
             throw "Availability must never authenticate (A21): '$($row.provider)' reported authenticated='$($row.availability.authenticated)'"
         }
         if ([string]::IsNullOrWhiteSpace([string]$row.availability.detail)) { throw "Provider '$($row.provider)' availability carries no detail sentence" }
+        # The host runs as LocalSystem and cannot see the operator's User PATH,
+        # so it answers from the runner's heartbeat report; a host miss with no
+        # report is `unchecked`, never "not installed". Which one depends on the
+        # machine, so the assertion is that the route says who answered.
+        if (@('runner', 'local', 'unchecked') -notcontains [string]$row.availability.detectedBy) {
+            throw "Provider '$($row.provider)' availability must say which process answered (runner, local or unchecked); got '$($row.availability.detectedBy)'. Body=$($providersResp.Content)"
+        }
+        if ([bool]$row.availability.installed -and [string]::IsNullOrWhiteSpace([string]$row.availability.commandPath)) {
+            throw "Provider '$($row.provider)' reads installed but names no path it was found at"
+        }
     }
     Write-Host ("  providers ok: {0} providers, each with a verdict reason and detected availability; enforcement off while the task estimate is provisional" -f $providerRows.Count) -ForegroundColor DarkGray
 

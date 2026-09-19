@@ -306,7 +306,8 @@ function New-RunnerHeartbeat {
         [AllowEmptyString()][string]$BeatAt = '',
         [AllowEmptyString()][string]$StopFilePath = '',
         [object]$ProviderCooldowns = $null,
-        [nullable[int]]$LocalSlotsInUse = $null
+        [nullable[int]]$LocalSlotsInUse = $null,
+        [object]$ProviderDetection = $null
     )
 
     if ([string]::IsNullOrWhiteSpace($BeatAt)) { $BeatAt = (Get-Date).ToUniversalTime().ToString('o') }
@@ -331,6 +332,10 @@ function New-RunnerHeartbeat {
     # the portal, the presence module and the api-host smoke all parse this.
     if ($null -ne $ProviderCooldowns) { $beat['providerCooldowns'] = $ProviderCooldowns }
     if ($null -ne $LocalSlotsInUse) { $beat['localSlotsInUse'] = [int]$LocalSlotsInUse }
+    # Which provider CLIs THIS account can launch. The portal runs as
+    # LocalSystem and cannot see the operator's User PATH, so without this it
+    # reports per-user installs (claude, codex) as missing.
+    if ($null -ne $ProviderDetection) { $beat['providerDetection'] = $ProviderDetection }
     return $beat
 }
 
@@ -1904,6 +1909,21 @@ if (Get-Command -Name 'Get-AgentProviderConfig' -ErrorAction SilentlyContinue) {
 }
 $script:RunnerProviderConfig = $runnerProviderConfig
 
+# Once, for the heartbeat: this process's PATH is fixed at start, so a re-probe
+# per poll could never find anything new.
+$runnerProviderDetection = $null
+if (Get-Command -Name 'Get-AgentProviderDetection' -ErrorAction SilentlyContinue) {
+    try {
+        $runnerProviderDetection = Get-AgentProviderDetection -WorkspaceRoot $WorkspaceRoot
+        foreach ($detectedName in @($runnerProviderDetection.providers.Keys)) {
+            $detected = $runnerProviderDetection.providers[$detectedName]
+            $detectedAt = if ($detected.installed) { $detected.commandPath } else { 'not found on PATH' }
+            Write-Host ("  provider {0}: {1}" -f $detectedName, $detectedAt) -ForegroundColor DarkGray
+        }
+    }
+    catch { Write-Host ("  [warn] provider detection failed: {0}; Settings will show providers as not checked" -f $_.Exception.Message) -ForegroundColor DarkYellow }
+}
+
 # Orphan repair runs ONCE, here, before the first poll. A run left `running` by
 # a runner that died is not just holding a slot -- it shows on the board as work
 # in progress that will never finish. Naming it failed/orphaned is the only way
@@ -1962,7 +1982,7 @@ do {
     }
     Write-RunnerHeartbeat -Path $heartbeatPath -Heartbeat (New-RunnerHeartbeat `
             -QueuePath $QueuePath -PollSeconds $PollSeconds -ClaimedCount $claimable.Count -Mode $runnerMode -StopFilePath $StopFilePath `
-            -ProviderCooldowns $beatCooldowns -LocalSlotsInUse $beatLocalSlots)
+            -ProviderCooldowns $beatCooldowns -LocalSlotsInUse $beatLocalSlots -ProviderDetection $runnerProviderDetection)
 
     if ($claimable.Count -eq 0) {
         if ($Once) { Write-Host 'No queued tasks.' -ForegroundColor DarkGray; break }

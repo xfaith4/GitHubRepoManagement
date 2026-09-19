@@ -116,6 +116,42 @@ describe('SettingsModal — agent providers (H38-19b)', () => {
     expect(screen.queryByTestId('provider-optout-auto')).not.toBeInTheDocument();
   });
 
+  // The portal service runs as LocalSystem and cannot see the operator's User
+  // PATH, where per-user installs of claude and codex live. Settings called
+  // both "not installed" on a machine where the runner launched them fine.
+  it('shows where the runner found the CLI', async () => {
+    mockedAvailability.mockResolvedValue([
+      row({ provider: 'claude', detectedBy: 'runner', commandPath: 'C:\\Users\\op\\.local\\bin\\claude.exe' }),
+    ]);
+    renderSettings();
+    expect(await screen.findByText('Ready to run work')).toBeInTheDocument();
+    expect(screen.getByTestId('provider-path-claude')).toHaveTextContent(
+      'Found by the runner at C:\\Users\\op\\.local\\bin\\claude.exe'
+    );
+  });
+
+  it('says "not checked yet", never "not installed", when no runner has looked', async () => {
+    mockedAvailability.mockResolvedValue([
+      row({ provider: 'codex', installed: false, available: false, detectedBy: 'unchecked', commandPath: '' }),
+    ]);
+    renderSettings();
+    expect(await screen.findByText('Not checked yet')).toBeInTheDocument();
+    expect(screen.getByText('The runner checks for the codex command from your account when it starts')).toBeInTheDocument();
+    expect(screen.queryByText('Not installed')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('provider-path-codex')).not.toBeInTheDocument();
+    // The runner may still select it, so the operator can still switch it off.
+    expect(screen.getByTestId('provider-optout-codex')).toBeInTheDocument();
+  });
+
+  it('says the runner looked when the runner is the one that missed it', async () => {
+    mockedAvailability.mockResolvedValue([
+      row({ provider: 'codex', installed: false, available: false, detectedBy: 'runner', commandPath: '' }),
+    ]);
+    renderSettings();
+    expect(await screen.findByText('Not installed')).toBeInTheDocument();
+    expect(screen.getByText('The runner looked for the codex command and did not find it')).toBeInTheDocument();
+  });
+
   it('never claims an account works — availability is not authentication', async () => {
     mockedAvailability.mockResolvedValue([row({ provider: 'claude', authenticated: 'unknown' })]);
     renderSettings();

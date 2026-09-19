@@ -2156,6 +2156,25 @@ live state, and one dispatch-eligibility rule. Then:
       by a developer as package dependencies) is renamed or folded into
       repository detail. _(state: planned)_
       `check: npx vitest run frontend/components/RepoGrid.test.tsx`
+- [ ] **Settings reports the CLIs the runner can launch.** Operator report,
+      2026-09-19: Settings read "Not installed" for claude and codex on a
+      machine where both were installed. The portal service runs as
+      LocalSystem, whose PATH is the Machine PATH alone; claude
+      (`~\.local\bin`) and codex (`%APPDATA%\npm`) sit on the User PATH, and
+      only `gh` (copilot) is under Program Files. The runner, a scheduled task
+      under the operator's own logon, could launch all three. The runner now
+      probes each provider CLI once at start (`Get-AgentProviderDetection`)
+      and carries the result on its heartbeat. `Test-AgentProviderAvailability
+      -DeferToRunner` answers from that report, and a host miss with no report
+      reads "Not checked yet", never "Not installed". Settings shows where the
+      runner found each CLI. No setting to fill in: the process that does the
+      work reports what it can launch. Done when: the module smoke proves the
+      runner's report wins over the host's PATH and survives the heartbeat
+      round-trip, and that a host miss without a report is `unchecked`;
+      Settings renders the path and the unchecked state.
+      _(state: built 2026-09-19 — branch `provider-detection-runner-view`; live
+      after the elevated service restart and a runner restart)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 
 ---
 

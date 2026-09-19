@@ -1147,7 +1147,7 @@ export interface ProviderAvailability {
   provider: ProviderToken;
   /** A conforming adapter exists in this build. A repository fact. */
   supported: boolean;
-  /** The CLI was found on PATH here. A machine fact. */
+  /** The CLI was found on the PATH of the process that runs the work. A machine fact. */
   installed: boolean;
   /** The operator switched it off in Settings. A machine fact. */
   optedOut: boolean;
@@ -1160,6 +1160,17 @@ export interface ProviderAvailability {
    * mapping that is not guessable from the provider name.
    */
   command: string;
+  /**
+   * Which process answered `installed`. The host runs as LocalSystem and cannot
+   * see the operator's User PATH, where per-user installs of claude and codex
+   * live, so it reports what the runner (the operator's own account) found.
+   * `unchecked`: no runner has reported and the host found nothing itself,
+   * which proves nothing, so it must never read as "not installed".
+   * Optional because the frontend can go live before a host restart.
+   */
+  detectedBy?: 'runner' | 'local' | 'unchecked';
+  /** Where the CLI was found; empty when it was not. */
+  commandPath?: string;
 }
 
 export interface DispatchExecuteResult {
