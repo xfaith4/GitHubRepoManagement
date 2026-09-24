@@ -1126,6 +1126,14 @@ three. What is new:
       a 3.8 provider adapter, not a new adapter; `GET /api/providers` reports
       each agent beside its provider. _(state: planned)_
       `check: pwsh ./tests/Test-AgentRegistry.ps1 -FailOnError`
+- [ ] **Lanes are declared, and a lane is a stage.** The mockup's lanes are
+      "Stage 1 — Documentation refinement · Agent A · copilot" and "Stage 2 —
+      Phase achievement · Agent B · anthropic", with "stage 1 gates stage 2".
+      A lane declaration (id, stage name, the step types the stage takes, the
+      bound agent) lives beside the agent registry; the gating between stages
+      is a `policy.json` rule, never a lane property, so the assigner can
+      explain it by id. _(state: planned)_
+      `check: pwsh ./tests/Test-LaneDeclarations.ps1 -FailOnError`
 - [ ] **Units per step and a budget ledger.** Each step type declares its
       units; each run appends `units_consumed` to a ledger in the shape of
       [`ROADMAP_BUDGET_MODEL.md`](standards/roadmap/ROADMAP_BUDGET_MODEL.md),
@@ -1145,12 +1153,26 @@ three. What is new:
       execution event (`Execution.Ledger.ps1`, `Execution.Events.ps1`); a
       close with any of them empty fails the gate by name. _(state: planned)_
       `check: pwsh ./tests/Test-RunCloseFields.ps1 -FailOnError`
+- [ ] **Four per-lane metrics over a 7-day and a 30-day window.** From the
+      run-close fields, one route computes per lane: occupied (share of runner
+      hours), tasks entered (with per-day rate), median agent time (with the
+      closed count it rests on), and completed (with its rate and the failed
+      or demoted count), each with its delta against the prior window and its
+      per-day series for the sparkline. A metric with no closed run in the
+      window reads "unmeasured", never 0. _(state: planned)_
+      `check: pwsh ./tests/Test-LaneMetrics.ps1 -FailOnError`
 - [ ] **Each vendor's balance feed confirms balance left and reset time.**
       Copilot is counted in premium requests; Anthropic and OpenAI in dollars.
-      The feed records both figures in the vendor's own unit against the 3.8
-      capacity window, and nothing is converted into a shared unit — a
-      converted number is a guess wearing a unit. A vendor with no feed reads
-      "unconfirmed", never 0. _(state: planned)_
+      The feed records, in the vendor's own unit against the 3.8 capacity
+      window: the source it read (GitHub billing API, Anthropic Admin API cost
+      report, OpenAI Costs API), used, limit, left, the reset instant, the
+      per-day series, tokens where the vendor reports them and "tokens not
+      reported" where it does not. The lane share of the month is attributed
+      from run-close usage and shown beside "other use on account"; the
+      month-end projection is shown as its arithmetic (used ÷ elapsed days ×
+      days in month), never as a forecast. Nothing is converted into a shared
+      unit — a converted number is a guess wearing a unit. A vendor with no
+      feed reads "unconfirmed", never 0. _(state: planned)_
       `check: pwsh ./tests/Test-VendorBalanceFeed.ps1 -FailOnError`
 - [ ] **Every agent launches through the 3.8 adapter contract.** Ben's plan
       left "how the second agent runs" open because
@@ -1164,8 +1186,10 @@ three. What is new:
 **Phase C — the assigner** (the deterministic side of the two-brains design).
 
 - [ ] **Rules as data.** `backend/config/policy.json`: an ordered list of rules
-      with ids, each a predicate over queue item, agent, lock and budget
-      fields, with a plain-language `because`. _(state: planned)_
+      with ids, each a predicate over queue item, agent, lane, lock and budget
+      fields, with a plain-language `because`. The operator's own thumb on the
+      scale is a rule like any other: a favourite ranked above higher-value
+      work carries the rule id, and the row says so. _(state: planned)_
       `check: pwsh ./tests/Test-LanePolicy.ps1 -FailOnError`
 - [ ] **A pure assignment function.** `Get-LaneAssignment -Queue -Agents
       -Locks -Budget -Policy` returns what goes in each lane and the rule ids
@@ -1210,25 +1234,53 @@ three. What is new:
 
 **Phase E — the v2 console** (D-024).
 
-- [ ] **Dashboard: Now plus lane cards.** Now shows health KPIs and gaps;
-      each lane card shows its agent, its step, phase n of N, the rule ids
-      behind the assignment, its trend and its usage in the vendor's unit; an
-      empty lane shows why. Dashboard is the only place an action can be
-      taken. The Dispatch Board and Today's queue retire once Dashboard does
-      everything they do, not before. _(state: planned)_
+- [ ] **Dashboard: Now plus lane cards.** Now is one status line ("1 agent
+      working" / "Nothing running", with which lane and why the other is
+      gated), the scan summary ("59 in scope · index 6.4s ago"), the runner
+      pill, Refresh and "Rescan · minutes". Each lane card shows its stage,
+      name and agent; its slot ("Working · lock held" or "Empty · 41m ·
+      gated" with the reason and the next eligible item); the repository, step
+      type and elapsed time; "Then:" naming the step that follows; the four
+      metrics with their sparklines and the window switch; usage for the month
+      in the vendor's unit (requests or spend, per task, tokens or
+      "unmeasured"); and a "Completed · next step" table of recent runs with
+      the awaiting counts. The slot's bar fills by phases reached and is
+      labelled as phases: the mockup draws a percentage, and the 2026-09-18
+      ruling that no tile invents a figure stands. Below the lanes, the AI
+      usage section renders each vendor's balance card and the daily or
+      cumulative series against its limit. Dashboard is the only place an
+      action can be taken. The Dispatch Board and Today's queue retire once
+      Dashboard does everything they do, not before. _(state: planned)_
       `check: npx vitest run frontend/components/LaneCards.test.tsx`
+- [ ] **"Needs you" is one row per repository, and every row names its
+      rule.** The hold list reads "the only decisions in the console live
+      here": each row is the repository, why it is held in plain words with
+      the rule behind it ("discarding is destructive, always held";
+      "auto-merge on green will neither merge nor fail"; "authoring a contract
+      is always approval-gated"; "self-demoted after 3 failures, no retry
+      scheduled"), and one action (Inspect tree, Set override, Preview step,
+      Requeue). A hold with no rule id does not render as a hold.
+      _(state: planned)_
+      `check: npx vitest run frontend/components/NeedsYou.test.tsx`
 - [ ] **Six destinations.** Dashboard (Now + Lanes), Queue (read-only),
       Insights (read-only), Portfolio, Runs, Settings. No other tab, and no
-      control outside Dashboard mutates anything. _(state: planned)_
+      control outside Dashboard mutates anything. The v2 mockup draws only
+      Dashboard, Queue, Insights and Settings; Portfolio and Runs are D-024's
+      names and have no design yet, so they open as the existing Grid and
+      agent-run list until their own design pass. _(state: planned)_
       `check: npx vitest run frontend/components/AppNavigation.test.tsx`
 - [ ] **Queue and Insights open the v2 read-only views, not v1.** Their
       routes render the new views, with no action control on either; the v1
       panels are unreachable from navigation once these land.
       _(state: planned)_
       `check: npx vitest run frontend/components/QueueView.test.tsx frontend/components/InsightsView.test.tsx`
-- [ ] **The idle state shows the last activity.** A lane with nothing running
-      shows its last run with its outcome pipeline (the phases it reached and
-      the verdict) and the next action the assigner would take, never a blank
+- [ ] **The idle state shows the last activity.** When nothing is running,
+      Now shows the last run — repository, step type, lane, agent, time
+      worked, when — with its outcome pipeline (Run completed → PR opened →
+      Checks passed → Approved → Merged, each step done, current or to do),
+      the PR chip ("PR #412 · Approved — awaiting merge") and the actions it
+      allows: Open PR, and Merge bound to the verified head SHA (§8). Each
+      empty lane shows the next action the assigner would take. Never a blank
       tile. _(state: planned)_
       `check: npx vitest run frontend/components/LaneIdleState.test.tsx`
 - [ ] **Data sources map to the new cards.** `frontend/lib/todayRanking.ts`
@@ -1252,6 +1304,9 @@ three. What is new:
 - Today and the Dispatch Board show the same order for the same snapshot.
 - `Get-LaneAssignment` over a fixture returns the same result on every run and
   names a rule id for every filled and every empty lane.
+- No value on Dashboard renders 0 for something not measured; a lane metric
+  with no closed run, a vendor with no feed and a tokens figure Copilot does
+  not report each read "unmeasured" or "unconfirmed" with the reason.
 - Shadow mode has logged at least one disagreement with both choices and the
   rules behind them before the Automation toggle can be enabled.
 - With automation on, a fixture at the budget cap, a dirty tree and a third
