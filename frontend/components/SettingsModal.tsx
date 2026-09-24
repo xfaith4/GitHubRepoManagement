@@ -364,28 +364,45 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onSave, 
                 {providers?.map(p => {
                   // Same precedence the host uses, so the word on screen and
                   // the reason the router gives can never disagree: no adapter
-                  // beats not installed, which beats switched off.
+                  // beats not installed, which beats switched off, which beats
+                  // not checked yet (a known choice outranks an unknown).
+                  const unchecked = p.detectedBy === 'unchecked';
                   const state = !p.supported
                     ? 'Not in this build'
-                    : !p.installed
+                    : !p.installed && !unchecked
                       ? 'Not installed'
                       : p.optedOut
                         ? 'Switched off'
-                        : 'Available';
+                        : unchecked
+                          ? 'Not checked yet'
+                          : 'Available';
+                  const byRunner = p.detectedBy === 'runner';
                   const sentence =
                     state === 'Available' ? 'Ready to run work'
-                      : state === 'Not installed' ? `The ${p.command} command was not found on this machine`
+                      : state === 'Not installed'
+                        ? (byRunner
+                          ? `The runner looked for the ${p.command} command and did not find it`
+                          : `The ${p.command} command was not found on this machine`)
                         : state === 'Switched off' ? 'You turned this off here; it will not be selected'
-                          : 'This version has no adapter for it';
+                          : state === 'Not checked yet'
+                            ? `The runner checks for the ${p.command} command from your account when it starts`
+                            : 'This version has no adapter for it';
                   // Offering to disable something that is not installed, or has
-                  // no adapter at all, is noise: there is nothing to switch.
-                  const canToggle = state === 'Available' || state === 'Switched off';
+                  // no adapter at all, is noise: there is nothing to switch. An
+                  // unchecked CLI keeps the switch — the runner may still find
+                  // and select it before anyone sees a report.
+                  const canToggle = state === 'Available' || state === 'Switched off' || state === 'Not checked yet';
                   return (
                     <div key={p.provider} className="flex items-start gap-3 bg-gray-800/40 border border-gray-700/60 rounded px-3 py-2">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-white font-medium">{p.provider}</div>
                         <div className="text-sm text-gray-400">{state}</div>
                         <div className="text-sm text-gray-300">{sentence}</div>
+                        {p.installed && p.commandPath && (
+                          <div className="text-sm text-gray-400 break-all" data-testid={`provider-path-${p.provider}`}>
+                            {byRunner ? 'Found by the runner at ' : 'Found at '}{p.commandPath}
+                          </div>
+                        )}
                       </div>
                       {canToggle && (
                         <label className="flex items-center gap-2 text-sm text-gray-300 shrink-0">
