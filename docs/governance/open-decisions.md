@@ -645,6 +645,7 @@ intact — the reasoning is what stops the next agent reopening a settled point.
 
 ### D-022 — Is the console four destinations with one vocabulary?
 
+- **Superseded** 2026-09-24 by D-024. Kept for the record; nothing below binds.
 - **Asked** 2026-09-15, from a UX assessment of build `fa18be4` made through
   the UI alone. Its defects are Lane 0.22; its structural recommendations are
   this decision, because each changes what the product is rather than fixing
@@ -726,3 +727,29 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   or a System-drawer entry under (3), not a new tab.
 - **Blocks.** Nothing agent-executable now. The five items wait on Lane 0.21
   and Lane 0.22.
+
+### D-024 — Lanes are the console; D-022 is superseded
+
+- **Asked** 2026-09-24, from Ben's Repo Console v2 mockup
+  (`Repo Console v2.dc.html`) and the engine-outward plan recorded as
+  Release 4.0. D-022 (2026-09-15) ruled that lanes retire as an operator
+  concept and named four destinations (Today · Portfolio · Work · Trends).
+  The mockup keeps lanes as the main thing the operator works with, so
+  Release 4.0 phase E could not be built under D-022.
+- **Decision (Ben, 2026-09-24).** D-022 is superseded in full. Lanes stay:
+  lane cards with trends and per-lane usage, and Dashboard is the only place
+  to take action. The destinations are Dashboard (Now + Lanes), Queue
+  (read-only), Insights (read-only), Portfolio, Runs and Settings.
+- **What it changes.** Release 4.0 phase E is released from its hold and
+  rewritten to this shape. In Current focus, Release 4.0 phase A precedes the
+  remaining D-022 items, and the D-022 items that conflict are dropped, not
+  reordered: (2) Today as an exception inbox — Today is no longer a
+  destination and its KPIs are Now's; the stuck-work content it carried is
+  Lane 0.22's "Stuck work is detected, not noticed"; (3) four destinations;
+  (4) one Work pipeline with lanes retired. D-022 (1) one lifecycle and (5)
+  proposals with the operator upstream stand — the lifecycle states are what
+  lane cards and Portfolio render. The 2026-09-18 lane rulings (lanes close on
+  evidence, Cancel reaches the runner, tiles show the phase) stand and become
+  lane-card behaviour.
+- **Default proceeded under.** None needed; ruled before anything was built.
+- **Blocks.** Nothing.

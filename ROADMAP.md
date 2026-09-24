@@ -89,35 +89,33 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       cycle check. Does not wait on the trial: it changes what the contract
       *can express*, not what runs. _(state: planned)_
       `check: pwsh ./tests/Test-RoadmapDependencies.ps1 -FailOnError`
+- [ ] **4.0 A — one ranking function for Today and the Dispatch Board.**
+      Today ranks through `frontend/lib/todayRanking.ts`; the board ranks the
+      queue through `Get-RankedQueue`. One repository read #1 on one and #8 on
+      the other, on different scales. One server-side ranking, one scale,
+      consumed by both, with the rank's inputs on the payload; the frontend
+      holds no ranking arithmetic. _(state: planned)_
+      `check: pwsh ./tests/Test-OneRanking.ps1 -FailOnError`
+- [ ] **4.0 A — counts reconcile on every scan.** Per snapshot, status counts
+      sum to the total and scanned, in-scope, assessed and ledger counts each
+      carry one stated definition; the product runs the same assertion after
+      every scan and shows a header badge naming the mismatch when it fails.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-CountsReconcile.ps1 -FailOnError`
+- [ ] **4.0 A — one hold card per repository.** "Blocking a lane" showed one
+      repository four times, once per hold code; a repository renders one card
+      listing its codes, and columns that never carry a value (Effort, assessed
+      time) leave the table. _(state: planned)_
+      `check: npx vitest run frontend/components/TodayView.test.tsx`
 - [ ] **D-022 (1) — one lifecycle the operator sees.** Needs plan → Plan needs
       approval → Ready for agents → Agent working → In review → Healthy /
       Archived, with flags beside it (Uncommitted changes, CI failing, Behind
       remote, Docs gap). The three steering conclusions stay the model's output;
       the consistency table maps every operator state to the conclusion it
       agrees with. L-levels and hold codes become detail. Amends steering in the
-      same PR. Decided first because the next three render these states.
-      _(state: planned)_
+      same PR. Stands under D-024: these are the states the lane cards and
+      Portfolio render. _(state: planned)_
       `check: pwsh ./tests/Test-OperatorLifecycle.ps1 -FailOnError`
-- [ ] **D-022 (2) — Today as an exception inbox.** A system banner only when
-      something is abnormal; decisions grouped by type with bulk actions; actions
-      only the operator can take; stuck work with remedies; the next five
-      eligible items; a digest; everything else collapsed to counts. KPIs:
-      Decisions waiting · Stuck · Ready for agents. First to build.
-      _(state: planned)_
-      `check: npx vitest run frontend/components/TodayInbox.test.tsx`
-- [ ] **D-022 (3) — four destinations.** Today · Portfolio (Grid + Operations,
-      Doc Readiness as a filter, technology as a column) · Work · Trends, plus a
-      System drawer, Settings, Help and the source switch. One repository drawer
-      (Overview · Plan · Work · History) reachable from every repository name.
-      Lane 0.19's operator queue lives in Today or the System drawer, not a tab.
-      _(state: planned)_
-      `check: npx vitest run frontend/components/AppNavigation.test.tsx`
-- [ ] **D-022 (4) — one Work pipeline.** Proposed → Approved → Queued → Running
-      → In review → Done, plus a Needs-attention lane; the trace is each card's
-      detail and its broken-link diagnosis is the card's status; one "Send to
-      agent" with a preview and a provider choice. Lanes retire as an operator
-      concept; the lane count is a Settings knob if anything. _(state: planned)_
-      `check: npx vitest run frontend/components/WorkPipeline.test.tsx`
 - [ ] **D-022 (5) — proposals with the operator upstream.** The operator picks N
       repositories and triggers "Generate proposals" with a cost preview and the
       egress confirmation; the review queue shows a side-by-side diff with
@@ -278,7 +276,7 @@ its own `check:` and the human half is appended to the operator queue. The valid
 | 3.6       | Every Repository Gets an Outcome                                         | `done` — closed 2026-09-14 (D-018 PR 2); see archive. Field proof: OQ-1. Its two non-blockers live on as Current focus M4a and the 2.9 trend accrual |
 | **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
 | **3.8**   | **Provider-Aware Execution**                                             | **`planned`** 2026-09-06 — Codex/Claude/Copilot behind one provider-neutral task contract  |
-| **4.0**   | **Rule-Driven Lane Assignment**                                          | **`planned`** 2026-09-24 — engine outward: one ranking, typed steps, agent profiles, a pure assigner, shadow mode, then the Lanes screen |
+| **4.0**   | **Rule-Driven Lane Assignment**                                          | **`planned`** 2026-09-24 — engine outward: a pure assigner, then the v2 console (D-024)   |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
@@ -352,7 +350,7 @@ already satisfiable in parallel — D-001's dependency notion and D-003's
 | Lane 0.19 verify tab                      | nothing                                                | none               |
 | 4.0 A — reconcile what exists             | Lane 0.22 actionable-lines and one-snapshot items      | soft — sequencing  |
 | 4.0 B/C — data model and assigner         | 4.0 A; 3.8 WorkPacket and adapters (built)             | soft — sequencing  |
-| 4.0 E — the Lanes screen                  | D-022 (3) and (4) re-ruled for lanes — see the release | hard — design      |
+| 4.0 E — the v2 console                    | D-024 (decided 2026-09-24); phases A–D                 | soft — sequencing  |
 | Lane 0.5 tab disclosure                   | product decision — `open-decisions.md`                 | hard — design      |
 | 2.9 trend accrual                         | calendar time                                          | time-gated         |
 
@@ -1057,14 +1055,13 @@ ranking, typed steps, agent profiles, locks and a budget, and explains every
 choice by rule id — first in shadow beside the operator's hand dispatches,
 then, once the two agree, with automation switched on under stated guardrails.
 
-**Where it sits.** D-022 (4) ruled 2026-09-15 that lanes retire as an operator
-concept; on 2026-09-18 Ben kept lane tiles and gave them phases, and this plan
-makes Lanes the primary work surface with Now · Lanes · Insights · Portfolio ·
-Runs · Settings as the navigation, where D-022 (3) named Today · Portfolio ·
-Work · Trends. Phases A–D contradict nothing decided; phase E does, so it is
-held on that ruling. Open question for the register: is Lanes the Work
-destination of D-022 (3), and does D-022 (4) stand? The register entry waits
-for a review slot (two review PRs are open, 2026-09-24).
+**Where it sits.** D-024 (Ben, 2026-09-24) supersedes D-022: lanes stay as the
+main thing the operator works with — lane cards with trends and per-lane
+usage — and Dashboard is the only place to take action. The destinations are
+Dashboard (Now + Lanes), Queue (read-only), Insights (read-only), Portfolio,
+Runs and Settings. The 2026-09-18 lane rulings under Lane 0.22 (lanes close on
+evidence, Cancel reaches the runner, tiles show the phase) become lane-card
+behaviour. Phase A leads Current focus ahead of the D-022 items that survive.
 
 #### Product outcomes
 
@@ -1072,6 +1069,9 @@ for a review slot (two review PRs are open, 2026-09-24).
   sees one repository as #1 and #8 at once.
 - Every lane assignment names the rules that made it, including why a lane was
   left empty, and the same inputs always give the same answer.
+- A lane card shows what its agent has spent, in the vendor's own unit, and
+  its trend, because every run that closes records when, with what verdict,
+  under which vendor, at what usage.
 - Automation, when it is switched on, stops at the budget cap, holds dirty
   trees and new-contract authoring for the operator, and demotes an item after
   three consecutive failures — and it cannot be switched on until the shadow
@@ -1137,6 +1137,21 @@ three. What is new:
       it and is released by its terminal event; attempts count per item hash
       and survive a restart. _(state: planned)_
       `check: pwsh ./tests/Test-RepoLocks.ps1 -FailOnError`
+- [ ] **A run that closes records `completedAt`, the verdict, the vendor and
+      usage.** 47 of 51 runs have no `completedAt`, so agent time and
+      completion rate read "unmeasured" and per-lane usage has nothing to
+      attribute. Every run-close event — finished, failed, cancelled,
+      capacity-wait — writes the four fields on the run record and the
+      execution event (`Execution.Ledger.ps1`, `Execution.Events.ps1`); a
+      close with any of them empty fails the gate by name. _(state: planned)_
+      `check: pwsh ./tests/Test-RunCloseFields.ps1 -FailOnError`
+- [ ] **Each vendor's balance feed confirms balance left and reset time.**
+      Copilot is counted in premium requests; Anthropic and OpenAI in dollars.
+      The feed records both figures in the vendor's own unit against the 3.8
+      capacity window, and nothing is converted into a shared unit — a
+      converted number is a guess wearing a unit. A vendor with no feed reads
+      "unconfirmed", never 0. _(state: planned)_
+      `check: pwsh ./tests/Test-VendorBalanceFeed.ps1 -FailOnError`
 - [ ] **Every agent launches through the 3.8 adapter contract.** Ben's plan
       left "how the second agent runs" open because
       `Start-RoadmapCopilotTask.ps1` only starts Copilot. Release 3.8 answered
@@ -1193,17 +1208,35 @@ three. What is new:
       it when it fires. _(state: planned)_
       `check: pwsh ./tests/Test-AutomationGuardrails.ps1 -FailOnError`
 
-**Phase E — the Lanes screen.** Held on the register question above.
+**Phase E — the v2 console** (D-024).
 
-- [ ] **Lanes as a tab beside the Dispatch Board.** Each lane shows its agent,
-      its step, phase n of N and the rule ids behind the assignment; an empty
-      lane shows why. The Dispatch Board and Today's queue retire once Lanes
-      does everything they do, not before. _(state: planned)_
-      `check: npx vitest run frontend/components/LanesView.test.tsx`
-- [ ] **Six destinations.** Now (health KPIs and gaps), Lanes, Insights (with
-      Dependencies), Portfolio (the Grid and Doc Readiness), Runs, Settings —
-      or D-022 (3)'s four, once the register answers. _(state: planned)_
+- [ ] **Dashboard: Now plus lane cards.** Now shows health KPIs and gaps;
+      each lane card shows its agent, its step, phase n of N, the rule ids
+      behind the assignment, its trend and its usage in the vendor's unit; an
+      empty lane shows why. Dashboard is the only place an action can be
+      taken. The Dispatch Board and Today's queue retire once Dashboard does
+      everything they do, not before. _(state: planned)_
+      `check: npx vitest run frontend/components/LaneCards.test.tsx`
+- [ ] **Six destinations.** Dashboard (Now + Lanes), Queue (read-only),
+      Insights (read-only), Portfolio, Runs, Settings. No other tab, and no
+      control outside Dashboard mutates anything. _(state: planned)_
       `check: npx vitest run frontend/components/AppNavigation.test.tsx`
+- [ ] **Queue and Insights open the v2 read-only views, not v1.** Their
+      routes render the new views, with no action control on either; the v1
+      panels are unreachable from navigation once these land.
+      _(state: planned)_
+      `check: npx vitest run frontend/components/QueueView.test.tsx frontend/components/InsightsView.test.tsx`
+- [ ] **The idle state shows the last activity.** A lane with nothing running
+      shows its last run with its outcome pipeline (the phases it reached and
+      the verdict) and the next action the assigner would take, never a blank
+      tile. _(state: planned)_
+      `check: npx vitest run frontend/components/LaneIdleState.test.tsx`
+- [ ] **Data sources map to the new cards.** `frontend/lib/todayRanking.ts`
+      feeds the ranking, `frontend/components/ExecutionQueuePanel.tsx` feeds
+      Queue, `frontend/lib/portfolioTrendView.ts` feeds the lane trends; each
+      card names its source and a card with no mapped source does not render.
+      _(state: planned)_
+      `check: npx vitest run frontend/lib/dashboardSources.test.ts`
 - [ ] **Remedy buttons edit the policy or the agent profile**, re-run the dry
       run, and show the resulting assignment beside the current one before
       anything is applied. _(state: planned)_
@@ -1240,13 +1273,13 @@ prose-only roadmaps, so once "docs before roadmap" is a rule nearly the whole
 portfolio sits at the doc stage, and an agent limited to `roadmap.*` idles as
 lane 2 does in the mockup — set the allowlists with that in mind, or let one
 agent take `doc.*` until the portfolio moves past it; an assigner trusted on
-a shadow log too short to have disagreed; phase E built before the register
-answers.
+a shadow log too short to have disagreed; a lane card that shows usage before
+run-close fields are recorded, so the number is a sample of 4 runs in 51.
 
 **Dependencies:** Lane 0.22's actionable-lines, one-snapshot and labels items
 for phase A; 3.8's WorkPacket and adapters (built) for phase B; 3.9's
-performance store for the per-agent first-pass number; the D-022 (3)/(4)
-re-ruling for phase E.
+performance store for the per-agent first-pass number; D-024 (decided) for
+phase E.
 
 ---
 
