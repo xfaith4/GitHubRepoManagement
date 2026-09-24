@@ -1724,7 +1724,17 @@ function Save-PortfolioIndexArtifacts {
 
     $json = $payload | ConvertTo-Json -Depth 12
     $indexPath = Join-Path $indexRoot 'repos.index.json'
-    Set-Content -LiteralPath $indexPath -Value $json -Encoding UTF8
+    # Readers must see the previous or the new generation, never a partial JSON.
+    $tempPath = Join-Path $indexRoot ('repos.index.{0}.tmp' -f [guid]::NewGuid().ToString('n'))
+    $backupPath = $tempPath + '.previous'
+    try {
+        Set-Content -LiteralPath $tempPath -Value $json -Encoding UTF8
+        if (Test-Path -LiteralPath $indexPath) { [System.IO.File]::Replace($tempPath, $indexPath, $backupPath) }
+        else { [System.IO.File]::Move($tempPath, $indexPath) }
+    } finally {
+        if (Test-Path -LiteralPath $tempPath) { Remove-Item -LiteralPath $tempPath -Force -ErrorAction Stop }
+        if (Test-Path -LiteralPath $backupPath) { Remove-Item -LiteralPath $backupPath -Force -ErrorAction Stop }
+    }
 
     $artifactName = ('portfolio-scan-{0}.json' -f ((Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')))
     $artifactPath = Join-Path $scansRoot $artifactName
