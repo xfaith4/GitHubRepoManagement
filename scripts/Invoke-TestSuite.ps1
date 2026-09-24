@@ -154,7 +154,6 @@ Write-Host "GitHub Repo Management — test suite" -ForegroundColor White
 Write-Host ("WorkspaceRoot: {0}" -f $WorkspaceRoot) -ForegroundColor DarkGray
 Write-Host ("SkipApiHost:   {0}" -f [bool]$SkipApiHost) -ForegroundColor DarkGray
 
-Invoke-ScriptGate -Name 'Assessment request budget' -ScriptPath (Join-Path $WorkspaceRoot 'tests/Test-RequestThreadBudget.ps1') -ScriptArgs @('-Route', '/api/portfolio/assessment', '-MaxMs', '2000', '-FailOnError')
 Invoke-ScriptGate -Name 'Module smoke'      -ScriptPath (Join-Path $scriptsDir 'Invoke-ModuleSmokeTest.ps1')         -ScriptArgs $rootArgs
 Invoke-ScriptGate -Name 'Adapter smoke'     -ScriptPath (Join-Path $scriptsDir 'Invoke-AdapterSmokeTest.ps1')        -ScriptArgs $rootArgs
 

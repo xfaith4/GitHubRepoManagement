@@ -1722,9 +1722,7 @@ function Save-PortfolioIndexArtifacts {
             generatedAt      = $GeneratedAt
         }) -Force
 
-    # Keep the route's full assessment contract with the same atomic generation.
-    Add-Member -InputObject $payload -NotePropertyName 'assessmentEntries' -NotePropertyValue @($Assessments) -Force
-    $json = $payload | ConvertTo-Json -Depth 20
+    $json = $payload | ConvertTo-Json -Depth 12
     $indexPath = Join-Path $indexRoot 'repos.index.json'
     # Readers must see the previous or the new generation, never a partial JSON.
     $tempPath = Join-Path $indexRoot ('repos.index.{0}.tmp' -f [guid]::NewGuid().ToString('n'))

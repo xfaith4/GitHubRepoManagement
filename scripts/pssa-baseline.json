@@ -4,11 +4,10 @@
   "PSAvoidUsingPlainTextForPassword": 9,
   "PSAvoidUsingPositionalParameters": 34,
   "PSProvideCommentHelp": 18,
-  "PSReviewUnusedParameter": 30,
-  "PSUseApprovedVerbs": 19,
-  "PSUseDeclaredVarsMoreThanAssignments": 1,
+  "PSReviewUnusedParameter": 26,
+  "PSUseApprovedVerbs": 18,
   "PSUseOutputTypeCorrectly": 126,
-  "PSUseShouldProcessForStateChangingFunctions": 70,
-  "PSUseSingularNouns": 94,
+  "PSUseShouldProcessForStateChangingFunctions": 67,
+  "PSUseSingularNouns": 90,
   "PSUseUsingScopeModifierInNewRunspaces": 12
 }

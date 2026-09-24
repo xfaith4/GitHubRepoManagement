@@ -4,14 +4,14 @@
 > Release 3.7 to active engineering, moves Release 2.9 to a parallel validation
 > track, makes trust defects the MVP critical path, separates verified proposal
 > state from integrated delivery, adds Release 3.9 Governed Autonomous Delivery,
-> and renumbers Adaptive Routing to Release 4.0. No completed capability is
+> and renumbers Adaptive Routing to Release 4.1. No completed capability is
 > reopened; Release 3.8 is reused as the execution substrate.
 >
 > **Status:** Active
 > **Active release:** **Release 3.7 — Portfolio Value Proof**
 > **Active field-validation track:** **Release 2.9 — Operator Field Proof + Mobile Completion**. Its engineering is closed; remaining elevated, authenticated, physical-device, and calendar evidence lives in the operator queue and does not block engineering or MVP declaration.
 > **Next capability release:** **Release 3.9 — Governed Autonomous Delivery**
-> **Future optimization release:** **Release 4.0 — Adaptive Routing**
+> **Future optimization release:** **Release 4.1 — Adaptive Routing**
 > **Work ordering:** dependency-driven, not insertion order — see
 > [Execution Order and Dependencies](#execution-order-and-dependencies)
 > **Canonical product direction:** [`docs/product/portfolio-execution-console.md`](docs/product/portfolio-execution-console.md)
@@ -425,7 +425,7 @@ critical path is therefore evidence-first, not release-number-first:
    G39-09 in order. Later items may be developed on isolated branches only when
    their declared dependencies are already merged; no stacked branch may
    assume an unmerged schema or event vocabulary.
-5. **Release 4.0 — Adaptive Routing.** Optimize provider selection only after
+5. **Release 4.1 — Adaptive Routing.** Optimize provider selection only after
    the guarded-autonomy pilot proves that the control plane can safely execute
    what the router selects.
 
@@ -994,7 +994,7 @@ migration can cite the exact 3.8 boundary it supersedes.
   on 2026-09-08. These three are in 3.8 **only** because a packet that has
   not been written yet is their natural home; deferring them means reopening
   work that has already shipped. Everything else the strategy adds is
-  Release 4.0. **(a)** Cost, duration and first-pass telemetry join the
+  Release 4.1. **(a)** Cost, duration and first-pass telemetry join the
   canonical `execution.*` vocabulary as it is defined, not after — adding
   them later is a second vocabulary migration through the reconciliation
   that follows it, and no run executed before then can be costed
@@ -1284,7 +1284,7 @@ provider transcripts or repository file contents in a mandate or escalation.
 - Autonomous changes to governance, CI, product-claim config, credentials,
   permissions, production systems or destructive data.
 - Adaptive provider optimization, pricing inference or learned routing; those
-  belong to Release 4.0.
+  belong to Release 4.1.
 - Rewriting roadmap objectives or acceptance criteria during execution.
 
 #### Validation plan
@@ -1316,108 +1316,6 @@ smoke fixture.
 review, remediation/handoff and canonical execution events; GitHub repository
 rules compatible with the chosen posture. Missing external authorization is an
 operator-queue item, not authority to weaken a gate.
-
----
-
-### Release 4.0 — Adaptive Routing
-
-**Status:** planned — renumbered from 3.9 on 2026-09-18. Design authority is
-[`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md),
-which absorbed Ben's _Multi-Provider Agent Execution Strategy_ the same day.
-Follows Release 3.9, and cannot precede it: every milestone consumes telemetry
-that 3.8 records, while its selected work must still pass the authority,
-readiness and integration controls that 3.9 proves.
-
-**Goal:** Release 3.8 routes on _capacity_. This release routes on _evidence_.
-The router learns which provider actually completes this repository's workload,
-at what cost per verified task, and stops paying a frontier tier for work a
-cheaper one finishes first time — or stops sending an agent at all where the
-answer is deterministic.
-
-#### Product outcomes
-
-- Work the repository can answer itself never reaches a provider, so the
-  cheapest routing decision is also the fastest one.
-- The operator can see which provider is genuinely better for a kind of task in
-  this repository, rather than which one has the better reputation.
-- A cold-start preference that the evidence contradicts is overridden by the
-  evidence, not defended by the configuration.
-
-#### Engineering milestones
-
-- [ ] **Classify a task before choosing anything to run it.** A task profile —
-      type, complexity, risk, context scope, whether verification exists, whether
-      the work is deterministic — attached at qualification and carried on the
-      WorkPacket. Today `suitability` scores 1.0 when the packet's
-      `preferredProvider` matches the candidate and 0.5 otherwise, which echoes a
-      preference someone already stated rather than deriving one from the task,
-      so the initial routing policy has nothing to attach to. _(state: planned)_
-      `check: pwsh ./tests/Test-TaskProfile.ps1 -FailOnError`
-- [ ] **`NO_AGENT`: the deterministic tier is a routing outcome, not the absence
-      of one.** Branch state, CI status, file existence, repository metrics,
-      schema validation, mergeability and configured policy evaluation are
-      answered by application logic and recorded as a selection like any other.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-NoAgentTier.ps1 -FailOnError`
-- [ ] **A cost estimator that can eventually enforce.** `effective_cost` =
-      metered cost + quota pressure + retry + expected failure, with pricing
-      configurable or discovered rather than embedded. Enforcement stays off
-      until both the reserves and the per-task consumption estimate are
-      non-provisional — D-011 left the estimate a guess, and refusing dispatches
-      on a guessed number blocks real work for an unmeasured reason.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-CostEstimator.ps1 -FailOnError`
-- [ ] **A performance store keyed by what actually varies.** Rolling first-pass
-      rate, eventual success, cost and duration per success, remediation count,
-      human-intervention rate and CI failure rate, broken down by
-      `provider × model × taskType × complexity`. The router reads
-      `provider × repository` success ratio today, which cannot distinguish a
-      provider that is excellent at documentation and poor at one coding
-      workload. _(state: planned)_
-      `check: pwsh ./tests/Test-PerformanceStore.ps1 -FailOnError`
-- [ ] **Evidence overrides the cold-start prior.** Once a task class has enough
-      history, the empirical result wins over the configured preference, and the
-      routing record says which of the two decided it. _(state: planned)_
-      `check: pwsh ./tests/Test-EvidenceOverridesPrior.ps1 -FailOnError`
-- [ ] **Report the metric the release exists to move.** Verified tasks ÷ total
-      agent cost, with throughput and first-pass rate beside it, on
-      `GET /api/providers` and the Dispatch Board. _(state: planned)_
-      `check: pwsh ./tests/Test-VerifiedTaskRate.ps1 -FailOnError`
-
-#### Acceptance criteria
-
-- A task carries a classification before any provider is considered, and that
-  classification is not derived from a requested provider.
-- A deterministic task completes without an agent and records `NO_AGENT` as its
-  selection.
-- Provider and model are separately represented wherever the provider exposes
-  model choice.
-- Cost per verified task is computable from stored telemetry for any
-  `provider × model × taskType × complexity` slice with history.
-- A documented cold-start preference is demonstrably overridden by contrary
-  evidence in at least one task class, and the routing record names the
-  evidence.
-
-#### Out of scope
-
-- Redundant multi-provider execution of the same task as a default. Two-provider
-  work stays deliberate and risk-justified.
-- Raising concurrency above one local execution slot, which stays a Release 3.8
-  boundary until capacity accounting is proven.
-
-**Validation plan:** the classifier, the cost estimator and the performance
-store are pure decision tables, gated offline against fixtures in the shape the
-module smoke already uses; no packet spends provider quota to produce a fixture.
-
-**Risks:** a classifier that encodes the same provider preference it was meant
-to replace; a performance store confident on too little history — the router
-must keep distinguishing "unmeasured" from "measured as bad", as it already does
-for capacity; enforcement switched on before consumption is measured.
-
-**Dependencies:** Release 3.8 for the telemetry these milestones read,
-especially cost and duration in the canonical event vocabulary; Release 3.9
-for the mandate, readiness and policy-controlled promotion path that safely
-executes the work the adaptive router selects.
 
 ---
 
@@ -1623,7 +1521,7 @@ three. What is new:
       anything is applied. _(state: planned)_
       `check: npx vitest run frontend/components/LaneRemedy.test.tsx`
 - [ ] **First-pass success per agent.** The leverage panel's portfolio-wide
-      `agentFirstPassSuccess` gains a per-agent slice from the 3.9 performance
+      `agentFirstPassSuccess` gains a per-agent slice from the 4.1 performance
       store, so an agent card reads a number, not "unmeasured".
       _(state: planned)_
       `check: pwsh ./tests/Test-AgentFirstPass.ps1 -FailOnError`
@@ -1641,7 +1539,7 @@ three. What is new:
 
 #### Out of scope
 
-- Ranking on evidence rather than rules — that is Release 3.9's router.
+- Ranking on evidence rather than rules — that is Release 4.1's router.
 - More than one execution slot per provider until 3.8's capacity accounting is
   proven.
 
@@ -1658,9 +1556,113 @@ a shadow log too short to have disagreed; a lane card that shows usage before
 run-close fields are recorded, so the number is a sample of 4 runs in 51.
 
 **Dependencies:** Lane 0.22's actionable-lines, one-snapshot and labels items
-for phase A; 3.8's WorkPacket and adapters (built) for phase B; 3.9's
+for phase A; 3.8's WorkPacket and adapters (built) for phase B; 4.1's
 performance store for the per-agent first-pass number; D-024 (decided) for
 phase E.
+
+---
+
+### Release 4.1 — Adaptive Routing
+
+**Status:** planned — renumbered from 3.9 on 2026-09-18, then to 4.1 on
+2026-09-24 when Release 4.0 went to Rule-Driven Lane Assignment. Design
+authority is
+[`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md),
+which absorbed Ben's _Multi-Provider Agent Execution Strategy_ the same day.
+Follows Release 3.9, and cannot precede it: every milestone consumes telemetry
+that 3.8 records, while its selected work must still pass the authority,
+readiness and integration controls that 3.9 proves.
+
+**Goal:** Release 3.8 routes on _capacity_. This release routes on _evidence_.
+The router learns which provider actually completes this repository's workload,
+at what cost per verified task, and stops paying a frontier tier for work a
+cheaper one finishes first time — or stops sending an agent at all where the
+answer is deterministic.
+
+#### Product outcomes
+
+- Work the repository can answer itself never reaches a provider, so the
+  cheapest routing decision is also the fastest one.
+- The operator can see which provider is genuinely better for a kind of task in
+  this repository, rather than which one has the better reputation.
+- A cold-start preference that the evidence contradicts is overridden by the
+  evidence, not defended by the configuration.
+
+#### Engineering milestones
+
+- [ ] **Classify a task before choosing anything to run it.** A task profile —
+      type, complexity, risk, context scope, whether verification exists, whether
+      the work is deterministic — attached at qualification and carried on the
+      WorkPacket. Today `suitability` scores 1.0 when the packet's
+      `preferredProvider` matches the candidate and 0.5 otherwise, which echoes a
+      preference someone already stated rather than deriving one from the task,
+      so the initial routing policy has nothing to attach to. _(state: planned)_
+      `check: pwsh ./tests/Test-TaskProfile.ps1 -FailOnError`
+- [ ] **`NO_AGENT`: the deterministic tier is a routing outcome, not the absence
+      of one.** Branch state, CI status, file existence, repository metrics,
+      schema validation, mergeability and configured policy evaluation are
+      answered by application logic and recorded as a selection like any other.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-NoAgentTier.ps1 -FailOnError`
+- [ ] **A cost estimator that can eventually enforce.** `effective_cost` =
+      metered cost + quota pressure + retry + expected failure, with pricing
+      configurable or discovered rather than embedded. Enforcement stays off
+      until both the reserves and the per-task consumption estimate are
+      non-provisional — D-011 left the estimate a guess, and refusing dispatches
+      on a guessed number blocks real work for an unmeasured reason.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-CostEstimator.ps1 -FailOnError`
+- [ ] **A performance store keyed by what actually varies.** Rolling first-pass
+      rate, eventual success, cost and duration per success, remediation count,
+      human-intervention rate and CI failure rate, broken down by
+      `provider × model × taskType × complexity`. The router reads
+      `provider × repository` success ratio today, which cannot distinguish a
+      provider that is excellent at documentation and poor at one coding
+      workload. _(state: planned)_
+      `check: pwsh ./tests/Test-PerformanceStore.ps1 -FailOnError`
+- [ ] **Evidence overrides the cold-start prior.** Once a task class has enough
+      history, the empirical result wins over the configured preference, and the
+      routing record says which of the two decided it. _(state: planned)_
+      `check: pwsh ./tests/Test-EvidenceOverridesPrior.ps1 -FailOnError`
+- [ ] **Report the metric the release exists to move.** Verified tasks ÷ total
+      agent cost, with throughput and first-pass rate beside it, on
+      `GET /api/providers` and the Dispatch Board. _(state: planned)_
+      `check: pwsh ./tests/Test-VerifiedTaskRate.ps1 -FailOnError`
+
+#### Acceptance criteria
+
+- A task carries a classification before any provider is considered, and that
+  classification is not derived from a requested provider.
+- A deterministic task completes without an agent and records `NO_AGENT` as its
+  selection.
+- Provider and model are separately represented wherever the provider exposes
+  model choice.
+- Cost per verified task is computable from stored telemetry for any
+  `provider × model × taskType × complexity` slice with history.
+- A documented cold-start preference is demonstrably overridden by contrary
+  evidence in at least one task class, and the routing record names the
+  evidence.
+
+#### Out of scope
+
+- Redundant multi-provider execution of the same task as a default. Two-provider
+  work stays deliberate and risk-justified.
+- Raising concurrency above one local execution slot, which stays a Release 3.8
+  boundary until capacity accounting is proven.
+
+**Validation plan:** the classifier, the cost estimator and the performance
+store are pure decision tables, gated offline against fixtures in the shape the
+module smoke already uses; no packet spends provider quota to produce a fixture.
+
+**Risks:** a classifier that encodes the same provider preference it was meant
+to replace; a performance store confident on too little history — the router
+must keep distinguishing "unmeasured" from "measured as bad", as it already does
+for capacity; enforcement switched on before consumption is measured.
+
+**Dependencies:** Release 3.8 for the telemetry these milestones read,
+especially cost and duration in the canonical event vocabulary; Release 3.9
+for the mandate, readiness and policy-controlled promotion path that safely
+executes the work the adaptive router selects.
 
 ---
 

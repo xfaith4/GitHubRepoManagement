@@ -2278,31 +2278,11 @@ export async function getPortfolioAssessment(options: { refresh?: boolean; inclu
  * ordinary loads should use scanMode=differential instead.
  */
 export async function refreshAllPortfolioAssessment(): Promise<PortfolioAssessmentResult> {
-  const deadline = Date.now() + 15 * 60 * 1000;
-  const waitForScan = async () => {
-    while (Date.now() < deadline) {
-      const status = await getPortfolioScanStatus();
-      if (status.state !== 'running') {
-        if (status.state !== 'completed') {
-          throw new Error(status.error || `Portfolio refresh ${status.state}.`);
-        }
-        return;
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    throw new Error('Portfolio refresh is still running. Check scan progress before retrying.');
-  };
-  // An existing differential scan cannot satisfy an explicit full refresh.
-  if ((await getPortfolioScanStatus()).state === 'running') await waitForScan();
   const data = await postJson<any>('/portfolio/assessment/refresh-all', {});
   if (data && data.success === false) {
     throw new Error(data?.error?.message ?? data?.error ?? 'Full portfolio refresh failed.');
   }
-  if (!(data?.data ?? data)?.refreshAccepted) {
-    throw new Error('Full refresh could not start. Check scan progress and retry.');
-  }
-  await waitForScan();
-  return getPortfolioAssessment({ includeCuration: true });
+  return normalizePortfolioAssessmentResult(data);
 }
 
 function normalizePortfolioAssessmentResult(data: any): PortfolioAssessmentResult {
