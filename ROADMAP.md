@@ -276,7 +276,7 @@ its own `check:` and the human half is appended to the operator queue. The valid
 | 3.6       | Every Repository Gets an Outcome                                         | `done` — closed 2026-09-14 (D-018 PR 2); see archive. Field proof: OQ-1. Its two non-blockers live on as Current focus M4a and the 2.9 trend accrual |
 | **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
 | **3.8**   | **Provider-Aware Execution**                                             | **`planned`** 2026-09-06 — Codex/Claude/Copilot behind one provider-neutral task contract  |
-| **4.0**   | **Rule-Driven Lane Assignment**                                          | **`planned`** 2026-09-24 — engine outward: a pure assigner, then the v2 console (D-024)   |
+| **4.0**   | **Rule-Driven Lane Assignment**                                          | **`planned`** 2026-09-24 — engine outward: a pure assigner, then the v2 console (D-024)    |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
