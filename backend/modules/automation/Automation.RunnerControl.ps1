@@ -134,8 +134,12 @@ function Update-RoadmapRunSummary {
     if (-not (Test-Path -LiteralPath $SummaryPath -PathType Leaf)) { return $false }
     if (-not $PSCmdlet.ShouldProcess($SummaryPath, 'Update run summary')) { return $false }
     $obj = @{}
-    try { $obj = Get-Content -LiteralPath $SummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable } catch { $obj = @{} }
-    if ($null -eq $obj) { $obj = @{} }
+    try {
+        $parsed = Get-Content -LiteralPath $SummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($null -ne $parsed -and $null -ne $parsed.PSObject) {
+            foreach ($p in $parsed.PSObject.Properties) { $obj[$p.Name] = $p.Value }
+        }
+    } catch { $obj = @{} }
     foreach ($k in $Set.Keys) { $obj[$k] = $Set[$k] }
     ($obj | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $SummaryPath -Encoding UTF8
     return $true
