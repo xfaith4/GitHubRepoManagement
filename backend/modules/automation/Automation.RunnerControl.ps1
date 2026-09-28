@@ -113,6 +113,14 @@ function _RunnerControl_Field {
     return $Default
 }
 
+function _RunnerControl_PositiveIntOrZero {
+    param([Parameter()][AllowNull()][object]$Value)
+    $n = 0
+    if ($null -eq $Value) { return 0 }
+    if ([int]::TryParse([string]$Value, [ref]$n) -and $n -gt 0) { return $n }
+    return 0
+}
+
 function Update-RoadmapRunSummary {
     <#
     .SYNOPSIS
@@ -193,7 +201,8 @@ function Get-ActiveRunnerExecution {
         $remote = $false
         if ($status -eq 'running') {
             $summaryPid = _RunnerControl_Field -Obj $summary -Name 'runnerPid' -Default $null
-            $runnerAlive = ($null -ne $summaryPid) -and ([int]$summaryPid -gt 0) -and ($null -ne (Get-Process -Id ([int]$summaryPid) -ErrorAction SilentlyContinue))
+            $runnerPid = _RunnerControl_PositiveIntOrZero -Value $summaryPid
+            $runnerAlive = ($runnerPid -gt 0) -and ($null -ne (Get-Process -Id $runnerPid -ErrorAction SilentlyContinue))
             if (-not $runnerAlive) { continue }
         }
         elseif ($status -eq 'dispatched' -and $target -eq 'copilot') {
