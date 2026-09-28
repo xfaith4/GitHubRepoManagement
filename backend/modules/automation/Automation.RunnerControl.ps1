@@ -175,7 +175,6 @@ function Get-ActiveRunnerExecution {
     $found = [System.Collections.Generic.List[object]]::new()
     if (-not (Test-Path -LiteralPath $runsDir -PathType Container)) { return $found.ToArray() }
 
-    $runnerAlive = ($runnerPid -gt 0) -and ($null -ne (Get-Process -Id $runnerPid -ErrorAction SilentlyContinue))
     # The host does not load the execution events module at startup; the state
     # vocabulary is one function in it, so it is loaded here on first need
     # (the same seam Add-AgentRunDeliveryState uses).
@@ -194,7 +193,8 @@ function Get-ActiveRunnerExecution {
         $remote = $false
         if ($status -eq 'running') {
             $summaryPid = _RunnerControl_Field -Obj $summary -Name 'runnerPid' -Default $null
-            if (-not $runnerAlive -or $null -eq $summaryPid -or ([string]$summaryPid -ne [string]$runnerPid)) { continue }
+            $runnerAlive = ($null -ne $summaryPid) -and ([int]$summaryPid -gt 0) -and ($null -ne (Get-Process -Id ([int]$summaryPid) -ErrorAction SilentlyContinue))
+            if (-not $runnerAlive) { continue }
         }
         elseif ($status -eq 'dispatched' -and $target -eq 'copilot') {
             $remote = $true
