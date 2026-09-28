@@ -14,6 +14,7 @@ import type { AgentOpsData } from '../hooks/useAgentOpsData';
 import type { AgentRunEvent, MergeReadinessResult } from '../types';
 import { resolveDispatchGate, resolveRunnerPresence } from '../lib/runnerPresence';
 import { useDialogDismiss } from '../hooks/useDialogDismiss';
+import { usePollLoop } from '../hooks/usePollLoop';
 import {
   approveAgentRun,
   approvePackagedItem,
@@ -173,12 +174,11 @@ export interface AgentOpsViewProps {
 }
 
 const AgentOpsView: React.FC<AgentOpsViewProps> = ({ data, nowMs: fixedNow }) => {
+  // The "ago" labels re-read the clock every 10 s through the one poll helper
+  // (lib/pollLoop.ts owns every interval in the console); a test passes a
+  // fixed clock and the loop stays off.
   const [tickNow, setTickNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (fixedNow != null) return;
-    const id = window.setInterval(() => setTickNow(Date.now()), 10_000);
-    return () => window.clearInterval(id);
-  }, [fixedNow]);
+  usePollLoop(async () => { setTickNow(Date.now()); }, { intervalMs: 10_000, enabled: fixedNow == null });
   const nowMs = fixedNow ?? Math.max(tickNow, data.updatedAtMs);
 
   const rows = useMemo(() => data.runs.map(toAgentOpsRun), [data.runs]);
