@@ -1920,6 +1920,22 @@ export interface AgentRun {
   metrics?: AgentRunMetrics | null;
   actions?: AgentRunActionsState | null;
   association?: AgentRunAssociation | null;
+  /**
+   * Agent Ops (2026-09-27). The canonical ALL_CAPS delivery state, joined by
+   * the host from the runner's task summary (`Get-DeliveryState`); null when
+   * nothing maps. The view reads this first and maps the legacy `status`
+   * only as a fallback. Optional because a host older than this packet does
+   * not send it.
+   */
+  deliveryState?: string | null;
+  /** For a STOPPED run: the delivery state it was interrupted at. */
+  stoppedFrom?: string | null;
+  /** A copilot run that keeps running on GitHub; stopped means "not tracked", not "killed". */
+  stoppedRemote?: boolean | null;
+  /** The task summary's attempt counter, when the run has one. */
+  attempt?: number | null;
+  /** The summary's capacity-wait summary or error text, for the row footer. */
+  deliveryNote?: string | null;
 }
 
 export interface AgentRunEvent {

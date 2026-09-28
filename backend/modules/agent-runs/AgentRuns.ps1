@@ -259,6 +259,86 @@ function New-AgentRunRecord {
     Read all agent-run ledger records, optionally filtered by status, newest
     (by updatedAt) first.
 #>
+function Add-AgentRunDeliveryState {
+    <#
+    .SYNOPSIS
+        Attach the canonical delivery state to an agent-run record.
+    .DESCRIPTION
+        Agent Ops (2026-09-27). The ledger's `status` has five values; the
+        delivery-state machine has twenty. The finer answer lives in the
+        runner's task summary (`<dispatchRunId>.summary.json`): `running`,
+        `awaiting-review`, `stopped`, a capacity wait. When the summary exists
+        its status is mapped through Get-DeliveryState; otherwise the ledger
+        status is, so every run carries SOME delivery state and the frontend
+        never keeps its own status-to-state table.
+
+        Added as NoteProperties, never overwriting a field the ledger owns:
+          deliveryState  ALL_CAPS state, or $null when nothing maps
+          stoppedFrom    the state an interrupted run was at (STOPPED only)
+          stoppedRemote  true for a copilot run that keeps running on GitHub
+          attempt        the summary's attempt counter, when it has one
+          deliveryNote   the summary's error or capacity-wait summary, if any
+    #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter(Mandatory = $true)][AllowNull()][object]$Run
+    )
+    if ($null -eq $Run) { return $Run }
+
+    if (-not (Get-Command -Name 'Get-DeliveryState' -ErrorAction SilentlyContinue)) {
+        $eventsModule = Join-Path (Split-Path -Parent $PSScriptRoot) 'execution\Execution.Events.ps1'
+        if (Test-Path -LiteralPath $eventsModule -PathType Leaf) { . $eventsModule }
+    }
+    $runsDir = if (Get-Command -Name 'Get-RoadmapRunsDirectory' -ErrorAction SilentlyContinue) {
+        Get-RoadmapRunsDirectory -WorkspaceRoot $WorkspaceRoot
+    } else {
+        Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
+    }
+
+    $summary = $null
+    $dispatchRunId = [string](_AgentRunsField -Obj $Run -Name 'dispatchRunId' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($dispatchRunId)) {
+        $summaryPath = Join-Path $runsDir ("{0}.summary.json" -f $dispatchRunId)
+        if (Test-Path -LiteralPath $summaryPath -PathType Leaf) {
+            try { $summary = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8) } catch { $summary = $null }
+        }
+    }
+
+    $summaryStatus = [string](_AgentRunsField -Obj $summary -Name 'status' -Default '')
+    $ledgerStatus = [string](_AgentRunsField -Obj $Run -Name 'status' -Default '')
+    $deliveryState = $null
+    $stoppedFrom = $null
+    $stoppedRemote = $false
+    $attempt = $null
+    $note = $null
+    if (Get-Command -Name 'Get-DeliveryState' -ErrorAction SilentlyContinue) {
+        if (-not [string]::IsNullOrWhiteSpace($summaryStatus)) { $deliveryState = Get-DeliveryState -Status $summaryStatus }
+        if ($null -eq $deliveryState -and -not [string]::IsNullOrWhiteSpace($ledgerStatus)) { $deliveryState = Get-DeliveryState -Status $ledgerStatus }
+        if ($deliveryState -eq 'STOPPED') {
+            $stoppedFrom = Get-DeliveryState -Status ([string](_AgentRunsField -Obj $summary -Name 'stoppedFrom' -Default ''))
+        }
+    }
+    if ($null -ne $summary) {
+        $stoppedRemote = [bool](_AgentRunsField -Obj $summary -Name 'stoppedRemote' -Default $false)
+        $rawAttempt = _AgentRunsField -Obj $summary -Name 'attempt' -Default $null
+        if ($null -ne $rawAttempt) { try { $attempt = [int]$rawAttempt } catch { $attempt = $null } }
+        $capacityWait = _AgentRunsField -Obj $summary -Name 'capacityWait' -Default $null
+        $waitSummary = [string](_AgentRunsField -Obj $capacityWait -Name 'summary' -Default '')
+        $errorText = [string](_AgentRunsField -Obj $summary -Name 'error' -Default '')
+        if (-not [string]::IsNullOrWhiteSpace($waitSummary)) { $note = $waitSummary }
+        elseif (-not [string]::IsNullOrWhiteSpace($errorText)) { $note = $errorText }
+    }
+
+    $Run | Add-Member -NotePropertyName 'deliveryState' -NotePropertyValue $deliveryState -Force
+    $Run | Add-Member -NotePropertyName 'stoppedFrom' -NotePropertyValue $stoppedFrom -Force
+    $Run | Add-Member -NotePropertyName 'stoppedRemote' -NotePropertyValue $stoppedRemote -Force
+    $Run | Add-Member -NotePropertyName 'attempt' -NotePropertyValue $attempt -Force
+    $Run | Add-Member -NotePropertyName 'deliveryNote' -NotePropertyValue $note -Force
+    return $Run
+}
+
 function Get-AgentRuns {
     [CmdletBinding()]
     param(

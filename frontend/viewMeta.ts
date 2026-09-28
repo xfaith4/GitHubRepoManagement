@@ -5,6 +5,7 @@
 
 export type ViewKey =
   | 'today'
+  | 'agent-ops'
   | 'repos'
   | 'insights'
   | 'operations'
@@ -35,6 +36,16 @@ export const VIEW_META: ViewMeta[] = [
     short: 'Today',
     question: 'What should I do next, and why?',
     subtitle: 'Every repository ranked by what to do first, with the reason and the effort.',
+  },
+  {
+    // Agent Ops (2026-09-27). Second because it carries the operator's
+    // decisions: what the agents are doing right now, what is waiting on a
+    // human, and the one control that stops all of it.
+    key: 'agent-ops',
+    label: 'Agent Ops',
+    short: 'Agents',
+    question: 'What are the agents doing, and what needs me?',
+    subtitle: 'Live runs through the delivery states, the decisions waiting on you, and an emergency stop.',
   },
   {
     key: 'repos',

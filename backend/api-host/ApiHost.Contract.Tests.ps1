@@ -120,14 +120,21 @@ BeforeAll {
     # REPO_MGMT_CACHE_ROOT (Lane 0.21): a cold assessment read starts the
     # background worker, and without it that worker holds the operator's scan
     # lock and writes their scan caches.
-    foreach ($name in 'REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT', 'REPO_MGMT_CACHE_ROOT') {
+    # REPO_MGMT_RUN_HISTORY_ROOT (Agent Ops, 2026-09-27): the stop route with
+    # `interrupt` WRITES run summaries (a remote run is marked stopped, a local
+    # one is requeued on resume); pointed at the operator's real history it
+    # would edit their live runs.
+    foreach ($name in 'REPO_MGMT_INDEX_ROOT', 'REPO_MGMT_QUEUE_PATH', 'REPO_MGMT_RUNNER_CONTROL_ROOT', 'REPO_MGMT_CACHE_ROOT', 'REPO_MGMT_RUN_HISTORY_ROOT') {
         $script:IsolationPrevious[$name] = [Environment]::GetEnvironmentVariable($name)
     }
     [Environment]::SetEnvironmentVariable('REPO_MGMT_INDEX_ROOT', (Join-Path $script:LogRoot 'contract-index'))
     [Environment]::SetEnvironmentVariable('REPO_MGMT_QUEUE_PATH', (Join-Path $script:LogRoot 'contract-task-queue.jsonl'))
     [Environment]::SetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT', (Join-Path $script:LogRoot 'contract-runner-control'))
     [Environment]::SetEnvironmentVariable('REPO_MGMT_CACHE_ROOT', (Join-Path $script:LogRoot 'contract-cache'))
+    $script:ContractRunHistoryRoot = Join-Path $script:LogRoot 'contract-run-history'
+    [Environment]::SetEnvironmentVariable('REPO_MGMT_RUN_HISTORY_ROOT', $script:ContractRunHistoryRoot)
     $null = New-Item -ItemType Directory -Path (Join-Path $script:LogRoot 'contract-runner-control') -Force
+    $null = New-Item -ItemType Directory -Path (Join-Path $script:ContractRunHistoryRoot 'runs') -Force
 
     # Lane 0.21: the host's first assessment comes from the background worker,
     # so this suite scans something. The operator's settings as they are,
@@ -847,5 +854,125 @@ Describe 'Branch cleanup route - Release 3.4 milestone 5' {
 
         $response.StatusCode | Should -Be 404
         $response.Json.category | Should -Be 'repo-not-found'
+    }
+}
+
+Describe 'Runner stop with interrupt - Agent Ops "All work stop" (2026-09-27)' {
+    # The Lane 0.20 hold stops runners BETWEEN tasks. Agent Ops adds
+    # `interrupt: true`, which also signals every run in flight: a local run is
+    # killed by its runner and recorded STOPPED with its workspace kept, a
+    # copilot run on GitHub is marked stopped and flagged remote, and Start
+    # requeues the local ones. All of it writes only into the isolated control
+    # root and run-history root set in BeforeAll; the smoke's live-runner half
+    # (a real child interrupted mid-run) is in Invoke-ModuleSmokeTest.ps1.
+    BeforeAll {
+        $script:InterruptRunsDir = Join-Path $script:ContractRunHistoryRoot 'runs'
+        $script:InterruptControlRoot = Join-Path $script:LogRoot 'contract-runner-control'
+        $script:InterruptMarker = Join-Path $script:InterruptControlRoot 'roadmap-task-runner.interrupt.json'
+        $script:InterruptHold = Join-Path $script:InterruptControlRoot 'roadmap-task-runner.hold.json'
+        $script:RemoteRunId = 'contract-interrupt-remote-' + [guid]::NewGuid().ToString('n').Substring(0, 8)
+        $script:LocalStoppedRunId = 'contract-interrupt-local-' + [guid]::NewGuid().ToString('n').Substring(0, 8)
+        # A copilot task already handed to GitHub: nothing local can kill it.
+        @{ runId = $script:RemoteRunId; status = 'dispatched'; dispatchTarget = 'copilot'; repoName = 'contract-remote-repo'; attempt = 1 } |
+            ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $script:InterruptRunsDir ("{0}.summary.json" -f $script:RemoteRunId)) -Encoding UTF8
+        # A local run a runner already interrupted: resume must requeue it with
+        # branch, attempt and session id untouched.
+        @{ runId = $script:LocalStoppedRunId; status = 'stopped'; stoppedFrom = 'running'; dispatchTarget = 'claude'; repoName = 'contract-local-repo'
+           branch = 'roadmap/contract-local'; attempt = 3; providerSessionId = 'sess-keep-me'; interrupted = $true } |
+            ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $script:InterruptRunsDir ("{0}.summary.json" -f $script:LocalStoppedRunId)) -Encoding UTF8
+    }
+
+    AfterAll {
+        # Leave the isolated control root clear so a later Describe (or the next
+        # run of this suite) does not start held.
+        foreach ($leftover in @($script:InterruptMarker, $script:InterruptHold, (Join-Path $script:InterruptControlRoot 'roadmap-task-runner.stop'))) {
+            Remove-Item -LiteralPath $leftover -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'answers 202 with the interrupted list, writes the interrupt marker, and marks a remote run stopped' {
+        $response = Invoke-ContractApiRequest -Method POST -Path '/api/roadmap/runner/stop' -Body @{ reason = 'contract interrupt'; interrupt = $true }
+
+        $response.StatusCode | Should -Be 202
+        $response.Json.success | Should -BeTrue
+        $response.Json.data.held | Should -BeTrue
+        # The response carries the list the banner shows, always as an array.
+        $response.Content | Should -Match '"interrupted"\s*:\s*\['
+        $interrupted = @($response.Json.data.interrupted)
+        $remoteEntry = $interrupted | Where-Object { [string]$_.runId -eq $script:RemoteRunId } | Select-Object -First 1
+        $remoteEntry | Should -Not -BeNullOrEmpty
+        $remoteEntry.remote | Should -BeTrue
+        $remoteEntry.provider | Should -Be 'copilot'
+        $remoteEntry.fromState | Should -Be 'PROVIDER_SELECTED'
+        # No live runner in this host, so nothing local is named as interrupted.
+        @($interrupted | Where-Object { -not [bool]$_.remote }).Count | Should -Be 0
+
+        Test-Path -LiteralPath $script:InterruptMarker | Should -BeTrue
+        $marker = Get-Content -LiteralPath $script:InterruptMarker -Raw | ConvertFrom-Json
+        $marker.reason | Should -Be 'contract interrupt'
+        @($marker.runIds).Count | Should -Be 0
+
+        $remoteSummary = Get-Content -LiteralPath (Join-Path $script:InterruptRunsDir ("{0}.summary.json" -f $script:RemoteRunId)) -Raw | ConvertFrom-Json
+        $remoteSummary.status | Should -Be 'stopped'
+        $remoteSummary.stoppedFrom | Should -Be 'dispatched'
+        $remoteSummary.stoppedRemote | Should -BeTrue
+        $remoteSummary.stopReason | Should -Be 'contract interrupt'
+    }
+
+    It 'reports the hold and the interrupted count on the presence route' {
+        $response = Invoke-ContractApiRequest -Method GET -Path '/api/roadmap/runner'
+
+        $response.StatusCode | Should -Be 200
+        $response.Json.data.stoppedByOperator | Should -BeTrue
+        $response.Json.data.stopReason | Should -Be 'contract interrupt'
+        [int]$response.Json.data.stopInterruptedCount | Should -Be 1
+    }
+
+    It 'requeues an interrupted local run on start and leaves the remote one stopped' {
+        $response = Invoke-ContractApiRequest -Method POST -Path '/api/roadmap/runner/start' -Body @{}
+
+        # 202 where the scheduled task exists, 409 where it does not (CI); the
+        # hold, marker and requeue happen either way.
+        $response.StatusCode | Should -BeIn @(202, 409)
+        $response.Json.data.holdReleased | Should -BeTrue
+        @($response.Json.data.requeued) | Should -Contain $script:LocalStoppedRunId
+        @($response.Json.data.requeued) | Should -Not -Contain $script:RemoteRunId
+        Test-Path -LiteralPath $script:InterruptMarker | Should -BeFalse
+
+        $local = Get-Content -LiteralPath (Join-Path $script:InterruptRunsDir ("{0}.summary.json" -f $script:LocalStoppedRunId)) -Raw | ConvertFrom-Json
+        $local.status | Should -Be 'queued'
+        $local.branch | Should -Be 'roadmap/contract-local'
+        [int]$local.attempt | Should -Be 3
+        $local.providerSessionId | Should -Be 'sess-keep-me'
+
+        $remote = Get-Content -LiteralPath (Join-Path $script:InterruptRunsDir ("{0}.summary.json" -f $script:RemoteRunId)) -Raw | ConvertFrom-Json
+        $remote.status | Should -Be 'stopped'
+    }
+
+    It 'takes a plain hold, with an empty interrupted list, when interrupt is omitted' {
+        $response = Invoke-ContractApiRequest -Method POST -Path '/api/roadmap/runner/stop' -Body @{ reason = 'contract plain hold' }
+
+        $response.StatusCode | Should -Be 202
+        $response.Json.data.held | Should -BeTrue
+        @($response.Json.data.interrupted).Count | Should -Be 0
+        Test-Path -LiteralPath $script:InterruptMarker | Should -BeFalse
+
+        $release = Invoke-ContractApiRequest -Method POST -Path '/api/roadmap/runner/start' -Body @{}
+        $release.Json.data.holdReleased | Should -BeTrue
+    }
+
+    It 'carries a deliveryState on every agent-run item, or records that there were none to check' {
+        $response = Invoke-ContractApiRequest -Method GET -Path '/api/agent-runs?limit=20'
+
+        $response.StatusCode | Should -Be 200
+        $items = @($response.Json.data.items)
+        if ($items.Count -eq 0) {
+            Set-ItResult -Skipped -Because 'this host has no agent runs to enrich; the module smoke covers the mapping'
+            return
+        }
+        foreach ($item in $items) {
+            @($item.PSObject.Properties.Name) | Should -Contain 'deliveryState'
+            @($item.PSObject.Properties.Name) | Should -Contain 'stoppedRemote'
+        }
     }
 }

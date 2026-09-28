@@ -353,7 +353,7 @@ a repetition without that policy would start a second runner against one queue.
 | Route | Does |
 | --- | --- |
 | `POST /api/roadmap/runner/start` | Releases any hold and triggers the scheduled task. `202` = requested. |
-| `POST /api/roadmap/runner/stop` | Writes the hold and the stop marker. `202` = accepted. |
+| `POST /api/roadmap/runner/stop` | Writes the hold and the stop marker. `202` = accepted. With `{ "interrupt": true }` it also stops the runs in flight (see below). |
 
 The portal **never spawns a runner**. It is a LocalSystem service, and a process
 it spawned would come up as SYSTEM in session 0 holding neither your Claude Code
@@ -384,10 +384,49 @@ two-second no-op. The hold **fails closed**, unlike every other reader here: an
 unreadable record still holds, because a corrupt byte must not resume work you
 deliberately halted.
 
-A runner working when you press stop **finishes its current task first**.
-Abandoning a live `claude` session would leave a claimed item with no owner and a
-half-written branch — expect the wind-down to take up to one task's remaining
-time, not one poll interval.
+A runner working when you press a plain stop **finishes its current task
+first**. Abandoning a live `claude` session would leave a claimed item with no
+owner and a half-written branch — expect the wind-down to take up to one task's
+remaining time, not one poll interval.
+
+### All work stop reaches a run in flight
+
+The Agent Ops tab's **All work stop** (2026-09-27) sends
+`POST /api/roadmap/runner/stop { "reason": "...", "interrupt": true }`. That
+takes the same hold and writes a third file:
+
+| File | Lifetime | Purpose |
+| --- | --- | --- |
+| `output/roadmap-task-runner.interrupt.json` | Consumed by the runner that honors it, or by resume | Names the local runs to stop **now**. |
+
+The runner launches every headless `claude` / `codex` session as a child it
+polls once a second. When the request names the current run, it stops the
+child's process tree and records the run as `stopped` (delivery state
+`STOPPED`) with `stoppedFrom`, the branch, the attempt counter and the provider
+session id all intact — the same preservation rule as a capacity wait. Nothing
+is verified, committed or pushed. The route answers with the list it signalled:
+
+```json
+{ "held": true, "stoppedAt": "...", "stoppedBy": "operator",
+  "interrupted": [ { "runId": "...", "repoName": "...", "provider": "claude",
+                     "fromState": "AGENT_RUNNING", "remote": false } ] }
+```
+
+A Copilot task already handed to GitHub cannot be killed from here. It is marked
+`stopped` with `stoppedRemote: true`, appears in the list as remote, and the
+console labels it "remote; will finish on GitHub, not merged". Nothing approves
+it automatically.
+
+**Resume** (`POST /api/roadmap/runner/start`) releases the hold, deletes the
+interrupt request, and puts every interrupted local run back to `queued` with
+its branch, attempt and session untouched; the response lists them as
+`requeued`. A remote run stays `stopped`. An interactive (non `-Headless`)
+session is your own terminal and is not interruptible from the console.
+
+`REPO_MGMT_RUN_HISTORY_ROOT` relocates the `roadmap-task-history` root the
+interrupt path reads and writes summaries in, for the same reason as the
+control-root override below: a gate that exercises the interrupt route against
+the real workspace must never edit your live runs.
 
 Resuming is releasing the hold. There is deliberately no separate start path:
 "start" and "resume" differ only in whether a file has to be deleted first, and a

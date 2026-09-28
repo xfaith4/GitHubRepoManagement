@@ -87,6 +87,31 @@ function Get-RunnerHeartbeatFilePath {
     return (Join-Path (Get-RunnerControlRoot -WorkspaceRoot $WorkspaceRoot) 'roadmap-task-runner.heartbeat.json')
 }
 
+function Get-RoadmapRunsDirectory {
+    <#
+    .SYNOPSIS
+        Where the runner's per-task summaries live (`<runId>.summary.json`).
+    .DESCRIPTION
+        Overridable with REPO_MGMT_RUN_HISTORY_ROOT, which names the
+        `roadmap-task-history` root; summaries sit in its `runs` child. Added
+        for the Agent Ops "All work stop" (2026-09-27): the interrupt path
+        WRITES summaries (a remote run is marked stopped, a local one is
+        requeued on resume), and a gate exercising that route against the
+        operator's real workspace root must not edit their live runs. Same
+        shape as REPO_MGMT_RUNNER_CONTROL_ROOT, one directory over.
+
+        Read-only callers that predate this resolver still build the path
+        inline; moving them is Lane 0.22's fixture-isolation item, not this one.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
+
+    $override = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUN_HISTORY_ROOT')
+    if (-not [string]::IsNullOrWhiteSpace($override)) { return (Join-Path $override 'runs') }
+    return (Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs')
+}
+
 function Get-RunnerStartCommand {
     <#
     .SYNOPSIS

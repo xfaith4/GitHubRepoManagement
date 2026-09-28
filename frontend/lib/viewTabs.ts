@@ -36,6 +36,7 @@ const ACTIVE_TAB_CLASS = 'text-accent shadow-[inset_0_-2px_0_0_var(--color-accen
  *  future view cannot forget to declare itself. */
 export const VIEW_TAB_ACCENTS: Record<ViewKey, ViewTabAccent> = {
   'today': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
+  'agent-ops': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
   'repos': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
   'insights': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },
   'operations': { active: ACTIVE_TAB_CLASS, badge: 'bg-accent-800 text-accent-100' },

@@ -63,6 +63,18 @@
     when honored. `scripts/Stop-RoadmapTaskRunner.ps1` is the friendly front
     door.
 
+.PARAMETER InterruptFilePath
+    Agent Ops "All work stop" (2026-09-27) — the request that stops a run
+    MID-FLIGHT, which the stop marker deliberately never did. Written by
+    `POST /api/roadmap/runner/stop { interrupt: true }` and watched every
+    second while a headless provider child runs. When it names the current
+    run, the child's process tree is stopped and the run is recorded as
+    `stopped` (delivery state STOPPED) with branch, attempt and session id
+    kept, exactly as a capacity wait keeps them; Start/resume requeues it.
+    Defaults to `output/roadmap-task-runner.interrupt.json` under the same
+    control root as the stop marker, is cleared at startup, and is consumed
+    when honored. An interactive (non -Headless) session is the operator's own
+    terminal and is not interruptible from the console.
 .PARAMETER ClearInheritedGitHubToken
     Clear GH_TOKEN / GITHUB_TOKEN from this process before polling.
 
@@ -101,6 +113,7 @@ param(
     [switch]$AcknowledgeStaleBase,
     [switch]$SyncMain,
     [string]$StopFilePath,
+    [string]$InterruptFilePath,
     [switch]$ClearInheritedGitHubToken,
     [switch]$LoadFunctionsOnly
 )
@@ -160,6 +173,14 @@ if ([string]::IsNullOrWhiteSpace($StopFilePath)) {
     $stopControlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
     if ([string]::IsNullOrWhiteSpace($stopControlRoot)) { $stopControlRoot = Join-Path $WorkspaceRoot 'output' }
     $StopFilePath = Join-Path $stopControlRoot 'roadmap-task-runner.stop'
+}
+if ([string]::IsNullOrWhiteSpace($InterruptFilePath)) {
+    # Agent Ops "All work stop" (2026-09-27). The marker the console writes to
+    # stop a run MID-FLIGHT, watched while a provider child runs. Same root as
+    # the stop marker, for the same reason.
+    $interruptControlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
+    if ([string]::IsNullOrWhiteSpace($interruptControlRoot)) { $interruptControlRoot = Join-Path $WorkspaceRoot 'output' }
+    $InterruptFilePath = Join-Path $interruptControlRoot 'roadmap-task-runner.interrupt.json'
 }
 $runsDir = Join-Path $WorkspaceRoot 'output\roadmap-task-history\runs'
 
@@ -436,6 +457,217 @@ function Clear-RunnerStopFile {
     if (-not (Test-Path -LiteralPath $StopFilePath)) { return }
     try { Remove-Item -LiteralPath $StopFilePath -Force -ErrorAction Stop }
     catch { Write-Warning ("Could not consume the runner stop file '{0}': {1}. Remove it by hand or the next runner will stop at its first poll." -f $StopFilePath, $_.Exception.Message) }
+}
+
+# ── Agent Ops "All work stop" (2026-09-27) — interrupting a run in flight ─────
+# The stop marker is honored BETWEEN tasks. These honor a request DURING one:
+# the provider CLI runs as a child this process polls, so an interrupt written
+# by the console kills the child's tree, records the run as `stopped` with its
+# branch, attempt and session id intact, and lets the hold do the rest.
+
+function Get-RunnerInterruptFilePath {
+    <# Must resolve to the SAME file as Get-RunnerInterruptMarkerPath in
+       Automation.RunnerControl.ps1 -- the module smoke fails when they differ,
+       because a request written where no runner looks is a stop that silently
+       never happens. #>
+    param([Parameter(Mandatory)][string]$WorkspaceRoot)
+    $controlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
+    if ([string]::IsNullOrWhiteSpace($controlRoot)) { $controlRoot = Join-Path $WorkspaceRoot 'output' }
+    return (Join-Path $controlRoot 'roadmap-task-runner.interrupt.json')
+}
+
+function Read-RunnerInterruptRequest {
+    <#
+    .SYNOPSIS
+        Does an interrupt request name THIS run? $null when it does not.
+    .DESCRIPTION
+        The marker carries `runIds`; a request naming other runs is not for
+        this one, so a marker written for one session cannot kill the next run
+        the runner happens to start. An EMPTY list means every run, and an
+        unreadable marker interrupts too -- it fails closed like the hold,
+        because an operator who pressed stop-all must not be ignored over a
+        corrupt byte.
+    #>
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$InterruptFilePath, [Parameter(Mandatory)][string]$RunId)
+    if ([string]::IsNullOrWhiteSpace($InterruptFilePath)) { return $null }
+    if (-not (Test-Path -LiteralPath $InterruptFilePath -PathType Leaf)) { return $null }
+    $record = $null
+    $readable = $false
+    try {
+        $raw = Get-Content -LiteralPath $InterruptFilePath -Raw -Encoding UTF8
+        if (-not [string]::IsNullOrWhiteSpace($raw)) { $record = ConvertFrom-Json -InputObject $raw; $readable = $true }
+    }
+    catch { $record = $null; $readable = $false }
+    $runIds = @()
+    $reason = ''
+    $requestedBy = ''
+    $requestedAt = ''
+    if ($null -ne $record -and $null -ne $record.PSObject) {
+        $names = @($record.PSObject.Properties.Name)
+        if ($names -contains 'runIds' -and $null -ne $record.runIds) { $runIds = @($record.runIds | ForEach-Object { [string]$_ }) }
+        if ($names -contains 'reason') { $reason = [string]$record.reason }
+        if ($names -contains 'requestedBy') { $requestedBy = [string]$record.requestedBy }
+        if ($names -contains 'requestedAt') { $requestedAt = [string]$record.requestedAt }
+    }
+    if ($runIds.Count -gt 0 -and $runIds -notcontains $RunId) { return $null }
+    return [pscustomobject]@{
+        requested   = $true
+        runId       = $RunId
+        reason      = $reason
+        requestedBy = $requestedBy
+        requestedAt = $requestedAt
+        readable    = $readable
+    }
+}
+
+function Clear-RunnerInterruptFile {
+    <# Consumed once honored, and at startup: a leftover request would kill the
+       first agent the next runner launches. #>
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$InterruptFilePath)
+    if ([string]::IsNullOrWhiteSpace($InterruptFilePath)) { return }
+    if (-not (Test-Path -LiteralPath $InterruptFilePath)) { return }
+    try { Remove-Item -LiteralPath $InterruptFilePath -Force -ErrorAction Stop }
+    catch { Write-Warning ("Could not consume the runner interrupt file '{0}': {1}. Remove it by hand or the next run will be interrupted at once." -f $InterruptFilePath, $_.Exception.Message) }
+}
+
+function Resolve-ProcessLaunch {
+    <#
+    .SYNOPSIS
+        Pure -- how to start a resolved command as a child process.
+    .DESCRIPTION
+        `& claude` lets PowerShell choose; a Process object does not. An .exe
+        (claude's native install) starts directly. A .ps1 (npm's codex shim on
+        Windows) is not executable by CreateProcess, so it runs under this same
+        pwsh with -File. A .cmd/.bat starts directly: CreateProcess hands it to
+        cmd.exe itself, which is exactly what `&` did before.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$CommandPath,
+        [Parameter()][AllowEmptyCollection()][string[]]$ArgumentList = @(),
+        [Parameter()][AllowEmptyString()][string]$PowerShellPath = ''
+    )
+    $extension = [System.IO.Path]::GetExtension($CommandPath).ToLowerInvariant()
+    if ($extension -eq '.ps1') {
+        $pwshExe = if (-not [string]::IsNullOrWhiteSpace($PowerShellPath)) { $PowerShellPath } else { (Get-Process -Id $PID).Path }
+        return [pscustomobject]@{
+            fileName     = $pwshExe
+            argumentList = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $CommandPath) + @($ArgumentList)
+            wrapped      = 'pwsh'
+        }
+    }
+    return [pscustomobject]@{ fileName = $CommandPath; argumentList = @($ArgumentList); wrapped = '' }
+}
+
+function Stop-ProcessTree {
+    <# The child and everything it spawned. Kill(entireProcessTree) is .NET
+       Core's own walk; taskkill /T is the Windows fallback when it refuses. #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param([Parameter(Mandatory)][int]$ProcessId)
+    $proc = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($null -eq $proc) { return $false }
+    if (-not $PSCmdlet.ShouldProcess("process tree $ProcessId", 'Stop')) { return $false }
+    try { $proc.Kill($true); return $true } catch { $null = $_ }
+    if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+        try { & taskkill /PID $ProcessId /T /F 2>&1 | Out-Null; return $true } catch { return $false }
+    }
+    return $false
+}
+
+function Invoke-InterruptibleProcess {
+    <#
+    .SYNOPSIS
+        Run a provider CLI as a child this runner can stop mid-run.
+    .DESCRIPTION
+        Replaces `& $command @argv 2>&1 | Tee-Object` for the headless paths.
+        That call blocked this process until the agent finished, so nothing
+        could be checked while it ran. Here the child is polled every
+        PollMilliseconds; when Read-RunnerInterruptRequest names this run the
+        child's process tree is stopped and `interrupted` comes back true with
+        the request attached. Stdout and stderr are read through async tasks
+        (the deadlock-free shape) and returned merged as lines, which is what
+        the transcript parsers received from the pipeline before. Stdin is
+        redirected and closed at once: a child that waits on an inherited
+        console handle is the 2026-08-19 git hang all over again.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$FileName,
+        [Parameter()][AllowEmptyCollection()][string[]]$ArgumentList = @(),
+        [Parameter(Mandatory)][string]$WorkingDirectory,
+        [Parameter()][AllowEmptyString()][string]$InterruptFilePath = '',
+        [Parameter()][AllowEmptyString()][string]$RunId = '',
+        [Parameter()][int]$PollMilliseconds = 1000
+    )
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $FileName
+    foreach ($argument in @($ArgumentList)) { $psi.ArgumentList.Add([string]$argument) }
+    $psi.WorkingDirectory = $WorkingDirectory
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardInput = $true
+    $psi.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $psi.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
+
+    $proc = [System.Diagnostics.Process]::new()
+    $proc.StartInfo = $psi
+    $null = $proc.Start()
+    try { $proc.StandardInput.Close() } catch { $null = $_ }
+    $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
+
+    $interrupt = $null
+    while (-not $proc.WaitForExit($PollMilliseconds)) {
+        $interrupt = Read-RunnerInterruptRequest -InterruptFilePath $InterruptFilePath -RunId $RunId
+        if ($null -ne $interrupt) {
+            $null = Stop-ProcessTree -ProcessId $proc.Id -Confirm:$false
+            $null = $proc.WaitForExit(15000)
+            break
+        }
+    }
+    # The parameterless overload is what flushes the async readers (.NET docs).
+    if ($null -eq $interrupt) { $proc.WaitForExit() }
+
+    $stdout = ''
+    $stderr = ''
+    try { if ($stdoutTask.Wait(10000)) { $stdout = [string]$stdoutTask.Result } } catch { $null = $_ }
+    try { if ($stderrTask.Wait(10000)) { $stderr = [string]$stderrTask.Result } } catch { $null = $_ }
+    $lines = [System.Collections.Generic.List[string]]::new()
+    foreach ($chunk in @($stdout, $stderr)) {
+        if ([string]::IsNullOrEmpty($chunk)) { continue }
+        foreach ($line in ($chunk -split "`r?`n")) { if ($line -ne '') { $lines.Add($line) } }
+    }
+    $exitCode = $null
+    try { $exitCode = [int]$proc.ExitCode } catch { $exitCode = $null }
+    $childPid = $proc.Id
+    try { $proc.Dispose() } catch { $null = $_ }
+    return [pscustomobject]@{
+        exitCode    = $exitCode
+        lines       = $lines.ToArray()
+        interrupted = ($null -ne $interrupt)
+        interrupt   = $interrupt
+        processId   = $childPid
+    }
+}
+
+function Invoke-RunnerProviderProcess {
+    <# Resolve the CLI on PATH, decide how to launch it, run it interruptibly. #>
+    param(
+        [Parameter(Mandatory)][string]$CommandName,
+        [Parameter()][AllowEmptyCollection()][string[]]$ArgumentList = @(),
+        [Parameter(Mandatory)][string]$WorkingDirectory,
+        [Parameter()][AllowEmptyString()][string]$InterruptFilePath = '',
+        [Parameter()][AllowEmptyString()][string]$RunId = ''
+    )
+    $command = Get-Command -Name $CommandName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $command) { throw ("'{0}' not found on PATH." -f $CommandName) }
+    $commandPath = [string]$command.Source
+    if ([string]::IsNullOrWhiteSpace($commandPath)) {
+        throw ("'{0}' resolves to a {1}, not a file on PATH; the runner can only launch an executable or script it can name." -f $CommandName, $command.CommandType)
+    }
+    $launch = Resolve-ProcessLaunch -CommandPath $commandPath -ArgumentList $ArgumentList
+    return (Invoke-InterruptibleProcess -FileName $launch.fileName -ArgumentList $launch.argumentList -WorkingDirectory $WorkingDirectory `
+            -InterruptFilePath $InterruptFilePath -RunId $RunId)
 }
 
 function Write-RunnerHeartbeat {
@@ -1554,9 +1786,10 @@ function Invoke-QueuedTask {
             throw ("'{0}' not found on PATH. Run this as the operator with the {1} CLI installed." -f $localCommand, $localProvider)
         }
         # Declared before the launch so the parse below can read it
-        # unconditionally: Tee-Object -Variable writes into this scope, and an
-        # interactive run never sets it at all.
+        # unconditionally; an interactive run never sets it at all.
         $claudeLines = @()
+        $launchExitCode = 0
+        $launchInterrupt = $null
         Push-Location $repo
         try {
             if ($localProvider -eq 'codex') {
@@ -1566,12 +1799,17 @@ function Invoke-QueuedTask {
                 # is watching -- an unattended interactive session would block
                 # on the first approval prompt forever.
                 $codexArgv = New-CodexExecutionArgument -Prompt $prompt -SchemaPath (Get-CodexOutputSchemaPath -WorkspaceRoot $WorkspaceRoot)
-                & $localCommand @codexArgv 2>&1 | Tee-Object -Variable claudeLines | Out-Null
+                $launch = Invoke-RunnerProviderProcess -CommandName $localCommand -ArgumentList $codexArgv -WorkingDirectory $repo `
+                    -InterruptFilePath $InterruptFilePath -RunId $runId
+                $claudeLines = @($launch.lines)
+                $launchExitCode = $launch.exitCode
+                $launchInterrupt = $launch.interrupt
             }
             elseif ($Headless) {
                 # Release 3.8 M1 (H38-04) - structured output, captured.
-                # Tee rather than redirect: the operator still sees the stream
-                # live, and the same lines are kept for the adapter to parse.
+                # Agent Ops (2026-09-27): captured through a polled child rather
+                # than the pipeline, so the console's "All work stop" can reach
+                # a session in flight; the same lines reach the adapter.
                 # H38-29: resuming carries the session id so the provider
                 # continues its own context rather than rediscovering the task.
                 # Only Claude reaches this today -- Codex declares
@@ -1583,10 +1821,41 @@ function Invoke-QueuedTask {
                 else {
                     Resume-ClaudeExecution -SessionId $remediationResumeSession -Prompt $prompt -PermissionMode $PermissionMode
                 }
-                & $localCommand @claudeArgv 2>&1 | Tee-Object -Variable claudeLines | Out-Null
+                $launch = Invoke-RunnerProviderProcess -CommandName $localCommand -ArgumentList $claudeArgv -WorkingDirectory $repo `
+                    -InterruptFilePath $InterruptFilePath -RunId $runId
+                $claudeLines = @($launch.lines)
+                $launchExitCode = $launch.exitCode
+                $launchInterrupt = $launch.interrupt
             }
-            else { & $localCommand --permission-mode $PermissionMode $prompt }
-            if ($LASTEXITCODE -ne 0) { throw ("{0} execution failed with exit code {1}." -f $localProvider, $LASTEXITCODE) }
+            else {
+                # Interactive: the operator is IN this session, so it stays a
+                # terminal session and is not interruptible from the console.
+                & $localCommand --permission-mode $PermissionMode $prompt
+                $launchExitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
+            }
+            if ($null -ne $launchInterrupt) {
+                # Off-path state STOPPED. Nothing is verified, committed or
+                # pushed: the branch and workspace stay exactly as the agent
+                # left them, attempt and providerSessionId survive untouched
+                # (Update-TaskSummary merges), and resume requeues the run.
+                $interruptedAt = (Get-Date).ToUniversalTime().ToString('o')
+                Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                    status            = 'stopped'
+                    stoppedFrom       = 'running'
+                    stoppedAt         = $interruptedAt
+                    stoppedBy         = [string]$launchInterrupt.requestedBy
+                    stopReason        = [string]$launchInterrupt.reason
+                    interrupted       = $true
+                    branch            = $branch
+                    error             = ''
+                    runnerCompletedAt = (Get-Date).ToString('o')
+                }
+                Clear-RunnerInterruptFile -InterruptFilePath $InterruptFilePath
+                Write-Host ("  [stopped] interrupted by the operator{0}; branch {1} kept, nothing pushed" -f `
+                    $(if ([string]::IsNullOrWhiteSpace([string]$launchInterrupt.reason)) { '' } else { (' ("{0}")' -f $launchInterrupt.reason) }), $branch) -ForegroundColor Yellow
+                return
+            }
+            if ($null -ne $launchExitCode -and $launchExitCode -ne 0) { throw ("{0} execution failed with exit code {1}." -f $localProvider, $launchExitCode) }
         }
         finally { Pop-Location }
 
@@ -1614,7 +1883,7 @@ function Invoke-QueuedTask {
         # An interactive run has a human in the loop who saw the session, so it
         # records its own result instead of demanding one from an adapter that
         # was never involved. Every run leaves a result file either way.
-        $runExitCode = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } else { 0 }
+        $runExitCode = if ($null -ne $launchExitCode) { [int]$launchExitCode } else { 0 }
         $executionResult = $null
         # Codex is always structured -- see the launch above -- so it takes the
         # transcript path regardless of -Headless, which is a Claude Code flag.
@@ -1898,7 +2167,10 @@ if (Test-RunnerHoldRequested -HoldFilePath $HoldFilePath) {
 }
 # A marker left by a previous run would stop this one at its first poll.
 Clear-RunnerStopFile -StopFilePath $StopFilePath
+# And a leftover interrupt would kill the first agent this runner launches.
+Clear-RunnerInterruptFile -InterruptFilePath $InterruptFilePath
 Write-Host ("  stop with: New-Item -ItemType File '{0}'  (honored at the next poll boundary)" -f $StopFilePath) -ForegroundColor DarkGray
+Write-Host ("  interrupt: {0}  (honored mid-run; written by the console's All work stop)" -f $InterruptFilePath) -ForegroundColor DarkGray
 
 # Release 3.8 M2 (H38-11). The provider policy the claim gate reads, resolved
 # once: a poll loop that re-read a config file every 15 seconds would turn an
@@ -1994,6 +2266,13 @@ do {
         # would leave a claimed item with no owner and a half-written branch.
         if (Test-RunnerStopRequested -StopFilePath $StopFilePath) {
             Write-Host ("Stop requested ({0}); finishing between tasks with {1} still queued." -f $StopFilePath, @($claimable).Count) -ForegroundColor Yellow
+            break
+        }
+        # An interrupt request that arrives between tasks is a stop: nothing is
+        # in flight to interrupt, and claiming the next entry would hand the
+        # operator's stop-all a brand new run to kill.
+        if (Test-Path -LiteralPath $InterruptFilePath) {
+            Write-Host ("Interrupt requested ({0}) between tasks; claiming nothing further." -f $InterruptFilePath) -ForegroundColor Yellow
             break
         }
         # The claim gate. A refusal writes NOTHING: the entry stays `queued` and

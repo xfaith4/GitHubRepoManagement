@@ -5,6 +5,9 @@ const EXPECTED_KEYS: ViewKey[] = [
   // Release 3.6 M3 — `today` leads: it is the default landing, and the tab
   // order is the order an operator should consider the views in.
   'today',
+  // Agent Ops (2026-09-27) — the operator's decisions and the stop control
+  // sit right after the landing.
+  'agent-ops',
   'repos',
   'insights',
   'operations',
@@ -36,6 +39,14 @@ describe('viewMeta — the single source of truth for the view tabs', () => {
     }
     expect(new Set(VIEW_META.map(v => v.question)).size).toBe(VIEW_META.length);
     expect(VIEW_META_BY_KEY['today'].question).toBe('What should I do next, and why?');
+    expect(VIEW_META_BY_KEY['agent-ops'].question).toBe('What are the agents doing, and what needs me?');
+  });
+
+  it('names the Agent Ops view as the handoff specified it', () => {
+    const agentOps = VIEW_META_BY_KEY['agent-ops'];
+    expect(agentOps.label).toBe('Agent Ops');
+    expect(agentOps.short).toBe('Agents');
+    expect(agentOps.subtitle).toBe('Live runs through the delivery states, the decisions waiting on you, and an emergency stop.');
   });
 
   it('renamed the two colliding queues to distinct, self-describing names', () => {

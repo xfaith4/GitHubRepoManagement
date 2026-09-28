@@ -288,6 +288,12 @@ const DELIVERY_STATE_TERMS: GlossaryTerm[] = [
     definition: 'Execution is paused because no eligible provider currently has available capacity.',
     basis: 'Delivery-state machine in `Execution.Events.ps1` (`Get-DeliveryState`).',
   },
+  {
+    term: 'Stopped',
+    token: 'STOPPED',
+    definition: 'The operator interrupted the run mid-flight with All work stop. The branch, workspace, attempt and session are kept; a local run returns to the queue on resume, a Copilot run finishes on GitHub and is never merged by the stop.',
+    basis: 'Delivery-state machine in `Execution.Events.ps1` (`Get-DeliveryState`); Agent Ops view (2026-09-27).',
+  },
 ];
 
 // --- Portfolio figures -----------------------------------------------------

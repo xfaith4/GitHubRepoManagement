@@ -122,6 +122,19 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       keyboard approve, reject and skip, and each response lands in the ledger.
       Nothing is generated in the background. _(state: planned)_
       `check: pwsh ./tests/Test-ProposalBatch.ps1 -FailOnError`
+- [ ] **Agent Ops view and All work stop (operator instruction, 2026-09-27).**
+      One tab answers "what are the agents doing, and what needs me": every run
+      on the 20-state delivery strip, each decision waiting on the operator as
+      a card with its own button (approve the verified SHA, merge, re-evaluate,
+      approve or reject a package, resume), a live feed, phase and repository
+      roll-ups, and a run drawer
+      (`frontend/components/AgentOpsView.tsx`, `frontend/lib/agentOps.ts`).
+      `POST /api/roadmap/runner/stop { interrupt: true }` reaches a run in
+      flight: the runner kills the provider child and records `STOPPED` with
+      branch, attempt and session kept, Start requeues it, and a Copilot run is
+      marked stopped and labelled remote. Agent runs carry `deliveryState`
+      joined from the task summary. _(state: built)_
+      `check: npx vitest run frontend/components/AgentOpsView.test.tsx frontend/lib/agentOps.test.ts`
 
 **Forward arc.** Releases 3.0-3.5 describe the finished product: dispatch that
 runs, the loop closing legibly and without a hand-off, numbers an operator can

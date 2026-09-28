@@ -35,7 +35,16 @@ Full state progression (happy path):
 `MERGING` → `MERGED` → `POST_MERGE_VERIFYING` → `COMPLETE`
 
 Off-path states: `CAPACITY_WAIT`, `CI_FAILED`, `POST_MERGE_REMEDIATION`,
-`REMEDIATION`.
+`REMEDIATION`, `STOPPED`.
+
+**Agent Ops "All work stop" (2026-09-27).** `STOPPED` is the state an
+operator interrupt leaves a run in. It carries `stoppedFrom` (the state it was
+interrupted at) and keeps workspace, branch, attempt and session id, the same
+preservation rule as `CAPACITY_WAIT`. A local run returns to `QUEUED` when the
+operator resumes; a copilot run cannot be killed from here, so it is marked
+`STOPPED` with `stoppedRemote`, labelled "remote; will finish on GitHub, not
+merged", and is never approved automatically. Nothing is pushed or merged by a
+stop or a resume.
 
 The Genesys.Core collision, decoded: *Ready* was **dispatch readiness**
 (docs in shape to receive work); *blocked / L0-Absent* was **execution lane**

@@ -12329,6 +12329,210 @@ Write-Step 'Runner hold - Lane 0.20: the kill switch outlives the runner it stop
     }
 }
 
+Write-Step 'Runner interrupt - Agent Ops All work stop reaches a run in flight (2026-09-27)'
+& {
+    # The stop marker is honored between tasks, by design. "All work stop" has
+    # to reach a session that is running NOW: the console writes an interrupt
+    # request, the runner (which owns the provider child) kills the child's
+    # process tree and records the run as `stopped` with branch, attempt and
+    # session id intact, and resume requeues it. Proved against a real detached
+    # runner and a real child, because a stop that has only been read is not a
+    # stop. The child is a fake `claude` placed first on PATH -- the same shim
+    # pattern the gh no-credential test uses -- so no provider quota is spent.
+    $intPresence = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RunnerPresence.ps1'
+    $intControl = Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RunnerControl.ps1'
+    $intEvents = Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.Events.ps1'
+    $intRunner = Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1'
+    foreach ($intFile in @($intPresence, $intControl, $intEvents, $intRunner)) {
+        if (-not (Test-Path -LiteralPath $intFile)) { throw "Missing $intFile" }
+    }
+    . $intPresence
+    . $intControl
+    . $intEvents
+    . $intRunner -LoadFunctionsOnly
+
+    # --- Pure: how a resolved CLI is launched outside the pipeline. ------
+    # codex resolves to npm's codex.ps1 on Windows; a .ps1 cannot be started by
+    # CreateProcess, so it runs under pwsh -File. An .exe starts directly.
+    $intPs1Launch = Resolve-ProcessLaunch -CommandPath 'C:\tools\codex.ps1' -ArgumentList @('exec', 'a b') -PowerShellPath 'C:\pwsh\pwsh.exe'
+    if ($intPs1Launch.fileName -ne 'C:\pwsh\pwsh.exe') { throw "A .ps1 provider shim must launch under pwsh; got fileName '$($intPs1Launch.fileName)'." }
+    if (@($intPs1Launch.argumentList)[0] -ne '-NoProfile' -or @($intPs1Launch.argumentList) -notcontains 'C:\tools\codex.ps1' -or @($intPs1Launch.argumentList)[-1] -ne 'a b') {
+        throw ("A .ps1 launch must pass -File <shim> followed by the CLI's own arguments verbatim; got {0}" -f (@($intPs1Launch.argumentList) -join ' | '))
+    }
+    $intExeLaunch = Resolve-ProcessLaunch -CommandPath 'C:\tools\claude.exe' -ArgumentList @('-p', 'hi')
+    if ($intExeLaunch.fileName -ne 'C:\tools\claude.exe' -or (@($intExeLaunch.argumentList) -join ' ') -ne '-p hi') { throw 'An .exe provider must launch directly with its own arguments.' }
+
+    # --- Pure: a request names runs; one naming OTHER runs is not for this one.
+    $intReqFile = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-interrupt-req-' + [guid]::NewGuid().ToString('n').Substring(0, 8) + '.json')
+    try {
+        if ($null -ne (Read-RunnerInterruptRequest -InterruptFilePath $intReqFile -RunId 'r1')) { throw 'A missing interrupt file must read as no request.' }
+        @{ requestedAt = '2026-09-27T00:00:00Z'; reason = 'named'; runIds = @('r2') } | ConvertTo-Json | Set-Content -LiteralPath $intReqFile -Encoding UTF8
+        if ($null -ne (Read-RunnerInterruptRequest -InterruptFilePath $intReqFile -RunId 'r1')) { throw 'A request naming only r2 interrupted r1; a stale marker would kill the next run the runner started.' }
+        if ($null -eq (Read-RunnerInterruptRequest -InterruptFilePath $intReqFile -RunId 'r2')) { throw 'A request naming r2 did not interrupt r2.' }
+        @{ requestedAt = '2026-09-27T00:00:00Z'; reason = 'all'; runIds = @() } | ConvertTo-Json | Set-Content -LiteralPath $intReqFile -Encoding UTF8
+        if ($null -eq (Read-RunnerInterruptRequest -InterruptFilePath $intReqFile -RunId 'r1')) { throw 'A request naming no run must interrupt every run.' }
+        Set-Content -LiteralPath $intReqFile -Value '{ not json' -Encoding UTF8
+        $intCorrupt = Read-RunnerInterruptRequest -InterruptFilePath $intReqFile -RunId 'r1'
+        if ($null -eq $intCorrupt -or $intCorrupt.readable) { throw 'An unreadable interrupt request must still interrupt (fail closed, like the hold) and say it was unreadable.' }
+    }
+    finally { Remove-Item -LiteralPath $intReqFile -Force -ErrorAction SilentlyContinue }
+
+    $intFixture = Join-Path ([System.IO.Path]::GetTempPath()) ('smoke-runnerint-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $intControlRoot = Join-Path $intFixture 'output\control'
+    $intHistoryRoot = Join-Path $intFixture 'output\roadmap-task-history'
+    $intRunsDir = Join-Path $intHistoryRoot 'runs'
+    $intBin = Join-Path $intFixture 'bin'
+    $intRepo = Join-Path $intFixture 'repo'
+    foreach ($intDir in @($intControlRoot, $intRunsDir, $intBin, $intRepo)) { $null = New-Item -ItemType Directory -Path $intDir -Force }
+    $intPrevControlRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT')
+    $intPrevHistoryRoot = [Environment]::GetEnvironmentVariable('REPO_MGMT_RUN_HISTORY_ROOT')
+    $intPrevPath = $env:PATH
+    $intProc = $null
+    try {
+        # Both sides resolve every runner-state file through the same two roots,
+        # and the fixture runner inherits them at launch.
+        [Environment]::SetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT', $intControlRoot)
+        [Environment]::SetEnvironmentVariable('REPO_MGMT_RUN_HISTORY_ROOT', $intHistoryRoot)
+
+        # --- The console and the runner must name the SAME file. ----------
+        $intMarker = Get-RunnerInterruptMarkerPath -WorkspaceRoot $intFixture
+        $intMarkerFromRunner = Get-RunnerInterruptFilePath -WorkspaceRoot $intFixture
+        if ($intMarkerFromRunner -ne $intMarker) {
+            throw ("The runner and the control module disagree about the interrupt file: runner '{0}' vs module '{1}'. All work stop would write a request nothing reads." -f $intMarkerFromRunner, $intMarker)
+        }
+        if ((Get-RoadmapRunsDirectory -WorkspaceRoot $intFixture) -ne $intRunsDir) { throw 'Get-RoadmapRunsDirectory does not honour REPO_MGMT_RUN_HISTORY_ROOT.' }
+
+        # --- A remote (copilot) run: marked stopped, flagged remote, never requeued.
+        $intRemoteId = 'smoke-int-remote'
+        @{ runId = $intRemoteId; status = 'dispatched'; dispatchTarget = 'copilot'; repoName = 'remote-repo' } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $intRunsDir "$intRemoteId.summary.json") -Encoding UTF8
+        $intRemoteStop = Suspend-OperatorRunner -WorkspaceRoot $intFixture -RequestedBy 'smoke' -Reason 'remote check' -Interrupt -Confirm:$false
+        $intRemoteEntry = @($intRemoteStop.interrupted) | Where-Object { $_.runId -eq $intRemoteId } | Select-Object -First 1
+        if ($null -eq $intRemoteEntry -or -not $intRemoteEntry.remote -or $intRemoteEntry.fromState -ne 'PROVIDER_SELECTED') { throw 'A dispatched copilot run must be reported as interrupted, remote, from PROVIDER_SELECTED.' }
+        $intRemoteSummary = Get-Content -LiteralPath (Join-Path $intRunsDir "$intRemoteId.summary.json") -Raw | ConvertFrom-Json
+        if ($intRemoteSummary.status -ne 'stopped' -or -not $intRemoteSummary.stoppedRemote) { throw 'A remote run must be marked stopped and stoppedRemote by the host, since no local process will ever reach it.' }
+        if ((Read-RunnerHoldRecord -WorkspaceRoot $intFixture).interruptedCount -ne 1) { throw 'The hold record must carry the interrupted count for the banner.' }
+        $intRemoteResume = Resume-OperatorRunner -WorkspaceRoot $intFixture -TaskName ('SmokeNoSuchRunnerTask-' + [guid]::NewGuid().ToString('n').Substring(0, 8)) -Confirm:$false
+        if (@($intRemoteResume.requeued) -contains $intRemoteId) { throw 'Resume requeued a remote run; GitHub is still running it and a local requeue would start it twice.' }
+        if (Test-Path -LiteralPath $intMarker) { throw 'Resume left the interrupt marker; it would kill the first agent the next runner launches.' }
+        if ((Get-Content -LiteralPath (Join-Path $intRunsDir "$intRemoteId.summary.json") -Raw | ConvertFrom-Json).status -ne 'stopped') { throw 'A remote run must stay stopped across resume.' }
+
+        # --- A live local run: the child dies, the summary says STOPPED. ---
+        $intRunId = 'smoke-int-local'
+        $intBranch = 'roadmap/smoke-int-local'
+        & git -C $intRepo init -q
+        if ($LASTEXITCODE -ne 0) { throw 'git init failed for the interrupt fixture.' }
+        & git -C $intRepo -c user.name=smoke -c user.email=smoke@example.invalid commit -q --allow-empty -m 'init'
+        if ($LASTEXITCODE -ne 0) { throw 'git commit failed for the interrupt fixture.' }
+
+        $intPidFile = Join-Path $intFixture 'child.pid'
+        # No param block on purpose: claude's argv (-p, --output-format, ...)
+        # must land in $args instead of failing to bind.
+        $intFakeClaude = @(
+            ('Set-Content -LiteralPath ''{0}'' -Value $PID -Encoding UTF8' -f $intPidFile),
+            'Start-Sleep -Seconds 300'
+        ) -join [Environment]::NewLine
+        Set-Content -LiteralPath (Join-Path $intBin 'claude.ps1') -Value $intFakeClaude -Encoding UTF8
+
+        $intQueue = Join-Path $intFixture 'output\roadmap-task-queue.jsonl'
+        $intEntry = New-RoadmapQueueEntry -RunId $intRunId -Repository 'smoke/interrupt' -LocalRepoPath $intRepo -RoadmapPath '' `
+            -SelectedTask 'Smoke: a task the operator interrupts' -TaskDescription 'Sleep until interrupted.' -Branch $intBranch `
+            -QueuedAt ((Get-Date).ToString('o')) -DispatchTarget 'claude' -BaseBranch ''
+        Add-RoadmapQueueEntry -QueuePath $intQueue -Entry $intEntry
+        @{ runId = $intRunId; status = 'queued'; repoName = 'interrupt-repo'; localRepoPath = $intRepo; dispatchTarget = 'claude'; attempt = 2; providerSessionId = 'sess-keep' } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $intRunsDir "$intRunId.summary.json") -Encoding UTF8
+
+        $env:PATH = $intBin + [System.IO.Path]::PathSeparator + $intPrevPath
+        $intStop = Join-Path $intControlRoot 'roadmap-task-runner.stop'
+        $intLog = Join-Path $intFixture 'runner.out.log'
+        $intErr = Join-Path $intFixture 'runner.err.log'
+        $intProcArgs = @{
+            FilePath               = (Get-Process -Id $PID).Path
+            ArgumentList           = @(
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $intRunner,
+                '-WorkspaceRoot', $intFixture, '-QueuePath', $intQueue,
+                '-StopFilePath', $intStop, '-InterruptFilePath', $intMarker,
+                '-PollSeconds', '2', '-Headless', '-PermissionMode', 'bypassPermissions', '-AcknowledgeStaleBase'
+            )
+            RedirectStandardOutput = $intLog
+            RedirectStandardError  = $intErr
+            PassThru               = $true
+        }
+        if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $intProcArgs.WindowStyle = 'Hidden' }
+        $intProc = Start-Process @intProcArgs
+        $env:PATH = $intPrevPath
+
+        $intDeadline = (Get-Date).AddSeconds(90)
+        while ((Get-Date) -lt $intDeadline -and -not (Test-Path -LiteralPath $intPidFile)) {
+            if ($intProc.HasExited) { break }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not (Test-Path -LiteralPath $intPidFile)) {
+            $intLogText = if (Test-Path -LiteralPath $intLog) { Get-Content -LiteralPath $intLog -Raw } else { '(no runner log)' }
+            throw ("The fixture runner never launched the fake claude within 90s (runner exited: {0}); the test proves nothing. Runner log:`n{1}" -f $intProc.HasExited, $intLogText)
+        }
+        $intChildPid = [int](Get-Content -LiteralPath $intPidFile -Raw).Trim()
+        if ($null -eq (Get-Process -Id $intChildPid -ErrorAction SilentlyContinue)) { throw 'The fake claude wrote its pid and vanished before the interrupt; nothing was in flight to stop.' }
+
+        $intStopResult = Suspend-OperatorRunner -WorkspaceRoot $intFixture -RequestedBy 'smoke' -Reason 'smoke interrupt' -Interrupt -Confirm:$false
+        $intLocalEntry = @($intStopResult.interrupted) | Where-Object { $_.runId -eq $intRunId } | Select-Object -First 1
+        if ($null -eq $intLocalEntry) {
+            throw ("Suspend -Interrupt did not name the live run '{0}'; interrupted={1}" -f $intRunId, (@($intStopResult.interrupted | ForEach-Object { $_.runId }) -join ','))
+        }
+        if ($intLocalEntry.remote -or $intLocalEntry.provider -ne 'claude' -or $intLocalEntry.fromState -ne 'AGENT_RUNNING') { throw 'The live run must be reported local, claude, from AGENT_RUNNING.' }
+
+        $intSummaryPath = Join-Path $intRunsDir "$intRunId.summary.json"
+        $intStoppedSummary = $null
+        $intDeadline = (Get-Date).AddSeconds(45)
+        while ((Get-Date) -lt $intDeadline) {
+            try { $intStoppedSummary = Get-Content -LiteralPath $intSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $intStoppedSummary = $null }
+            if ($null -ne $intStoppedSummary -and [string]$intStoppedSummary.status -eq 'stopped') { break }
+            Start-Sleep -Milliseconds 500
+        }
+        if ($null -eq $intStoppedSummary -or [string]$intStoppedSummary.status -ne 'stopped') {
+            $intLogText = if (Test-Path -LiteralPath $intLog) { Get-Content -LiteralPath $intLog -Raw } else { '(no runner log)' }
+            throw ("The runner did not record the run as stopped within 45s of the interrupt (status '{0}'). Runner log:`n{1}" -f $(if ($null -ne $intStoppedSummary) { $intStoppedSummary.status } else { 'unreadable' }), $intLogText)
+        }
+        if ([string]$intStoppedSummary.stoppedFrom -ne 'running') { throw "stoppedFrom must record the status the run was interrupted at; got '$($intStoppedSummary.stoppedFrom)'." }
+        if ([int]$intStoppedSummary.attempt -ne 2 -or [string]$intStoppedSummary.providerSessionId -ne 'sess-keep') { throw 'An interrupted run lost its attempt or session id; resume could not continue the same session.' }
+        if ([string]$intStoppedSummary.branch -ne $intBranch) { throw "An interrupted run must keep its branch; got '$($intStoppedSummary.branch)'." }
+        if ([string]$intStoppedSummary.stopReason -ne 'smoke interrupt') { throw 'The operator''s reason did not reach the run summary.' }
+        if ((Get-DeliveryState -Status $intStoppedSummary.status) -ne 'STOPPED') { throw 'A stopped summary must map to the STOPPED delivery state.' }
+
+        $intDeadline = (Get-Date).AddSeconds(15)
+        while ((Get-Date) -lt $intDeadline -and $null -ne (Get-Process -Id $intChildPid -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 250 }
+        if ($null -ne (Get-Process -Id $intChildPid -ErrorAction SilentlyContinue)) {
+            try { Stop-Process -Id $intChildPid -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+            throw 'The fake claude survived the interrupt; the run was recorded stopped while the agent kept working.'
+        }
+        if (Test-Path -LiteralPath $intMarker) { throw 'The runner did not consume the interrupt marker; it would kill the next run too.' }
+
+        # The hold was written with the interrupt, so the runner leaves rather
+        # than claiming the requeued entry back.
+        if (-not $intProc.WaitForExit(60000)) {
+            try { $intProc.Kill() } catch { $null = $_ }
+            throw 'The runner kept polling after the interrupt although the hold was written; All work stop would be followed by more work.'
+        }
+        if ($intProc.ExitCode -ne 0) { throw "A runner stopped by the operator must exit 0; got $($intProc.ExitCode)." }
+        if ((Read-RunnerHoldRecord -WorkspaceRoot $intFixture).interruptedCount -ne 1) { throw 'The hold record must count the interrupted local run.' }
+
+        # --- Resume requeues it with everything intact. -------------------
+        $intResume = Resume-OperatorRunner -WorkspaceRoot $intFixture -TaskName ('SmokeNoSuchRunnerTask-' + [guid]::NewGuid().ToString('n').Substring(0, 8)) -Confirm:$false
+        if (@($intResume.requeued) -notcontains $intRunId) { throw 'Resume did not requeue the interrupted local run.' }
+        $intRequeued = Get-Content -LiteralPath $intSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$intRequeued.status -ne 'queued') { throw "A requeued run must read 'queued'; got '$($intRequeued.status)'." }
+        if ([int]$intRequeued.attempt -ne 2 -or [string]$intRequeued.providerSessionId -ne 'sess-keep' -or [string]$intRequeued.branch -ne $intBranch) { throw 'Resume rewrote fields the interrupt had preserved.' }
+
+        Write-Host '  runner interrupt ok: a real child was killed within seconds of the console''s request; the run reads STOPPED with branch, attempt and session kept; the marker was consumed; the held runner exited 0; resume requeued the local run and left the remote one stopped' -ForegroundColor DarkGray
+    }
+    finally {
+        if ($null -ne $intProc -and -not $intProc.HasExited) { try { $intProc.Kill() } catch { $null = $_ } }
+        $env:PATH = $intPrevPath
+        [Environment]::SetEnvironmentVariable('REPO_MGMT_RUNNER_CONTROL_ROOT', $intPrevControlRoot)
+        [Environment]::SetEnvironmentVariable('REPO_MGMT_RUN_HISTORY_ROOT', $intPrevHistoryRoot)
+        Remove-Item -Recurse -Force $intFixture -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Step 'Runner state isolation - Lane 0.8: no gate reads, fakes or deletes the operator''s live heartbeat'
 & {
     # Until 2026-09-13 the api-host smoke started its host against the operator's
@@ -12590,6 +12794,8 @@ Write-Step 'Execution events — smoke: type validation, delivery state mapping 
         @{ status = 'merged';                   state = 'MERGED' }
         @{ status = 'finished';                 state = 'COMPLETE' }
         @{ status = 'complete';                 state = 'COMPLETE' }
+        # Agent Ops "All work stop": the off-path state an interrupted run lands in.
+        @{ status = 'stopped';                  state = 'STOPPED' }
     )
     foreach ($pair in $expectedMappings) {
         $got = Get-DeliveryState -Status $pair.status

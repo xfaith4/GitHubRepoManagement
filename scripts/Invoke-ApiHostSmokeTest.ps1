@@ -535,6 +535,10 @@ $job = Start-Job -ScriptBlock {
     # it would stop the operator's live runner and keep it stopped. Must stay in
     # step with $script:SmokeRunnerControlRoot.
     $env:REPO_MGMT_RUNNER_CONTROL_ROOT = (Join-Path $Root 'output\smoke\api-host\runner-control')
+    # Agent Ops (2026-09-27), same rebuild from $Root: the stop route's
+    # `interrupt` flag writes run summaries (remote runs marked stopped, local
+    # ones requeued on resume), and those must never be the operator's.
+    $env:REPO_MGMT_RUN_HISTORY_ROOT = (Join-Path $Root 'output\smoke\api-host\run-history')
     # Lane 0.21, same rebuild from $Root: the worker this host starts inherits
     # the override. Must stay in step with $script:SmokeCacheRoot.
     $env:REPO_MGMT_CACHE_ROOT = (Join-Path $Root 'output\smoke\api-host\cache')

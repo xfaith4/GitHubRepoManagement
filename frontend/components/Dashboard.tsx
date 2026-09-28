@@ -24,6 +24,9 @@ import WorkItemTraceModal from './WorkItemTraceModal';
 import ExecutionQueuePanel from './ExecutionQueuePanel';
 import RepoEvaluationModal from './RepoEvaluationModal';
 import TodayView from './TodayView';
+import AgentOpsView from './AgentOpsView';
+import { useAgentOpsData } from '../hooks/useAgentOpsData';
+import { countOperatorActions } from '../lib/agentOps';
 import RoadmapDispatchModal from './RoadmapDispatchModal';
 import RepositoryImprovementWorkflowModal from './RepositoryImprovementWorkflowModal';
 import RepoGitStatusModal from './RepoGitStatusModal';
@@ -49,7 +52,7 @@ import { type RunnerPresencePayload } from '../lib/runnerPresence';
 import { useSse } from '../hooks/useSse';
 import { useBackendLog } from '../hooks/useBackendLog';
 import { useHealthPing } from '../hooks/useHealthPing';
-import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon, DocReviewIcon, SyncIcon } from './icons';
+import { SpinnerIcon, IssuesIcon, ProjectsIcon, BranchIcon, HealthIcon, DocReviewIcon, SyncIcon, PullRequestIcon } from './icons';
 
 interface DashboardProps {
   repos: RepoStatus[];
@@ -453,6 +456,14 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
 
   // Backend health indicator — polls /health/live every 15 s
   const backendHealth = useHealthPing(15_000);
+  // Agent Ops (2026-09-27): one data instance for the view AND its tab badge,
+  // so the count on the tab is always the count the page shows. Polls faster
+  // while the view is open.
+  const agentOps = useAgentOpsData({ activeView });
+  const agentOpsActionCount = useMemo(
+    () => countOperatorActions(agentOps.runs, agentOps.packages, agentOps.runner),
+    [agentOps.runs, agentOps.packages, agentOps.runner],
+  );
 
   // Backend log polling — active whenever a scan, background re-scan, or
   // operation is running. Polling during the background re-scan lets the inline
@@ -1435,6 +1446,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
   // counts only) and styling; this only supplies the numbers and their
   // provenance.
   const viewTabBadges: ViewTabBadges = {
+    'agent-ops': { count: agentOpsActionCount },
     'operations': {
       count: operationsReadyCount,
       carriedOver: operationsBadgeCarriedOver,
@@ -1587,6 +1599,8 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
                 onRunAction={row => setEvaluationModalRepo(row.repoName)}
                 onRunScan={handleRunPortfolioScan}
               />
+            ) : activeView === 'agent-ops' ? (
+              <AgentOpsView data={agentOps} />
             ) : activeView === 'repos' ? (
               <>
                 <ActionBar
@@ -1851,6 +1865,7 @@ const Dashboard: React.FC<DashboardProps> = ({ repos, loading, isBackgroundRefre
         <div className="flex overflow-x-auto">
           {([
             { view: 'today' as const, label: VIEW_META_BY_KEY['today'].short, icon: <HealthIcon className="w-5 h-5" />, badge: null as number | null },
+            { view: 'agent-ops' as const, label: VIEW_META_BY_KEY['agent-ops'].short, icon: <PullRequestIcon className="w-5 h-5" />, badge: (agentOpsActionCount || null) as number | null },
             { view: 'repos' as const, label: 'Repos', icon: <ProjectsIcon className="w-5 h-5" />, badge: null as number | null },
             { view: 'insights' as const, label: 'Insights', icon: <HealthIcon className="w-5 h-5" />, badge: null as number | null },
             { view: 'operations' as const, label: 'Ops', icon: <DocReviewIcon className="w-5 h-5" />, badge: (operationsReadyCount || null) as number | null, carriedOver: operationsBadgeCarriedOver },

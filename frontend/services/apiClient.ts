@@ -1882,10 +1882,19 @@ export async function startRunner(): Promise<RunnerStartResult> {
  * leave a claimed queue item with no owner — so the caller watches presence to
  * see it wind down rather than treating this as already-stopped.
  */
-export async function stopRunner(reason?: string): Promise<RunnerStopResult> {
+export async function stopRunner(reason?: string, options?: { interrupt?: boolean }): Promise<RunnerStopResult> {
+  // Agent Ops "All work stop": `interrupt` also signals every run in flight.
+  // A local run is killed by its runner and recorded STOPPED with its
+  // workspace kept; a copilot run on GitHub is marked stopped and flagged
+  // remote. Nothing is pushed or merged. Omitted, this is the plain hold.
   const data = await postJson<{ data?: RunnerStopResult }>('/roadmap/runner/stop', {
     reason: reason ?? '',
+    ...(options?.interrupt ? { interrupt: true } : {}),
   });
+  // `interrupted` is left exactly as the host sent it: an array (possibly
+  // empty) from a host that knows the flag, absent from one that predates it.
+  // The view tells those apart, because "nothing was in flight" and "this host
+  // cannot interrupt" call for different words.
   return data?.data ?? { held: true, stoppedAt: null };
 }
 
@@ -1895,6 +1904,19 @@ export interface RunnerStartResult {
   taskTriggered: boolean;
   taskName?: string;
   error?: string | null;
+  /** Agent Ops: interrupted local runs that went back to the queue on this start. */
+  requeued?: string[];
+}
+
+/** One run an "All work stop" interrupted, as the stop route reports it. */
+export interface RunnerInterruptedRun {
+  runId: string;
+  repoName: string;
+  provider: string;
+  /** The delivery state it was interrupted at; null when the host could not map it. */
+  fromState: string | null;
+  /** True for a copilot run that finishes on GitHub and cannot be killed locally. */
+  remote: boolean;
 }
 
 export interface RunnerStopResult {
@@ -1902,6 +1924,8 @@ export interface RunnerStopResult {
   stoppedAt: string | null;
   stoppedBy?: string;
   reason?: string;
+  /** Agent Ops: the runs this stop interrupted. Empty for a plain hold. */
+  interrupted?: RunnerInterruptedRun[];
 }
 
 export async function getRunnerPresence(init?: { signal?: AbortSignal }): Promise<RunnerPresencePayload | null> {

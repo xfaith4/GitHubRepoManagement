@@ -66,7 +66,12 @@ $script:DeliveryStates = @(
     'MERGING', 'MERGED',
     'POST_MERGE_VERIFYING', 'POST_MERGE_REMEDIATION',
     'COMPLETE',
-    'REMEDIATION'
+    'REMEDIATION',
+    # Agent Ops "All work stop" (2026-09-27). Off-path: the operator interrupted
+    # a run mid-flight. The summary keeps `stoppedFrom` (the status it was
+    # interrupted at), branch, attempt and session id, the same preservation
+    # rule as CAPACITY_WAIT; resume requeues a local run, a remote one stays.
+    'STOPPED'
 )
 
 # Run-summary / lane-verdict status strings → delivery state.
@@ -111,6 +116,7 @@ $script:_StatusToDeliveryState = [ordered]@{
     'finished'                = 'COMPLETE'
     'complete'                = 'COMPLETE'
     'remediation'             = 'REMEDIATION'
+    'stopped'                 = 'STOPPED'
 }
 
 # ---------------------------------------------------------------------------

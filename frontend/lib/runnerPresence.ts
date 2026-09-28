@@ -76,6 +76,11 @@ export interface RunnerPresencePayload {
   stoppedBy?: string | null;
   stopReason?: string | null;
   /**
+   * Agent Ops: how many runs the current hold interrupted, from the hold
+   * record, so the held banner says so after a page reload.
+   */
+  stopInterruptedCount?: number;
+  /**
    * Whether the scheduled task a Start would trigger is actually registered.
    * False means the installer was never run here, and a Start button would fail
    * every time — so the surface says that instead of offering the button.

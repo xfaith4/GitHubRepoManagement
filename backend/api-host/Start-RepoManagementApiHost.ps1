@@ -8253,6 +8253,8 @@ try {
                     continue
                 }
 
+                # Agent Ops: the drawer reads the same delivery state the list does.
+                if ($null -ne $runDetail.run) { $null = Add-AgentRunDeliveryState -WorkspaceRoot $WorkspaceRoot -Run $runDetail.run }
                 Add-MetricCounter -Name 'api_requests_total'
                 Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)
                 Write-HostLog ("[TRACE] agent-runs.detail correlationId={0} done runId={1} events={2}" -f $correlationId, $agentRunIdParam, @($runDetail.events).Count)
@@ -9405,6 +9407,9 @@ try {
                     $runnerPayload['stoppedAt'] = $runnerHold.since
                     $runnerPayload['stoppedBy'] = $runnerHold.by
                     $runnerPayload['stopReason'] = $runnerHold.reason
+                    # Agent Ops: how many runs the hold interrupted, so the held
+                    # banner survives a page reload.
+                    $runnerPayload['stopInterruptedCount'] = [int]$runnerHold.interruptedCount
                     # Whether a Start control can do anything at all. A console
                     # that offers a button for a task nobody registered is worse
                     # than one that says the installer has not been run.
@@ -9457,11 +9462,27 @@ try {
                     $stopBody = Parse-JsonBody -Body $req.Body
                     $stopReason = if ($null -ne $stopBody -and $stopBody.ContainsKey('reason')) { [string]$stopBody.reason } else { '' }
                     $stopBy = if ($null -ne $stopBody -and $stopBody.ContainsKey('requestedBy')) { [string]$stopBody.requestedBy } else { '' }
-                    $stopResult = Suspend-OperatorRunner -WorkspaceRoot $WorkspaceRoot -RequestedBy $stopBy -Reason $stopReason
-                    Write-HostLog ("[TRACE] runner.stop correlationId={0} held={1} stoppedAt={2}" -f $correlationId, $stopResult.held, $stopResult.stoppedAt)
+                    # Agent Ops "All work stop": `interrupt: true` also signals
+                    # every active run. A local run is killed by its runner and
+                    # recorded as STOPPED with its workspace kept; a copilot run
+                    # on GitHub is marked stopped and flagged remote. Nothing is
+                    # pushed or merged. Without the flag this is the Lane 0.20
+                    # hold exactly as before.
+                    $stopInterrupt = $false
+                    if ($null -ne $stopBody -and $stopBody.ContainsKey('interrupt')) {
+                        try { $stopInterrupt = [System.Convert]::ToBoolean($stopBody.interrupt) } catch { $stopInterrupt = $false }
+                    }
+                    $stopResult = Suspend-OperatorRunner -WorkspaceRoot $WorkspaceRoot -RequestedBy $stopBy -Reason $stopReason -Interrupt:$stopInterrupt
+                    Write-HostLog ("[TRACE] runner.stop correlationId={0} held={1} stoppedAt={2} interrupt={3} interrupted={4}" -f `
+                        $correlationId, $stopResult.held, $stopResult.stoppedAt, $stopInterrupt, @($stopResult.interrupted).Count)
+                    $stopMessage = if ($stopInterrupt) {
+                        ('Runners held and {0} active run(s) signalled to stop now. Interrupted runs keep their branch and workspace; nothing is pushed or merged. Resume requeues them.' -f @($stopResult.interrupted).Count)
+                    } else {
+                        'Runners held. One already working finishes its current task first, then exits; nothing restarts until Start is pressed.'
+                    }
                     Send-HttpJson -Stream $req.Stream -StatusCode 202 -StatusText 'Accepted' -CorrelationId $correlationId -Payload @{
                         success = $true
-                        message = 'Runners held. One already working finishes its current task first, then exits; nothing restarts until Start is pressed.'
+                        message = $stopMessage
                         data    = $stopResult
                     }
                 }
@@ -12437,6 +12458,11 @@ try {
                     }
 
                     $runs = @(Get-AgentRuns -WorkspaceRoot $WorkspaceRoot -Status $statusFilter -RepoName $repoFilter -Limit $limit)
+                    # Agent Ops: the delivery state rides every item, joined
+                    # from the runner's task summary, so the view derives it
+                    # from the run's own field and maps the legacy status only
+                    # when nothing finer exists.
+                    foreach ($run in $runs) { $null = Add-AgentRunDeliveryState -WorkspaceRoot $WorkspaceRoot -Run $run }
 
                     $byStatus = @{}
                     foreach ($run in $runs) {
