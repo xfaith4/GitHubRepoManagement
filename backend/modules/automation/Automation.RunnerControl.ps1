@@ -175,11 +175,7 @@ function Get-ActiveRunnerExecution {
     $found = [System.Collections.Generic.List[object]]::new()
     if (-not (Test-Path -LiteralPath $runsDir -PathType Container)) { return $found.ToArray() }
 
-    $heartbeat = _RunnerControl_ReadJson -Path (Get-RunnerHeartbeatFilePath -WorkspaceRoot $WorkspaceRoot)
-    $runnerPid = 0
-    if ($null -ne $heartbeat) { try { $runnerPid = [int](_RunnerControl_Field -Obj $heartbeat -Name 'pid' -Default 0) } catch { $runnerPid = 0 } }
-    $runnerAlive = ($runnerPid -gt 0) -and ($null -ne (Get-Process -Id $runnerPid -ErrorAction Ignore))
-
+    $runnerAlive = ($runnerPid -gt 0) -and ($null -ne (Get-Process -Id $runnerPid -ErrorAction SilentlyContinue))
     # The host does not load the execution events module at startup; the state
     # vocabulary is one function in it, so it is loaded here on first need
     # (the same seam Add-AgentRunDeliveryState uses).
