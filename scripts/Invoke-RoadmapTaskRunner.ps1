@@ -620,14 +620,17 @@ function Invoke-InterruptibleProcess {
     while (-not $proc.WaitForExit($PollMilliseconds)) {
         $interrupt = Read-RunnerInterruptRequest -InterruptFilePath $InterruptFilePath -RunId $RunId
         if ($null -ne $interrupt) {
-            $null = Stop-ProcessTree -ProcessId $proc.Id -Confirm:$false
-            $null = $proc.WaitForExit(15000)
+            if (-not (Stop-ProcessTree -ProcessId $proc.Id -Confirm:$false)) {
+                throw ("Failed to stop provider process tree (pid {0}) after interrupt request." -f $proc.Id)
+            }
+            if (-not $proc.WaitForExit(15000)) {
+                throw ("Provider process (pid {0}) did not exit within 15s of interrupt." -f $proc.Id)
+            }
             break
         }
     }
     # The parameterless overload is what flushes the async readers (.NET docs).
-    if ($null -eq $interrupt) { $proc.WaitForExit() }
-
+    $proc.WaitForExit()
     $stdout = ''
     $stderr = ''
     try { if ($stdoutTask.Wait(10000)) { $stdout = [string]$stdoutTask.Result } } catch { $null = $_ }
