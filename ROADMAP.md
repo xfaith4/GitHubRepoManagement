@@ -81,26 +81,12 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       cycle check. Does not wait on the trial: it changes what the contract
       *can express*, not what runs. _(state: planned)_
       `check: pwsh ./tests/Test-RoadmapDependencies.ps1 -FailOnError`
-- [ ] **4.0 A — one ranking function for Today and the Dispatch Board.**
-      Today ranks through `frontend/lib/todayRanking.ts`; the board ranks the
-      queue through `Get-RankedQueue`. One repository read #1 on one and #8 on
-      the other, on different scales. One server-side ranking, one scale,
-      consumed by both, with the rank's inputs on the payload; the frontend
-      holds no ranking arithmetic. Built on `release-4.0-phase-a`
-      (slice 4.0-1): `Portfolio.Ranking.ps1`. _(state: built)_
-      `check: pwsh ./tests/Test-OneRanking.ps1 -FailOnError`
 - [ ] **4.0 A — counts reconcile on every scan.** Per snapshot, status counts
       sum to the total and scanned, in-scope, assessed and ledger counts each
       carry one stated definition; the product runs the same assertion after
       every scan and shows a header badge naming the mismatch when it fails.
       _(state: planned)_
       `check: pwsh ./tests/Test-CountsReconcile.ps1 -FailOnError`
-- [ ] **4.0 A — one hold card per repository.** "Blocking a lane" showed one
-      repository four times, once per hold code; a repository renders one card
-      listing its codes, and columns that never carry a value (Effort, assessed
-      time) leave the table. Built on `release-4.0-phase-a` (slice 4.0-1).
-      _(state: built)_
-      `check: npx vitest run frontend/components/TodayView.test.tsx`
 - [ ] **D-022 (1) — one lifecycle the operator sees.** Needs plan → Plan needs
       approval → Ready for agents → Agent working → In review → Healthy /
       Archived, with flags beside it (Uncommitted changes, CI failing, Behind
@@ -342,7 +328,6 @@ already satisfiable in parallel — D-001's dependency notion and D-003's
 | 3.8 D-001 dependency notion               | nothing                                                | none               |
 | 3.8 provider-aware scheduler              | 3.7 rollout decision; D-003 grant (OQ-5)               | soft — sequencing  |
 | Lane 0.19 verify tab                      | nothing                                                | none               |
-| 4.0 A — one ranking, one hold card        | nothing — built 2026-09-30 (slice 4.0-1)               | none               |
 | 4.0 A — counts reconcile                  | Lane 0.22 one-snapshot item (slice 4.0-2)              | soft — sequencing  |
 | 4.0 B/C — data model and assigner         | 4.0 A; 3.8 WorkPacket and adapters (built)             | soft — sequencing  |
 | 4.0 E — the v2 console                    | D-024 (decided 2026-09-24); phases A–D                 | soft — sequencing  |
@@ -1084,23 +1069,10 @@ lane" placement is "Labels match what they count". Checked against the code
 2026-09-30: only the counts gate depends on one of them (the one-snapshot
 item). The ranking reads the operations index, not the extracted work lines,
 and the hold card changes grouping, not placement, so both shipped first as
-slice 4.0-1. What is new:
+slice 4.0-1. One ranking and one hold card per repository were verified
+2026-09-30 and archived (`docs/history/completed-releases.md`, Release 4.0).
+What is new and still open:
 
-- [ ] **One ranking function for Today and the Dispatch Board.** Today ranks
-      through `frontend/lib/todayRanking.ts` over the value score; the board
-      ranks the queue through `Get-RankedQueue`
-      (`backend/modules/execution/Execution.Ledger.ps1`). They disagree: one
-      repository read #1 on Today and #8 on the board, on scores with different
-      scales. One server-side ranking, one scale, consumed by both, with the
-      rank's inputs on the payload. Done when: a fixture portfolio ranks
-      identically on both routes and the frontend holds no ranking arithmetic.
-      Built on `release-4.0-phase-a`: `backend/modules/portfolio/Portfolio.Ranking.ps1`
-      ranks the operations index on Today's keys and attaches `ranking`;
-      `Get-BoardOrder` puts `portfolioRank` on every ledger entry and never
-      falls back to `priorityScore`. The gate scans every module Today and the
-      board import for a sort on a ranking input; it failed on the old frontend
-      first. _(state: built)_
-      `check: pwsh ./tests/Test-OneRanking.ps1 -FailOnError`
 - [ ] **Counts reconcile on every scan, and the header says when they do not.**
       A gate asserts, per snapshot, that status counts sum to the total and
       that scanned, in-scope, assessed and ledger counts each carry one stated
@@ -1108,13 +1080,6 @@ slice 4.0-1. What is new:
       shows a header badge naming the mismatch when it fails, instead of two
       tabs quietly disagreeing. _(state: planned)_
       `check: pwsh ./tests/Test-CountsReconcile.ps1 -FailOnError`
-- [ ] **One hold card per repository.** "Blocking a lane" showed one
-      repository four times, once per hold code; a repository renders one card
-      listing its codes. Columns that never carry a value (Effort, assessed
-      time) leave the table. Built on `release-4.0-phase-a`:
-      `groupHoldsByRepo`; "N need you" now counts repositories; Effort and the
-      stamp render only when some row carries a value. _(state: built)_
-      `check: npx vitest run frontend/components/TodayView.test.tsx`
 - [ ] **[non-blocker] Two more rankings on the old value scale.** Found by the
       one-ranking sweep (2026-09-30), outside Today and the board: the
       Dashboard's top-entries card (`Dashboard.tsx`) and the trend seed's top
