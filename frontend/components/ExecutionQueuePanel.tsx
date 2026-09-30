@@ -276,16 +276,23 @@ function StateFilterTiles({
 // Queue row — one row shape for every ledger state; the action follows the
 // state (Dispatch for ready, Requeue for blocked, none otherwise).
 // ---------------------------------------------------------------------------
+// Release 4.0 phase A — the number is Today's rank for this repository, not
+// the row's position here: one scale on both screens. A filtered list skips
+// numbers on purpose. An entry the index does not rank reads "—" and says why.
+function describeRank(entry: ExecutionLaneEntry): string {
+  if (entry.portfolioRank == null) return entry.rankNote ?? 'No portfolio rank.';
+  const basis = entry.rankBasis && entry.rankBasis.length > 0 ? ` Rank basis: ${entry.rankBasis.join(' · ')}` : '';
+  return `#${entry.portfolioRank} on Today too.${basis}`;
+}
+
 function QueueRow({
   entry,
-  rank,
   onDispatch,
   onRequeue,
   isBusy,
   lanesAvailable,
 }: {
   entry: ExecutionLaneEntry;
-  rank: number;
   onDispatch: (entry: ExecutionLaneEntry) => void;
   onRequeue: (repoName: string) => void;
   isBusy: boolean;
@@ -293,14 +300,17 @@ function QueueRow({
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 border border-gray-700/50 rounded-lg bg-gray-800/40 hover:bg-gray-700/40 transition-colors">
-      <span className="text-xs text-gray-500 w-5 text-right flex-shrink-0">#{rank}</span>
+      <span
+        className="text-xs text-gray-500 w-7 text-right flex-shrink-0 tabular-nums"
+        title={describeRank(entry)}
+        data-testid={`queue-rank-${entry.repoName}`}
+      >
+        {entry.portfolioRank == null ? '—' : `#${entry.portfolioRank}`}
+      </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-white truncate">{entry.repoName}</span>
           <StateBadge state={entry.executionState} />
-          <span className="text-xs text-gray-500 ml-auto flex-shrink-0" title="Priority score">
-            ↑{entry.priorityScore}
-          </span>
         </div>
         {entry.currentTaskText && (
           <div className="text-xs text-gray-400 truncate mt-0.5" title={entry.currentTaskText}>
@@ -497,11 +507,11 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
 
   const lanesAvailable = (queueData?.activeLaneCount ?? 0) < 2;
   const recentHistory = Array.isArray(queueData?.recentHistory) ? queueData.recentHistory : [];
+  // Board order is the server's: the portfolio rank Today shows. No sort here.
   const allEntries = Array.isArray(queueData?.entries) ? queueData.entries : [];
-  const rankedEntries = [...allEntries].sort((a, b) => b.priorityScore - a.priorityScore);
   const visibleEntries = stateFilter === null
-    ? rankedEntries
-    : rankedEntries.filter(e => e.executionState === stateFilter);
+    ? allEntries
+    : allEntries.filter(e => e.executionState === stateFilter);
 
   return (
     <div className="flex flex-col h-full min-h-0 text-sm">
@@ -641,6 +651,12 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
                   onFilterChange={setStateFilter}
                 />
 
+                {queueData.rankSource !== 'portfolio' && queueData.rankUnavailableReason && (
+                  <p className="text-xs text-gray-500" data-testid="queue-rank-unavailable">
+                    {queueData.rankUnavailableReason}
+                  </p>
+                )}
+
                 {visibleEntries.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     {stateFilter === null
@@ -649,11 +665,10 @@ const ExecutionQueuePanel: React.FC<ExecutionQueuePanelProps> = ({ onDispatchPre
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    {visibleEntries.map((entry, i) => (
+                    {visibleEntries.map(entry => (
                       <QueueRow
                         key={entry.repoName}
                         entry={entry}
-                        rank={i + 1}
                         onDispatch={handleDispatch}
                         onRequeue={repoName => { void handleRequeue(repoName); }}
                         isBusy={busy}

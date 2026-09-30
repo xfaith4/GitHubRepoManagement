@@ -6874,3 +6874,22 @@ Files\GitHub CLI\gh.exe`. The live portal shows this only after the elevated
 service restart that loads the new host and a runner restart that writes the
 report. That field proof is not a gate on this milestone. Lane 0.22's other
 items stay open in ROADMAP.md.
+
+- [x] **Lane 0.22 — test fixtures never reach live state.** 175 of 192 live
+      agent-run records are the api-host smoke's `dispatch-success-smoke`. They
+      are most of the green "100 agent runs" badge, and a smoke fixture leads
+      the packaged work queue. The smoke writes the real agent-run ledger, the
+      packaging queue, work packets, run summaries and `app.db`. Isolate those
+      roots as `REPO_MGMT_INDEX_ROOT` did for the index, and keep the records
+      already written out of every operational view. Built on
+      `lane-022-fixture-isolation`: `REPO_MGMT_OUTPUT_ROOT` moves all of
+      `output\`, and the listed fixtures are hidden when the operator's own
+      root is read. *(state: verified)*
+      `check: pwsh ./tests/Test-FixtureIsolation.ps1 -FailOnError`
+
+Verified 2026-09-30: `CI Smoke` passed on the head of #320 (`de29c3e`, run
+36520352918), whose canonical suite runs the milestone's own check line
+(`Fixture isolation` in `scripts/Invoke-TestSuite.ps1`). #320 merged the same
+day without moving the milestone; this record is the reconciliation, made in
+the Release 4.0 slice 4.0-1 PR. Lane 0.22's other items stay open in
+ROADMAP.md.

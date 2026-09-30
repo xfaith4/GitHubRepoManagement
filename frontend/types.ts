@@ -724,7 +724,14 @@ export interface ExecutionLaneEntry {
   dispatchSource?: 'operator' | 'release-dispatch' | null;
   observation?: ExecutionLaneObservation | null;
   laneSlot?: number | null;
+  /** Recorded ledger data (roadmap maturity + readiness bonus). Orders nothing since Release 4.0 phase A. */
   priorityScore: number;
+  /** Release 4.0 phase A — Today's rank for this repository, on the same scale; null when it has none. */
+  portfolioRank?: number | null;
+  /** The signals behind portfolioRank, most significant first. */
+  rankBasis?: string[];
+  /** Why this entry has no rank (not in the index, or an ambiguous name). */
+  rankNote?: string | null;
   assignedAt?: string | null;
   completedAt?: string | null;
   lastOutcome?: string | null;
@@ -751,7 +758,12 @@ export interface ExecutionQueueSummary {
     lane1: ExecutionLaneEntry | null;
     lane2: ExecutionLaneEntry | null;
   };
+  /** Ready entries in board order — the portfolio rank Today shows. */
   rankedQueue: ExecutionLaneEntry[];
+  /** 'portfolio' when entries carry Today's rank; 'unavailable' when there was no ranking to read. */
+  rankSource: 'portfolio' | 'unavailable';
+  rankUnavailableReason: string | null;
+  /** Every ledger entry, in board order. */
   entries: ExecutionLaneEntry[];
   recentHistory: ExecutionHistoryRecord[];
 }
@@ -1508,6 +1520,7 @@ export type {
   PortfolioConclusionsResult,
 } from './lib/foundationConclusion';
 import type { RepositoryConclusion as FoundationRepositoryConclusion, RepositoryOutcomeSummary as FoundationRepositoryOutcomeSummary, ConclusionContract as FoundationConclusionContract } from './lib/foundationConclusion';
+import type { PortfolioRanking } from './lib/portfolioRanking';
 
 // Release 1.8 — Operations Workspace and Prompt Refinement
 
@@ -1516,6 +1529,8 @@ export interface OperationsRepoEntry {
   ordinal: number;
   /** Release 3.6 M2 — the list-row view of this repository's conclusion; null when the host has no foundation-domains config. */
   outcome?: FoundationRepositoryOutcomeSummary | null;
+  /** Release 4.0 phase A — the one portfolio rank Today and the Dispatch Board share; null from an older host. */
+  ranking?: PortfolioRanking | null;
   repoName: string;
   sourceCoverage: SourceCoverage;
   localPath: string;

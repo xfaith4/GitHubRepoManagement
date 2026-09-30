@@ -2,6 +2,51 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-30 — One ranking for Today and the Dispatch Board (Release 4.0 phase A)
+
+Today ranked the portfolio in the browser (`frontend/lib/todayRanking.ts`).
+The Dispatch Board sorted the execution ledger by `priorityScore` (roadmap
+maturity plus a readiness bonus). The two scales had nothing in common, and
+one repository read #1 on Today and #8 on the board.
+
+- **One ranking, on the server.** `backend/modules/portfolio/Portfolio.Ranking.ps1`
+  ranks the operations index once, on the keys Today already used: conclusion,
+  curation, an offered action, readiness for unattended work (measured before
+  unmeasured), foundation gaps, cheaper effort, then the name. Business value
+  orders nothing. Each entry in `GET /api/operations/repos` carries
+  `ranking` (`rank`, `basis`, `whyNow`, `pinReason`, `readiness`, `effort`).
+  The ranking is pure, computed on read and never stored.
+- **The board reads Today's rank.** `GET /api/execution/queue` orders its
+  entries by that rank and puts `portfolioRank` on each one. The board shows
+  `#n`, the same number Today shows, so a filtered list skips numbers. An
+  entry the index does not hold, or whose name two indexed repositories share,
+  reads "—" with the reason. With no index to read, `rankSource` is
+  `unavailable` and the board lists by name. It never falls back to
+  `priorityScore`, which stays on the ledger as recorded data.
+- **The frontend holds no ranking arithmetic.** `todayRanking.ts` now maps the
+  payload to rows. The readiness assessment moved to the server
+  (`Get-UnattendedReadiness`). There, an absent signal is `unmeasured`. The old
+  frontend normalizer had read a missing dirty count as a clean tree and a
+  missing CI signal as "no CI".
+- **One hold card per repository.** "Blocking a lane" showed one repository
+  once per hold code. A repository now renders one card listing its codes, and
+  "N need you" counts repositories. The Effort column and the "assessed" stamp
+  render only when they carry a value.
+- **Gate:** `tests/Test-OneRanking.ps1` checks the ranking keys and their
+  determinism. It also checks that the board and Today agree on a fixture
+  portfolio whose `priorityScore` inverts Today's order. Finally, it scans the
+  modules Today and the board import, derived from their imports, for a sort on
+  a ranking input. Before the frontend change it failed on the board's
+  `priorityScore` sort, Today's precedence tables and the browser-side
+  readiness assessment. It is wired into `scripts/Invoke-TestSuite.ps1`. The
+  api-host smoke checks the same parity through the real host, after
+  `POST /api/execution/sync` fills the ledger. It fails if a ledger that
+  shares repositories with Today compares none of them.
+- **Found, not fixed:** the Dashboard's top-entries card
+  (`Dashboard.tsx`) and the trend seed's top candidates (`apiClient.ts`) still
+  rank by value score. They are recorded under Release 4.0 phase A as a
+  non-blocker.
+
 ## 2026-09-19 — Settings reports the agent CLIs the runner can launch (Lane 0.22)
 
 Settings read "Not installed" for claude and codex on a machine where both

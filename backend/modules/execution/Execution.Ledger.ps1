@@ -691,17 +691,60 @@ function Invoke-RequeueRepo {
 }
 
 # ---------------------------------------------------------------------------
+# Get-BoardOrder
+# Release 4.0 phase A — the board ranks on the portfolio's one scale.
+#
+# The board used to sort by priorityScore (roadmap maturity + a readiness
+# bonus) while Today ranked the index on its own keys, so one repository read
+# #1 on Today and #8 here. Now every ledger entry carries the rank Today shows
+# (`portfolioRank`, from Add-QueueRanking in Portfolio.Ranking.ps1). With no
+# portfolio ranking to read, the board says so (`rankSource = 'unavailable'`)
+# and lists by name — it never falls back to a second scale.
+#
+# priorityScore stays on the ledger as recorded data; it no longer orders
+# anything.
+# ---------------------------------------------------------------------------
+function Get-BoardOrder {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Ledger,
+        [Parameter()]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$PortfolioEntries = $null
+    )
+
+    if ($null -ne $PortfolioEntries -and (Get-Command -Name 'Add-QueueRanking' -ErrorAction SilentlyContinue)) {
+        return @{
+            entries    = @(Add-QueueRanking -QueueEntries @($Ledger.entries) -RankedEntries @($PortfolioEntries))
+            rankSource = 'portfolio'
+            rankUnavailableReason = $null
+        }
+    }
+
+    return @{
+        entries    = @($Ledger.entries | Sort-Object -Property @{ Expression = { [string]$_.repoName } })
+        rankSource = 'unavailable'
+        rankUnavailableReason = 'The portfolio ranking could not be read, so the board lists repositories by name instead of inventing a second order.'
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Get-RankedQueue
-# Returns ready-state entries sorted by priorityScore descending.
-# Used to surface the best next candidates for dispatch.
+# Ready-state entries in board order: the portfolio rank Today shows.
 # ---------------------------------------------------------------------------
 function Get-RankedQueue {
     param(
         [Parameter(Mandatory = $true)]
-        [hashtable]$Ledger
+        [hashtable]$Ledger,
+        [Parameter()]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$PortfolioEntries = $null
     )
 
-    return @($Ledger.entries | Where-Object { $_.executionState -eq 'ready' } | Sort-Object priorityScore -Descending)
+    $order = Get-BoardOrder -Ledger $Ledger -PortfolioEntries $PortfolioEntries
+    return @($order.entries | Where-Object { $_.executionState -eq 'ready' })
 }
 
 # ---------------------------------------------------------------------------
@@ -711,7 +754,14 @@ function Get-RankedQueue {
 function Get-ExecutionQueueSummary {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$WorkspaceRoot
+        [string]$WorkspaceRoot,
+        # Release 4.0 phase A — the ranked operations entries (each carrying
+        # `ranking` from Add-PortfolioRanking). Omitted, the board reports
+        # rankSource 'unavailable' rather than ranking on a second scale.
+        [Parameter()]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$PortfolioEntries = $null
     )
 
     $ledger = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
@@ -741,7 +791,8 @@ function Get-ExecutionQueueSummary {
     }
 
     $lanes = Get-LaneSummary -Ledger $ledger
-    $ranked = Get-RankedQueue -Ledger $ledger
+    $boardOrder = Get-BoardOrder -Ledger $ledger -PortfolioEntries $PortfolioEntries
+    $ranked = @($boardOrder.entries | Where-Object { $_.executionState -eq 'ready' })
 
     $byState = @{}
     foreach ($state in @('idle','ready','running','blocked','complete')) {
@@ -756,7 +807,9 @@ function Get-ExecutionQueueSummary {
         activeLaneCount = Get-ActiveLaneCount -Ledger $ledger
         lanes          = @{ lane1 = $lanes[0]; lane2 = $lanes[1] }
         rankedQueue    = $ranked
-        entries        = $ledger.entries
+        rankSource     = $boardOrder.rankSource
+        rankUnavailableReason = $boardOrder.rankUnavailableReason
+        entries        = @($boardOrder.entries)
         recentHistory  = @($ledger.history | Select-Object -Last 50)
     }
 }

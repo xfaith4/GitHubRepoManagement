@@ -21,6 +21,7 @@ import {
   normalizeRepositoryConclusion,
   normalizeRepositoryOutcomeSummary,
 } from '../lib/foundationConclusion';
+import { normalizePortfolioRanking } from '../lib/portfolioRanking';
 
 const USE_MOCK_API = (() => {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -516,6 +517,7 @@ function normalizeOperationsRepoEntry(entry: any): OperationsRepoEntry {
     repoId: String(entry?.repoId ?? entry?.localPath ?? entry?.githubFullName ?? entry?.repoName ?? 'unknown'),
     ordinal: Number(entry?.ordinal ?? 0),
     outcome: normalizeRepositoryOutcomeSummary(entry?.outcome),
+    ranking: normalizePortfolioRanking(entry?.ranking),
     estimatedSessionWorkUnits: entry?.estimatedSessionWorkUnits ?? null,
     repoName: String(entry?.repoName ?? ''),
     sourceCoverage: (entry?.sourceCoverage ?? 'local') as OperationsRepoEntry['sourceCoverage'],
@@ -1380,6 +1382,9 @@ function normalizeExecutionLaneEntry(entry: any): ExecutionLaneEntry {
     currentRunId: entry?.currentRunId ?? null,
     laneSlot: entry?.laneSlot ?? null,
     priorityScore: Number(entry?.priorityScore ?? 0),
+    portfolioRank: Number.isInteger(entry?.portfolioRank) && entry.portfolioRank > 0 ? Number(entry.portfolioRank) : null,
+    rankBasis: Array.isArray(entry?.rankBasis) ? entry.rankBasis.map((item: unknown) => String(item)) : [],
+    rankNote: typeof entry?.rankNote === 'string' && entry.rankNote ? entry.rankNote : null,
     assignedAt: entry?.assignedAt ?? null,
     completedAt: entry?.completedAt ?? null,
     lastOutcome: entry?.lastOutcome ?? null,
@@ -1426,6 +1431,13 @@ function normalizeExecutionQueueSummary(raw: any): ExecutionQueueSummary {
       lane2,
     },
     rankedQueue,
+    // An older host sends no rankSource and orders by priorityScore; say the
+    // shared rank is unavailable rather than present that order as Today's.
+    rankSource: data?.rankSource === 'portfolio' ? 'portfolio' : 'unavailable',
+    rankUnavailableReason:
+      data?.rankSource === 'portfolio'
+        ? null
+        : String(data?.rankUnavailableReason ?? 'The portal host sent no portfolio ranking, so this board cannot show the rank Today shows.'),
     entries,
     recentHistory,
   };

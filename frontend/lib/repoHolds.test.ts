@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildHoldGroups, describeHoldCount } from './repoHolds';
+import { buildHoldGroups, describeHoldCount, groupHoldsByRepo } from './repoHolds';
 
 const clean = {
   repoId: 'r1',
@@ -82,6 +82,35 @@ describe('buildHoldGroups — every hold names its rule and its reason', () => {
     }]);
     expect(g.actionable[0].rule).toBe('ci-red');
     expect(g.actionable[0].reason).toContain('(smoke)');
+  });
+});
+
+describe('groupHoldsByRepo — one card per repository', () => {
+  it('folds every code a repository carries into one card', () => {
+    // The Release 4.0 defect: one running repository with four hold codes
+    // rendered four "Blocking a lane" cards.
+    const g = buildHoldGroups([
+      {
+        ...clean,
+        executionState: 'running',
+        localDirtyCount: 3,
+        latestWorkflowRunConclusion: 'failure',
+        roadmapState: 'parse-error',
+        dispatchReadiness: 'blocked',
+        dispatchReadinessExplanation: 'blocked for a reason',
+      },
+      { ...clean, repoId: 'r2', repoName: 'bravo', executionState: 'running', localDirtyCount: 1 },
+    ]);
+    expect(g.blocking).toHaveLength(5);
+    const cards = groupHoldsByRepo(g.blocking);
+    expect(cards.map(c => c.repoName)).toEqual(['alpha', 'bravo']);
+    expect(cards[0].holds.map(h => h.rule)).toEqual(['working-tree-dirty', 'ci-red', 'roadmap-parse-error', 'dispatch-blocked']);
+    expect(cards[0].alwaysHeld).toBe(true);
+    expect(cards[0].severity).toBe('blocking');
+  });
+
+  it('is empty for no holds', () => {
+    expect(groupHoldsByRepo([])).toEqual([]);
   });
 });
 
