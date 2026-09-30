@@ -49,11 +49,16 @@ $script:PortalOperationWriteThrottleSeconds = 5
 # rather than discarded into an empty catch.
 $script:PortalOperationLastWriteError = ''
 
+# Lane 0.22: the marker lives under the output root. A test host clears it at
+# startup, so in the shared location it could wipe the live portal's claim to
+# be busy and let the watchdog restart a scan.
+. (Join-Path $PSScriptRoot '..\modules\common\Config.OutputRoot.ps1')
+
 function Get-PortalOperationStatePath {
     [CmdletBinding()]
     [OutputType([string])]
     param([Parameter(Mandatory)][string]$WorkspaceRoot)
-    Join-Path $WorkspaceRoot 'output\logs\portal-operation.json'
+    Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\logs\portal-operation.json'
 }
 
 function Get-PortalOperationLastWriteError {

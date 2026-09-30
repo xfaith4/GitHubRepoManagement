@@ -43,6 +43,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # When a caller does not name the roadmap, it is found where the standards
@@ -491,7 +495,7 @@ function Add-RoadmapCompletionCommit {
 
 function Get-RoadmapWriteBackHistoryPath {
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
-    return (Join-Path $WorkspaceRoot $script:RoadmapWriteBackRelPath)
+    return (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:RoadmapWriteBackRelPath)
 }
 
 <#

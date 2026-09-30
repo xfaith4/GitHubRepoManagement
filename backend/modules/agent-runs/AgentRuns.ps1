@@ -29,6 +29,12 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root, and the smoke
+# fixtures already in the operator's ledger are skipped when listed.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+. (Join-Path $PSScriptRoot '..\common\Fixture.Records.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
@@ -67,7 +73,7 @@ function _AgentRunsField {
 
 function _AgentRunsRunsDir {
     param([string]$WorkspaceRoot)
-    $dir = Join-Path $WorkspaceRoot $script:AgentRunsRunsRelDir
+    $dir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:AgentRunsRunsRelDir
     $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue
     return $dir
 }
@@ -80,7 +86,7 @@ function _AgentRunFilePath {
 
 function _AgentRunEventsPath {
     param([string]$WorkspaceRoot)
-    $dir = Join-Path $WorkspaceRoot $script:AgentRunsRelDir
+    $dir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:AgentRunsRelDir
     $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue
     return Join-Path $dir $script:AgentRunEventsFile
 }
@@ -275,7 +281,7 @@ function Get-AgentRuns {
     $runs = @(
         $files | ForEach-Object {
             try { ConvertFrom-Json -InputObject (Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8) } catch { $null }
-        } | Where-Object { $null -ne $_ }
+        } | Where-Object { $null -ne $_ -and -not (Test-FixtureRecord -Record $_) }
     )
 
     if (-not [string]::IsNullOrWhiteSpace($Status)) {

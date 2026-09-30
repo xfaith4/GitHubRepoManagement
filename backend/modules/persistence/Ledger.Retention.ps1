@@ -27,7 +27,8 @@
         cannot date.
       - The newest minKeepLines survive regardless of age: a ledger that went
         quiet for a year must not be pruned to empty.
-      - Every target path must resolve under the workspace's output\ tree.
+      - Every target path must resolve under the output root (the
+        workspace's output\ unless REPO_MGMT_OUTPUT_ROOT moves it).
         evidence\baseline\ is permanent by contract and unreachable here.
       - Scope is DECLARED, both ways: every .jsonl in the ledger homes must be
         a target or a named exclusion, so a new ledger cannot silently grow
@@ -35,6 +36,9 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
 
 function Get-LedgerRetentionPolicy {
     <#
@@ -51,7 +55,7 @@ function Get-LedgerRetentionPolicy {
         [Parameter(Mandatory = $true)][string]$WorkspaceRoot
     )
 
-    $outputRoot = [System.IO.Path]::GetFullPath((Join-Path $WorkspaceRoot 'output'))
+    $outputRoot = [System.IO.Path]::GetFullPath((Get-OutputRoot -WorkspaceRoot $WorkspaceRoot))
 
     $ledgerConfig = $null
     if ($Settings.ContainsKey('retention') -and $Settings.retention -is [System.Collections.IDictionary] -and $Settings.retention.Contains('ledgers')) {
@@ -89,7 +93,7 @@ function Get-LedgerRetentionPolicy {
 
     $targets = @()
     foreach ($spec in $targetSpecs) {
-        $full = [System.IO.Path]::GetFullPath((Join-Path $WorkspaceRoot $spec.RelativePath))
+        $full = [System.IO.Path]::GetFullPath((Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $spec.RelativePath))
         if (-not $full.StartsWith($outputRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
             throw ("Ledger retention target '{0}' resolves outside {1}; retention must never reach past output\." -f $spec.RelativePath, $outputRoot)
         }
@@ -98,12 +102,15 @@ function Get-LedgerRetentionPolicy {
     $exclusions = @()
     foreach ($spec in $exclusionSpecs) {
         $exclusions += [pscustomobject]@{
-            Path   = [System.IO.Path]::GetFullPath((Join-Path $WorkspaceRoot $spec.RelativePath))
+            Path   = [System.IO.Path]::GetFullPath((Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $spec.RelativePath))
             Reason = $spec.Reason
         }
     }
 
-    $archiveDir = [System.IO.Path]::GetFullPath((Join-Path $WorkspaceRoot $archiveRel))
+    # A configured archiveDir outside output\ still resolves against the
+    # workspace, so the containment check below refuses it by name.
+    $archiveCandidate = if ($archiveRel -match '^output[\\/]') { Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $archiveRel } else { Join-Path $WorkspaceRoot $archiveRel }
+    $archiveDir = [System.IO.Path]::GetFullPath($archiveCandidate)
     if (-not $archiveDir.StartsWith($outputRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw ("Ledger archive dir '{0}' resolves outside {1}; archives stay inside output\." -f $archiveRel, $outputRoot)
     }

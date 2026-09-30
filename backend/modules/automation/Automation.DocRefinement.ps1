@@ -19,6 +19,10 @@
 #>
 
 Set-StrictMode -Version Latest
+
+# Lane 0.22: run evidence resolves through the output root.
+. (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
+
 $ErrorActionPreference = 'Stop'
 
 $script:AutomationRunsRelPath = 'output/automation/automation-runs.jsonl'
@@ -224,7 +228,7 @@ function Invoke-ScheduledDocRefinement {
 
 function Get-AutomationRunsFilePath {
     param([Parameter(Mandatory = $true)][string]$WorkspaceRoot)
-    return (Join-Path $WorkspaceRoot ($script:AutomationRunsRelPath -replace '/', [System.IO.Path]::DirectorySeparatorChar))
+    return (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:AutomationRunsRelPath)
 }
 
 function Write-AutomationRunRecord {
