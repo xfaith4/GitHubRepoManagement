@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-09-24
+**Last updated:** 2026-09-30
 
 Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
 as is every completed milestone from the releases and lanes still open below.
@@ -27,17 +27,6 @@ by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 **Current focus (next agent actions), in order.** Every item here is agent-closable;
 the operator queue is a separate file. Take the first `[ ]` and open a PR.
 
-- [ ] **Lane 0.22 — test fixtures never reach live state.** 175 of 192 live
-      agent-run records are the api-host smoke's `dispatch-success-smoke`. They
-      are most of the green "100 agent runs" badge, and a smoke fixture leads
-      the packaged work queue. The smoke writes the real agent-run ledger, the
-      packaging queue, work packets, run summaries and `app.db`. Isolate those
-      roots as `REPO_MGMT_INDEX_ROOT` did for the index, and keep the records
-      already written out of every operational view. Built on
-      `lane-022-fixture-isolation`: `REPO_MGMT_OUTPUT_ROOT` moves all of
-      `output\`, and the listed fixtures are hidden when the operator's own
-      root is read. _(state: built)_
-      `check: pwsh ./tests/Test-FixtureIsolation.ps1 -FailOnError`
 - [ ] **Lane 0.22 — one dispatch-eligibility rule, enforced everywhere.** The
       Dispatch Board read "Ready" for repositories Today holds for uncommitted
       changes, for a curated-out archived repository, for one whose own detail
@@ -92,24 +81,12 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
       cycle check. Does not wait on the trial: it changes what the contract
       *can express*, not what runs. _(state: planned)_
       `check: pwsh ./tests/Test-RoadmapDependencies.ps1 -FailOnError`
-- [ ] **4.0 A — one ranking function for Today and the Dispatch Board.**
-      Today ranks through `frontend/lib/todayRanking.ts`; the board ranks the
-      queue through `Get-RankedQueue`. One repository read #1 on one and #8 on
-      the other, on different scales. One server-side ranking, one scale,
-      consumed by both, with the rank's inputs on the payload; the frontend
-      holds no ranking arithmetic. _(state: planned)_
-      `check: pwsh ./tests/Test-OneRanking.ps1 -FailOnError`
 - [ ] **4.0 A — counts reconcile on every scan.** Per snapshot, status counts
       sum to the total and scanned, in-scope, assessed and ledger counts each
       carry one stated definition; the product runs the same assertion after
       every scan and shows a header badge naming the mismatch when it fails.
       _(state: planned)_
       `check: pwsh ./tests/Test-CountsReconcile.ps1 -FailOnError`
-- [ ] **4.0 A — one hold card per repository.** "Blocking a lane" showed one
-      repository four times, once per hold code; a repository renders one card
-      listing its codes, and columns that never carry a value (Effort, assessed
-      time) leave the table. _(state: planned)_
-      `check: npx vitest run frontend/components/TodayView.test.tsx`
 - [ ] **D-022 (1) — one lifecycle the operator sees.** Needs plan → Plan needs
       approval → Ready for agents → Agent working → In review → Healthy /
       Archived, with flags beside it (Uncommitted changes, CI failing, Behind
@@ -351,7 +328,7 @@ already satisfiable in parallel — D-001's dependency notion and D-003's
 | 3.8 D-001 dependency notion               | nothing                                                | none               |
 | 3.8 provider-aware scheduler              | 3.7 rollout decision; D-003 grant (OQ-5)               | soft — sequencing  |
 | Lane 0.19 verify tab                      | nothing                                                | none               |
-| 4.0 A — reconcile what exists             | Lane 0.22 actionable-lines and one-snapshot items      | soft — sequencing  |
+| 4.0 A — counts reconcile                  | Lane 0.22 one-snapshot item (slice 4.0-2)              | soft — sequencing  |
 | 4.0 B/C — data model and assigner         | 4.0 A; 3.8 WorkPacket and adapters (built)             | soft — sequencing  |
 | 4.0 E — the v2 console                    | D-024 (decided 2026-09-24); phases A–D                 | soft — sequencing  |
 | Lane 0.5 tab disclosure                   | product decision — `open-decisions.md`                 | hard — design      |
@@ -1088,19 +1065,14 @@ queue is made honest first. Three of Ben's five items are already open under
 Lane 0.22 and are not repeated: roadmap-line extraction is "Only actionable
 roadmap lines become work"; the scan-status contradiction and the count
 denominators are "One snapshot, one denominator, honest zeros"; "Blocking a
-lane" placement is "Labels match what they count". Phase A depends on those
-three. What is new:
+lane" placement is "Labels match what they count". Checked against the code
+2026-09-30: only the counts gate depends on one of them (the one-snapshot
+item). The ranking reads the operations index, not the extracted work lines,
+and the hold card changes grouping, not placement, so both shipped first as
+slice 4.0-1. One ranking and one hold card per repository were verified
+2026-09-30 and archived (`docs/history/completed-releases.md`, Release 4.0).
+What is new and still open:
 
-- [ ] **One ranking function for Today and the Dispatch Board.** Today ranks
-      through `frontend/lib/todayRanking.ts` over the value score; the board
-      ranks the queue through `Get-RankedQueue`
-      (`backend/modules/execution/Execution.Ledger.ps1`). They disagree: one
-      repository read #1 on Today and #8 on the board, on scores with different
-      scales. One server-side ranking, one scale, consumed by both, with the
-      rank's inputs on the payload. Done when: a fixture portfolio ranks
-      identically on both routes and the frontend holds no ranking arithmetic.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-OneRanking.ps1 -FailOnError`
 - [ ] **Counts reconcile on every scan, and the header says when they do not.**
       A gate asserts, per snapshot, that status counts sum to the total and
       that scanned, in-scope, assessed and ledger counts each carry one stated
@@ -1108,11 +1080,14 @@ three. What is new:
       shows a header badge naming the mismatch when it fails, instead of two
       tabs quietly disagreeing. _(state: planned)_
       `check: pwsh ./tests/Test-CountsReconcile.ps1 -FailOnError`
-- [ ] **One hold card per repository.** "Blocking a lane" showed one
-      repository four times, once per hold code; a repository renders one card
-      listing its codes. Columns that never carry a value (Effort, assessed
-      time) leave the table. _(state: planned)_
-      `check: npx vitest run frontend/components/TodayView.test.tsx`
+- [ ] **[non-blocker] Two more rankings on the old value scale.** Found by the
+      one-ranking sweep (2026-09-30), outside Today and the board: the
+      Dashboard's top-entries card (`Dashboard.tsx`) and the trend seed's top
+      candidates (`apiClient.ts`) sort by `topValueItem.valueScore`, which the
+      2026-09-01 correction retired. Read `ranking.rank` in both, and widen the
+      gate from the two views' imports to every surface that orders
+      repositories. _(state: planned)_
+      `check: pwsh ./tests/Test-OneRanking.ps1 -FailOnError -AllSurfaces`
 
 **Phase B — the data model** (on 2.1's SQLite layer and 3.8's WorkPacket).
 
@@ -1334,10 +1309,62 @@ agent take `doc.*` until the portfolio moves past it; an assigner trusted on
 a shadow log too short to have disagreed; a lane card that shows usage before
 run-close fields are recorded, so the number is a sample of 4 runs in 51.
 
-**Dependencies:** Lane 0.22's actionable-lines, one-snapshot and labels items
-for phase A; 3.8's WorkPacket and adapters (built) for phase B; 3.9's
-performance store for the per-agent first-pass number; D-024 (decided) for
-phase E.
+**Dependencies:** Lane 0.22's one-snapshot item for phase A's counts gate
+(the ranking and the hold card depended on none, checked 2026-09-30); 3.8's
+WorkPacket and adapters (built) for phase B; 3.9's performance store for the
+per-agent first-pass number; D-024 (decided) for phase E.
+
+#### Delivery plan (strengthened 2026-09-30)
+
+The phases say what gets built; this says how it ships. Four rules hold for
+every slice:
+
+1. **One slice, one PR, one visible change.** Each slice ends with something
+   the operator can see, or with a gate that makes the next slice safe. At most
+   two slices wait in review (AGENTS.md); a third is built on its branch with
+   no PR.
+2. **Derived, never stored.** Every new figure (rank, metric, balance,
+   assignment) is computed on read from ledgers that already exist or that the
+   slice adds. Rollback is a revert: no migration, no backfill, no ledger to
+   repair.
+3. **Backend first, and the UI tolerates an older host.** This machine serves
+   `frontend/dist` the moment it is built, while backend changes wait for the
+   elevated service restart. Every slice's UI therefore renders an absent field
+   honestly ("—", "unavailable", "unmeasured"). The deploy order is: merge,
+   elevated restart, `npm run build`, then the slice's field check.
+4. **Its own check in CI verifies a slice**, never the field check. The field
+   check is an operator-queue ratchet and holds no later slice.
+
+| Slice | Milestones | What the operator sees | Deploy | Rollback |
+| --- | --- | --- | --- | --- |
+| 4.0-1 | A: one ranking; one hold card | Today's #n is the board's #n; one card per repository | restart + build (OQ-14) | revert; nothing stored |
+| 4.0-2 | Lane 0.22 one snapshot; A: counts reconcile | a header badge naming a count mismatch, and none when counts agree | restart + build | revert |
+| 4.0-3 | B: step types, agent registry, lane declarations | Settings lists each agent beside its provider | restart | no reader yet; revert |
+| 4.0-4 | B: run-close fields; locks and attempts | Runs show completed time, verdict, vendor, usage | restart + runner restart | additive; absent reads "unmeasured" |
+| 4.0-5 | B: units and budget ledger; per-lane metrics | lane metrics over 7 and 30 days, "unmeasured" until closes accrue | restart + build | revert |
+| 4.0-6 | B: vendor balance feed; launch path | a balance card per vendor, "unconfirmed" without a feed | restart; each read grant is an operator-queue row | no feed reads "unconfirmed" |
+| 4.0-7 | C: rules as data, pure assigner, fixture per rule, dry run | `GET /api/lanes/dry-run` says what would go where, and why | restart | the route writes nothing |
+| 4.0-8 | D: shadow mode; smoke deadline | a disagreement report over any window | restart | shadow writes events only |
+| 4.0-9 | D: automation toggle | a Settings toggle, disabled with its reason until a report exists | restart + build | off is the default |
+| 4.0-10+ | E: the v2 console, one milestone per PR | Dashboard (Now + Lanes) beside v1 until parity | build | v1 stays reachable until parity |
+
+**Phase exits.** A phase closes when its milestones are verified and the
+product itself answers its exit question:
+
+- **A:** does Today's order equal the board's on the live snapshot? (OQ-14)
+- **B:** does every run closed since 4.0-4 carry all four close fields? A
+  query over the run ledger finds zero misses.
+- **C:** does the dry run name a rule for every filled and every empty lane on
+  the live queue?
+- **D:** has the shadow log recorded at least one disagreement, with both
+  choices and their rules? Automation stays off until the operator has read
+  it.
+- **E:** can the operator do everything v1 did from Dashboard? Only then do
+  Today's queue and the Dispatch Board retire.
+
+**Owner review.** Slices 4.0-3 (config), 4.0-7 (`policy.json`) and 4.0-9
+(automation) change config or governance, so they always need owner review
+(AGENTS.md, config rule 4), whatever the posture.
 
 ---
 
@@ -2334,8 +2361,9 @@ broken link, the best diagnostic in the product); Leverage's "Not captured yet",
 which names missing measurements instead of showing zeros; the "Previews first;
 nothing is applied" copy and Private Scope; and Help's "Computed from" lines.
 
-**Open, in order.** The first two lead Current focus: test fixtures never reach
-live state, and one dispatch-eligibility rule. Then:
+**Open, in order.** One dispatch-eligibility rule leads Current focus (test
+fixtures never reaching live state was verified on #320's head and archived
+2026-09-30). Then:
 
 - [ ] **Only actionable roadmap lines become work.** Before ranking, each
       candidate is classified `actionable | done-statement | deferred | guidance |
@@ -2432,7 +2460,8 @@ live state, and one dispatch-eligibility rule. Then:
       tile. _(state: planned)_
       `check: npx vitest run frontend/components/ExecutionLaneTile.test.tsx`
 - [ ] **Labels match what they count.** "N need you" counts repositories, not
-      holds × codes (it read 63 for 59 repositories). "Blocking a lane" appears
+      holds × codes (it read 63 for 59 repositories); that clause shipped with
+      4.0 A's one hold card (2026-09-30). "Blocking a lane" appears
       only where work is under way and stopped. L0-Absent is never shown for a
       repository whose roadmap exists; the glossary text and the audit
       disagree. Help's "first pass" names tabs that exist. "Insufficiently

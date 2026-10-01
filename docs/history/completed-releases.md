@@ -6874,3 +6874,57 @@ Files\GitHub CLI\gh.exe`. The live portal shows this only after the elevated
 service restart that loads the new host and a runner restart that writes the
 report. That field proof is not a gate on this milestone. Lane 0.22's other
 items stay open in ROADMAP.md.
+
+- [x] **Lane 0.22 — test fixtures never reach live state.** 175 of 192 live
+      agent-run records are the api-host smoke's `dispatch-success-smoke`. They
+      are most of the green "100 agent runs" badge, and a smoke fixture leads
+      the packaged work queue. The smoke writes the real agent-run ledger, the
+      packaging queue, work packets, run summaries and `app.db`. Isolate those
+      roots as `REPO_MGMT_INDEX_ROOT` did for the index, and keep the records
+      already written out of every operational view. Built on
+      `lane-022-fixture-isolation`: `REPO_MGMT_OUTPUT_ROOT` moves all of
+      `output\`, and the listed fixtures are hidden when the operator's own
+      root is read. *(state: verified)*
+      `check: pwsh ./tests/Test-FixtureIsolation.ps1 -FailOnError`
+
+Verified 2026-09-30: `CI Smoke` passed on the head of #320 (`de29c3e`, run
+36520352918), whose canonical suite runs the milestone's own check line
+(`Fixture isolation` in `scripts/Invoke-TestSuite.ps1`). #320 merged the same
+day without moving the milestone; this record is the reconciliation, made in
+the Release 4.0 slice 4.0-1 PR. Lane 0.22's other items stay open in
+ROADMAP.md.
+
+## Release 4.0 — verified milestones (release still open; moved from ROADMAP.md under the §3 archive rule)
+
+- [x] **One ranking function for Today and the Dispatch Board.** Today ranks
+      through `frontend/lib/todayRanking.ts` over the value score; the board
+      ranks the queue through `Get-RankedQueue`
+      (`backend/modules/execution/Execution.Ledger.ps1`). They disagree: one
+      repository read #1 on Today and #8 on the board, on scores with different
+      scales. One server-side ranking, one scale, consumed by both, with the
+      rank's inputs on the payload. Done when: a fixture portfolio ranks
+      identically on both routes and the frontend holds no ranking arithmetic.
+      Built on `release-4.0-phase-a`: `backend/modules/portfolio/Portfolio.Ranking.ps1`
+      ranks the operations index on Today's keys and attaches `ranking`;
+      `Get-BoardOrder` puts `portfolioRank` on every ledger entry and never
+      falls back to `priorityScore`. The gate scans every module Today and the
+      board import for a sort on a ranking input; it failed on the old frontend
+      first. *(state: verified)*
+      `check: pwsh ./tests/Test-OneRanking.ps1 -FailOnError`
+- [x] **One hold card per repository.** "Blocking a lane" showed one
+      repository four times, once per hold code; a repository renders one card
+      listing its codes. Columns that never carry a value (Effort, assessed
+      time) leave the table. Built on `release-4.0-phase-a`:
+      `groupHoldsByRepo`; "N need you" now counts repositories; Effort and the
+      stamp render only when some row carries a value. *(state: verified)*
+      `check: npx vitest run frontend/components/TodayView.test.tsx`
+
+Verified 2026-09-30: `CI Smoke` passed on the head of #326 (`4ac2716`, run
+36680410021). Its canonical suite runs both check lines: `One ranking` in
+`scripts/Invoke-TestSuite.ps1`, and the vitest suite that holds
+`TodayView.test.tsx`. The api-host smoke in the same run checks the parity
+through the real host after `POST /api/execution/sync`. Locally, 56 of 68
+synced ledger entries carried exactly Today's rank, and the other 12 were
+unranked with their reason. The field proof is OQ-14 (elevated restart, build,
+Today's #1 equals the board's #1); it is not a gate on these milestones.
+Release 4.0's other items stay open in ROADMAP.md.

@@ -346,6 +346,11 @@ Invoke-ScriptGate -Name 'Action routing' -ScriptPath (Join-Path $WorkspaceRoot '
 # fixtures already in the operator's ledgers stay out of the operational views.
 Invoke-ScriptGate -Name 'Fixture isolation' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FixtureIsolation.ps1') -ScriptArgs @('-FailOnError')
 
+# Release 4.0 phase A - the milestone's own check line. Today and the Dispatch
+# Board read one server-side ranking, and the frontend they import sorts on none
+# of its inputs.
+Invoke-ScriptGate -Name 'One ranking' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-OneRanking.ps1') -ScriptArgs @('-FailOnError')
+
 # Validator R024 - a built or verified milestone's check is a step CI runs; the
 # milestone's own check line. The rule itself also runs inside the lint below.
 Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError')

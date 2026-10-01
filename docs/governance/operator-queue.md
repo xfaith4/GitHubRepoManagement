@@ -17,6 +17,7 @@ session, one phone on the LAN — and take the batch when convenient.
 | OQ-11 | Browser, logged in      | Clock and denominator presentation on the console (Lane 0.15)                              | Lane 0.15 field proof        |
 | OQ-10 | Registered GitHub App   | Prove live installation-token exchange and refresh (optional; PAT supersedes)              | Release 2.9 optional proof   |
 | OQ-12 | Elevated (UAC) shell    | Restart the portal service so the M4a `kindSignals` scanner goes live; then refresh the index | 3.7 M4a field proof — the next agent session re-concludes the cohort on v2 |
+| OQ-14 | Elevated (UAC) shell, then browser | After the Release 4.0 slice 4.0-1 PR merges: restart the portal service (loads `Portfolio.Ranking.ps1`; the same restart satisfies OQ-12), then `npm run build`. Confirm Today's #1 and the Dispatch Board's #1 name the same repository, and a repository with several holds shows one card | 4.0 phase A field proof — its exit question |
 | OQ-13 | Judgement               | Confirm or correct the resolved kind for each of the nine cohort repositories once re-concluded on v2 (`kind`, `kindCandidates`, `kindHints` in `cohort.json`); a correction becomes a rule with `observedOn`, never a code change | Steering Rung 1 — kind verdicts true on the cohort, not just computed |
 
 Done rows move to `evidence/operator-verification-log.jsonl` and are deleted here.

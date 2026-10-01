@@ -133,6 +133,9 @@ $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 # Release 3.6 milestone 1 -- one explainable conclusion per repository, composed
 # from the cached index only. Loads after Assessment (it reads the same entries).
 . (Join-Path $portfolioModuleRoot 'Portfolio.Conclusion.ps1')
+# Release 4.0 phase A -- the one ranking Today and the Dispatch Board both read.
+# Loads after Conclusion (it ranks on the outcome Conclusion attaches).
+. (Join-Path $portfolioModuleRoot 'Portfolio.Ranking.ps1')
 # Release 3.6 M5 -- the leverage family, derived from ledgers already kept.
 . (Join-Path $portfolioModuleRoot 'Portfolio.Leverage.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Analytics.ps1')
@@ -663,6 +666,12 @@ function Get-OperationsReposPayload {
             $entries = @(Add-FoundationOutcome -Entries @($entries) -Config $outcomeConfig)
         }
     }
+    # Release 4.0 phase A -- rank once, here, on the server. Today and the
+    # Dispatch Board both read this `ranking`; neither screen sorts on its own.
+    # After the outcome, because the conclusion is the first sort key.
+    if ($null -ne (Get-Command -Name 'Add-PortfolioRanking' -ErrorAction SilentlyContinue)) {
+        $entries = @(Add-PortfolioRanking -Entries @($entries))
+    }
 
     # Lane 0.13 -- the operations payload is what the Today landing ranks from,
     # so it carries the same verdict the index does. The assessment-cache
@@ -693,6 +702,19 @@ function Get-OperationsReposPayload {
             reasons          = @(Get-ObjectPropertyValue -InputObject $opsStaleness -PropertyName 'reasons' -Default @())
         }
     }
+}
+
+function Get-QueueRankingInput {
+    # Release 4.0 phase A -- the ranked portfolio the Dispatch Board orders by,
+    # so its #n is Today's #n. $null when there is no index to rank: the board
+    # then reports the rank unavailable instead of ranking on a second scale.
+    try {
+        $opsPayload = Get-OperationsReposPayload -Settings (Get-HostSettings)
+        if ($opsPayload.available) { return , @($opsPayload.entries) }
+    } catch {
+        Write-HostLog ("WARN execution.queue portfolio ranking unavailable: {0}" -f $_.Exception.Message)
+    }
+    return $null
 }
 
 function Add-PortfolioCurationToAssessments {
@@ -13735,7 +13757,7 @@ try {
                 'GET /api/execution/queue' {
                     Write-HostLog ("[TRACE] execution.queue correlationId={0} start" -f $correlationId)
                     try {
-                        $queueSummary = Get-ExecutionQueueSummary -WorkspaceRoot $WorkspaceRoot
+                        $queueSummary = Get-ExecutionQueueSummary -WorkspaceRoot $WorkspaceRoot -PortfolioEntries (Get-QueueRankingInput)
                         Add-MetricCounter -Name 'api_requests_total'
                         Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                             success = $true
@@ -13783,7 +13805,7 @@ try {
                         }
 
                         $null = Sync-LedgerFromAudit -WorkspaceRoot $WorkspaceRoot -DocAuditEntries $docEntries -RoadmapAuditEntries $roadmapAuditEntries
-                        $queueSummary = Get-ExecutionQueueSummary -WorkspaceRoot $WorkspaceRoot
+                        $queueSummary = Get-ExecutionQueueSummary -WorkspaceRoot $WorkspaceRoot -PortfolioEntries (Get-QueueRankingInput)
 
                         Add-MetricCounter -Name 'api_requests_total'
                         Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{

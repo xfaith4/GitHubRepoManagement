@@ -2737,6 +2737,61 @@ try {
     if (-not $execSyncJson.success) { throw '/api/execution/sync returned success=false' }
     Write-Host ("  /api/execution/sync -> totalRepos={0}" -f $execSyncJson.data.totalRepos) -ForegroundColor DarkGray
 
+    # Release 4.0 phase A - one ranking, through the real host. The board's
+    # #n for a repository is Today's #n for it, and with no index the board
+    # says the rank is unavailable instead of ranking on priorityScore.
+    # Checked on both the queue read and the sync, which fills the ledger: the
+    # read alone can find an empty ledger and compare nothing.
+    $opsForRank = Invoke-ApiRequest -Method Get -Uri "$BaseUrl/api/operations/repos"
+    $todayRankByName = @{}
+    if ($opsForRank.StatusCode -eq 200) {
+        foreach ($opsEntry in @($opsForRank.Json.data.entries)) {
+            if ($null -eq $opsEntry.ranking -or $null -eq $opsEntry.ranking.rank) { throw "/api/operations/repos entry '$($opsEntry.repoName)' carries no ranking" }
+            # Two indexed repositories sharing a name are matched by path on the
+            # board; by name here they are ambiguous, so neither is compared.
+            $opsName = [string]$opsEntry.repoName
+            $todayRankByName[$opsName] = if ($todayRankByName.ContainsKey($opsName)) { $null } else { [int]$opsEntry.ranking.rank }
+        }
+    }
+    foreach ($rankCase in @(@{ Route = '/api/execution/queue'; Data = $execQueueData }, @{ Route = '/api/execution/sync'; Data = $execSyncJson.data })) {
+        $rankRoute = $rankCase.Route
+        $rankData = $rankCase.Data
+        $rankSource = [string]$rankData.rankSource
+        if ($opsForRank.StatusCode -ne 200) {
+            if ($rankSource -ne 'unavailable' -or -not $rankData.rankUnavailableReason) {
+                throw "/api/operations/repos answered $($opsForRank.StatusCode) but $rankRoute did not report its rank unavailable with a reason"
+            }
+            continue
+        }
+        if ($rankSource -ne 'portfolio') { throw "/api/operations/repos answers but $rankRoute reports rankSource '$rankSource'" }
+        $compared = 0
+        $shared = 0
+        $lastRank = 0
+        $seenUnranked = $false
+        foreach ($boardEntry in @($rankData.entries)) {
+            $expected = $todayRankByName[[string]$boardEntry.repoName]
+            if ($null -ne $expected) { $shared++ }
+            if ($null -eq $boardEntry.portfolioRank) {
+                if (-not $boardEntry.rankNote) { throw "$rankRoute entry '$($boardEntry.repoName)' has no rank and no rankNote saying why" }
+                $seenUnranked = $true
+                continue
+            }
+            if ($seenUnranked) { throw "$rankRoute lists ranked '$($boardEntry.repoName)' after an unranked entry" }
+            if ([int]$boardEntry.portfolioRank -lt $lastRank) { throw "$rankRoute is not in portfolio-rank order at '$($boardEntry.repoName)'" }
+            $lastRank = [int]$boardEntry.portfolioRank
+            if ($null -ne $expected) {
+                if ($expected -ne [int]$boardEntry.portfolioRank) {
+                    throw "$rankRoute ranks '$($boardEntry.repoName)' #$($boardEntry.portfolioRank); Today ranks it #$expected"
+                }
+                $compared++
+            }
+        }
+        # A ledger that shares repositories with Today and compared none of
+        # them proved nothing.
+        if ($shared -gt 0 -and $compared -eq 0) { throw "$rankRoute shares $shared repositories with Today but carried Today's rank on none of them" }
+        Write-Host ("  one ranking ({0}): {1} of {2} ledger entries compared equal to Today's rank; {3} repositories ranked on Today" -f $rankRoute, $compared, @($rankData.entries).Count, $todayRankByName.Count) -ForegroundColor DarkGray
+    }
+
     # Test assign with no repoName — should return 400
     $execAssignMissingBody = Invoke-ApiRequest -Method Post -Uri "$BaseUrl/api/execution/assign" -Body @{}
     if ($execAssignMissingBody.StatusCode -notin @(400, 409, 500)) {

@@ -171,7 +171,36 @@ export function buildHoldGroups(entries: Array<Partial<OperationsRepoEntry>>): H
   return groups;
 }
 
-/** "4 need you" / "1 needs you" — the collapsed summary's own words. */
+/**
+ * One card per repository (Release 4.0 phase A). "Blocking a lane" showed one
+ * repository four times, once per hold code, which read as four problems in
+ * four places. A card is the repository; its codes are listed inside it.
+ */
+export interface RepoHoldCard {
+  repoId: string;
+  repoName: string;
+  severity: HoldSeverity;
+  /** True when any of its holds is always held for a human. */
+  alwaysHeld: boolean;
+  holds: Array<Pick<RepoHold, 'rule' | 'reason' | 'alwaysHeld'>>;
+}
+
+/** Groups holds of one severity by repository, in first-seen order. */
+export function groupHoldsByRepo(holds: RepoHold[]): RepoHoldCard[] {
+  const cards = new Map<string, RepoHoldCard>();
+  for (const hold of holds) {
+    let card = cards.get(hold.repoId);
+    if (!card) {
+      card = { repoId: hold.repoId, repoName: hold.repoName, severity: hold.severity, alwaysHeld: false, holds: [] };
+      cards.set(hold.repoId, card);
+    }
+    card.holds.push({ rule: hold.rule, reason: hold.reason, alwaysHeld: hold.alwaysHeld });
+    card.alwaysHeld = card.alwaysHeld || hold.alwaysHeld;
+  }
+  return [...cards.values()];
+}
+
+/** "4 need you" / "1 needs you" — counts repositories, the collapsed summary's own words. */
 export function describeHoldCount(count: number): string {
   return count === 1 ? '1 needs you' : `${count} need you`;
 }

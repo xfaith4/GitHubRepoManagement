@@ -14,11 +14,28 @@ import React from 'react';
 import TodayView from './TodayView';
 import type { OperationsRepoEntry } from '../types';
 import { normalizeRepositoryOutcomeSummary } from '../lib/foundationConclusion';
+import type { PortfolioRanking } from '../lib/portfolioRanking';
 
 afterEach(() => cleanup());
 
+// Release 4.0 phase A: the server ranks (Portfolio.Ranking.ps1) and each entry
+// carries the result; Today renders it. Fixtures therefore carry a ranking.
+function rank(n: number, over: Partial<PortfolioRanking> = {}): PortfolioRanking {
+  return {
+    rank: n,
+    scale: 'portfolio',
+    basis: ['conclusion=strengthen', 'unattendedReadiness=unmeasured'],
+    whyNow: '',
+    pinReason: null,
+    readiness: { factors: [], ready: 0, measured: 0, total: 4, summary: 'unmeasured — no check has run for this repository' },
+    effort: { workUnits: 3, label: '3 work units', band: 'small' },
+    ...over,
+  };
+}
+
 function entry(name: string, over: Partial<OperationsRepoEntry> = {}): OperationsRepoEntry {
   return {
+    ranking: rank(1),
     repoId: `repo:${name}`,
     repoName: name,
     outcome: normalizeRepositoryOutcomeSummary({
@@ -61,7 +78,7 @@ describe('TodayView — the first screen explains the product', () => {
   });
 
   it('ranks the table and gives each row a why-now, one action, and an effort', () => {
-    render(<TodayView entries={[healthy('zulu'), entry('alpha')]} />);
+    render(<TodayView entries={[{ ...healthy('zulu'), ranking: rank(2) }, entry('alpha', { ranking: rank(1) })]} />);
     const rows = within(screen.getByTestId('today-table')).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
     // Actionable work leads; finished work is still listed.
@@ -81,8 +98,26 @@ describe('TodayView — the first screen explains the product', () => {
   });
 
   it('says "effort not estimated" rather than inventing a number', () => {
-    render(<TodayView entries={[entry('alpha', { estimatedSessionWorkUnits: null })]} />);
+    const unestimated = rank(2, { effort: { workUnits: null, label: 'Effort not estimated', band: 'unknown' } });
+    render(<TodayView entries={[entry('alpha'), entry('bravo', { ranking: unestimated })]} />);
     expect(screen.getByText('Effort not estimated')).toBeInTheDocument();
+  });
+
+  it('drops the Effort column and the assessed stamp when neither carries a value', () => {
+    // Release 4.0 phase A: a column that reads "not estimated" on every row is
+    // noise, and so is a stamp that reads "time not recorded".
+    const unestimated = rank(1, { effort: { workUnits: null, label: 'Effort not estimated', band: 'unknown' } });
+    render(<TodayView entries={[entry('alpha', { ranking: unestimated })]} />);
+    expect(screen.queryByRole('columnheader', { name: 'Effort' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Effort not estimated')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^assessed/)).not.toBeInTheDocument();
+  });
+
+  it('shows the server rank and says so when a row has none', () => {
+    render(<TodayView entries={[entry('alpha', { ranking: rank(7) }), entry('unranked', { ranking: null })]} />);
+    const rows = within(screen.getByTestId('today-table')).getAllByRole('row').slice(1);
+    expect(within(rows[0]).getByText('7')).toHaveAttribute('title', expect.stringContaining('Dispatch Board'));
+    expect(within(rows[1]).getByText('—')).toHaveAttribute('title', expect.stringContaining('no ranking'));
   });
 });
 
@@ -253,6 +288,30 @@ describe('TodayView — Needs you collapses, blocking never does', () => {
     expect(gap).toHaveTextContent('authors a new contract');
   });
 
+  it('renders one card per repository, listing every code it carries', () => {
+    // Release 4.0 phase A: one running repository with three hold codes showed
+    // three "Blocking a lane" cards.
+    render(<TodayView entries={[entry('alpha', {
+      executionState: 'running',
+      localDirtyCount: 2,
+      latestWorkflowRunConclusion: 'failure',
+      roadmapState: 'parse-error',
+    })]} />);
+
+    const cards = screen.getAllByTestId(/^today-hold-card-/);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toHaveAttribute('data-severity', 'blocking');
+    expect(within(cards[0]).getByTestId('today-hold-working-tree-dirty')).toBeInTheDocument();
+    expect(within(cards[0]).getByTestId('today-hold-ci-red')).toBeInTheDocument();
+    expect(within(cards[0]).getByTestId('today-hold-roadmap-parse-error')).toBeInTheDocument();
+    expect(cards[0]).toHaveTextContent('3 holds');
+  });
+
+  it('counts repositories, not holds, in the collapsed summary', () => {
+    render(<TodayView entries={[entry('alpha', { executionState: 'idle', localDirtyCount: 2, latestWorkflowRunConclusion: 'failure' })]} />);
+    expect(screen.getByTestId('today-holds-toggle')).toHaveTextContent('1 needs you');
+  });
+
   it('promotes an ambient gap to blocking when the lane is stuck on it', () => {
     render(<TodayView entries={[entry('alpha', { roadmapState: 'missing', executionState: 'running' })]} />);
 
@@ -262,9 +321,11 @@ describe('TodayView — Needs you collapses, blocking never does', () => {
 });
 
 describe('TodayView — readiness replaces the value score', () => {
+  // The four checks are assessed on the server (Get-UnattendedReadiness) and
+  // tested in tests/Test-OneRanking.ps1; these pin that the row renders them.
   it('measures readiness for unattended work, not worth', () => {
     render(<TodayView entries={[entry('alpha', {
-      hasReadme: true, hasRoadmap: true, roadmapState: 'pending', localDirtyCount: 0, hasCiSignal: true,
+      ranking: rank(1, { readiness: { factors: [], ready: 4, measured: 4, total: 4, summary: '4 of 4 ready' } }),
     })]} />);
 
     expect(screen.getByRole('columnheader', { name: 'Ready for unattended work' })).toBeInTheDocument();
@@ -273,7 +334,7 @@ describe('TodayView — readiness replaces the value score', () => {
 
   it('reports an unmeasured check as unmeasured rather than as a failure', () => {
     render(<TodayView entries={[entry('alpha', {
-      hasReadme: true, hasRoadmap: true, roadmapState: 'pending', localDirtyCount: 0, hasCiSignal: undefined,
+      ranking: rank(1, { readiness: { factors: [], ready: 3, measured: 3, total: 4, summary: '3 of 3 ready · ci present unmeasured' } }),
     })]} />);
 
     expect(screen.getByTestId('today-readiness')).toHaveTextContent('3 of 3 ready · ci present unmeasured');

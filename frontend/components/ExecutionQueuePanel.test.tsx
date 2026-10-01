@@ -59,6 +59,8 @@ function summary(over: Partial<ExecutionQueueSummary> = {}): ExecutionQueueSumma
     activeLaneCount: 0,
     lanes: { lane1: null, lane2: null },
     rankedQueue: entries.filter(e => e.executionState === 'ready'),
+    rankSource: 'portfolio',
+    rankUnavailableReason: null,
     entries,
     recentHistory: [
       { repoName: 'ready-one', event: 'assigned', timestamp: '2026-08-30T11:00:00Z' },
@@ -269,6 +271,62 @@ describe('ExecutionQueuePanel — the Dispatch Board', () => {
     const row = screen.getByText('blocked-repo').closest('div[class*="rounded-lg"]') as HTMLElement;
     expect(within(row).getByRole('button', { name: 'Requeue' })).toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'Dispatch' })).not.toBeInTheDocument();
+  });
+});
+
+// Release 4.0 phase A — one ranking. The board used to sort by priorityScore
+// while Today ranked on its own keys, so one repository read #1 on Today and #8
+// here. The board now renders the server's order and Today's rank.
+describe('ExecutionQueuePanel — the rank is Today\'s rank', () => {
+  function rankedSummary(): ExecutionQueueSummary {
+    // Server order and portfolioRank deliberately disagree with priorityScore.
+    const entries = [
+      entry('low-score-first', 'ready', 5, { portfolioRank: 1, rankBasis: ['conclusion=strengthen', 'curation=favorite'] }),
+      entry('high-score-third', 'ready', 250, { portfolioRank: 3 }),
+      entry('not-indexed', 'ready', 999, { portfolioRank: null, rankNote: 'Not in the portfolio index, so it has no rank on Today or here.' }),
+    ];
+    return {
+      ...summary(),
+      totalRepos: entries.length,
+      stateCounts: { idle: 0, ready: 3, running: 0, blocked: 0, complete: 0 },
+      rankedQueue: entries,
+      entries,
+    };
+  }
+
+  it('lists rows in the server order and labels each with Today\'s rank, never priorityScore', async () => {
+    mockedGetQueue.mockResolvedValue(rankedSummary());
+    render(<ExecutionQueuePanel />);
+    await screen.findByText('low-score-first');
+
+    const names = screen.getAllByText(/^(low-score-first|high-score-third|not-indexed)$/).map(el => el.textContent);
+    expect(names).toEqual(['low-score-first', 'high-score-third', 'not-indexed']);
+    expect(screen.getByTestId('queue-rank-low-score-first')).toHaveTextContent('#1');
+    expect(screen.getByTestId('queue-rank-low-score-first')).toHaveAttribute('title', expect.stringContaining('curation=favorite'));
+    // A filtered list skips numbers: #3 is Today's #3, not the second row.
+    expect(screen.getByTestId('queue-rank-high-score-third')).toHaveTextContent('#3');
+    expect(screen.queryByText(/↑\d+/)).not.toBeInTheDocument();
+  });
+
+  it('an entry with no rank reads "—" and says why', async () => {
+    mockedGetQueue.mockResolvedValue(rankedSummary());
+    render(<ExecutionQueuePanel />);
+    await screen.findByText('not-indexed');
+
+    const rank = screen.getByTestId('queue-rank-not-indexed');
+    expect(rank).toHaveTextContent('—');
+    expect(rank).toHaveAttribute('title', expect.stringContaining('Not in the portfolio index'));
+  });
+
+  it('says when there is no shared ranking to read instead of presenting another order as it', async () => {
+    mockedGetQueue.mockResolvedValue({
+      ...summary(),
+      rankSource: 'unavailable',
+      rankUnavailableReason: 'The portfolio ranking could not be read.',
+    });
+    render(<ExecutionQueuePanel />);
+    await screen.findByText('ready-one');
+    expect(screen.getByTestId('queue-rank-unavailable')).toHaveTextContent('could not be read');
   });
 });
 

@@ -8,7 +8,7 @@ import {
 } from '../lib/foundationConclusion';
 import { buildOrientation, buildTodayRows, type TodayRankingInput, type TodayRow } from '../lib/todayRanking';
 import { describeAssessedAt } from '../lib/unattendedReadiness';
-import { buildHoldGroups, describeHoldCount, type RepoHold } from '../lib/repoHolds';
+import { buildHoldGroups, describeHoldCount, groupHoldsByRepo, type RepoHoldCard } from '../lib/repoHolds';
 
 // Release 3.6 milestone 3 — the first interaction.
 //
@@ -69,40 +69,29 @@ export interface TodayViewProps {
   onRunScan?: () => Promise<{ started: boolean; alreadyRunning: boolean }>;
 }
 
+// Release 4.0 phase A: the server ranks (Portfolio.Ranking.ps1) and the entry
+// carries the result. Nothing here reorders or re-scores a repository.
 function toRankingInput(entry: OperationsRepoEntry): TodayRankingInput {
   return {
     repoId: entry.repoId,
     repoName: entry.repoName,
     outcome: entry.outcome ?? null,
-    topValueItem: entry.topValueItem
-      ? { text: entry.topValueItem.text, valueScore: entry.topValueItem.valueScore, valueTier: entry.topValueItem.valueTier }
-      : null,
-    estimatedSessionWorkUnits: entry.estimatedSessionWorkUnits ?? null,
-    pendingCount: entry.pendingCount,
-    curationState: entry.curationState,
-    lifecycleState: entry.lifecycleState,
-    // Readiness signals for the fourth sort key. Forwarded raw so the ranking
-    // assesses them itself and the table cannot disagree with the sort.
-    hasReadme: entry.hasReadme,
-    hasRoadmap: entry.hasRoadmap,
-    roadmapState: entry.roadmapState,
-    localDirtyCount: entry.localDirtyCount,
-    hasCiSignal: entry.hasCiSignal,
+    ranking: entry.ranking ?? null,
   };
 }
 
 /**
- * One hold. The rail is the only colour it carries, and the reason sits beside
- * the name rather than behind a hover — a badge without its reason is a
- * regression.
+ * One card per repository, listing every hold code it carries. The rail is the
+ * only colour it carries, and each reason sits beside its code rather than
+ * behind a hover — a badge without its reason is a regression.
  */
-const HoldCard: React.FC<{ hold: RepoHold; onOpenRepo?: (id: string, name: string) => void }> = ({ hold, onOpenRepo }) => {
+const HoldCard: React.FC<{ card: RepoHoldCard; onOpenRepo?: (id: string, name: string) => void }> = ({ card, onOpenRepo }) => {
   const rail =
-    hold.severity === 'blocking' ? 'bg-status-crit' : hold.severity === 'actionable' ? 'bg-status-warn' : 'bg-text/25';
+    card.severity === 'blocking' ? 'bg-status-crit' : card.severity === 'actionable' ? 'bg-status-warn' : 'bg-text/25';
   return (
     <div
-      data-testid={`today-hold-${hold.rule}`}
-      data-severity={hold.severity}
+      data-testid={`today-hold-card-${card.repoId}`}
+      data-severity={card.severity}
       className="grid grid-cols-[3px_minmax(0,1fr)] overflow-hidden rounded-lg bg-surface ring-1 ring-hairline"
     >
       <div className={rail} aria-hidden="true" />
@@ -111,20 +100,34 @@ const HoldCard: React.FC<{ hold: RepoHold; onOpenRepo?: (id: string, name: strin
           {onOpenRepo ? (
             <button
               type="button"
-              onClick={() => onOpenRepo(hold.repoId, hold.repoName)}
+              onClick={() => onOpenRepo(card.repoId, card.repoName)}
               className="font-mono text-[13px] font-medium text-text hover:text-accent-300"
             >
-              {hold.repoName}
+              {card.repoName}
             </button>
           ) : (
-            <span className="font-mono text-[13px] font-medium text-text">{hold.repoName}</span>
+            <span className="font-mono text-[13px] font-medium text-text">{card.repoName}</span>
           )}
-          <span className="rounded-md bg-text/8 px-2 py-0.5 font-mono text-[11px] text-text/62">{hold.rule}</span>
-          {hold.alwaysHeld && (
-            <span className="rounded-md bg-accent-800 px-2 py-0.5 text-[11px] text-accent-100">always held</span>
+          {card.holds.length > 1 && (
+            <span className="text-[11px] text-text/55">{card.holds.length} holds</span>
           )}
         </div>
-        <p className="mt-1 text-[12.5px] text-text/78">{hold.reason}</p>
+        <ul className="mt-1 flex flex-col gap-1">
+          {card.holds.map(hold => (
+            <li
+              key={hold.rule}
+              data-testid={`today-hold-${hold.rule}`}
+              data-severity={card.severity}
+              className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+            >
+              <span className="rounded-md bg-text/8 px-2 py-0.5 font-mono text-[11px] text-text/62">{hold.rule}</span>
+              {hold.alwaysHeld && (
+                <span className="rounded-md bg-accent-800 px-2 py-0.5 text-[11px] text-accent-100">always held</span>
+              )}
+              <span className="text-[12.5px] text-text/78">{hold.reason}</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );
@@ -170,7 +173,12 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
   }, [allRows]);
   const rows = useMemo(() => (filter ? allRows.filter(row => row.conclusion === filter) : allRows), [allRows, filter]);
   const holds = useMemo(() => buildHoldGroups(entries), [entries]);
+  const blockingCards = useMemo(() => groupHoldsByRepo(holds.blocking), [holds]);
+  const actionableCards = useMemo(() => groupHoldsByRepo(holds.actionable), [holds]);
   const assessedAt = useMemo(() => describeAssessedAt(basis), [basis]);
+  // A column that never carries a value is noise: Effort shows only when some
+  // row has an estimate, and the assessed stamp only when its time is known.
+  const showEffort = useMemo(() => allRows.some(row => row.effort.workUnits !== null), [allRows]);
 
   return (
     <div className="p-4 space-y-4">
@@ -193,9 +201,9 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
           single quiet line, so the first paint is never a wall of red — the
           staleness banner was removed for exactly that reason (2026-08-30) and
           this section must not reintroduce the same failure in another form. */}
-      {(holds.blocking.length > 0 || holds.actionable.length > 0) && (
+      {(blockingCards.length > 0 || actionableCards.length > 0) && (
         <section data-testid="today-needs-you" className="flex flex-col gap-2">
-          {holds.blocking.length > 0 && (
+          {blockingCards.length > 0 && (
             <>
               <div className="flex items-baseline gap-2.5">
                 <h2 className="text-[15px] font-medium text-text">Blocking a lane</h2>
@@ -203,13 +211,13 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
                   work is already under way and stopped — never collapsed
                 </span>
               </div>
-              {holds.blocking.map(hold => (
-                <HoldCard key={`${hold.repoId}-${hold.rule}`} hold={hold} onOpenRepo={onOpenRepo} />
+              {blockingCards.map(card => (
+                <HoldCard key={card.repoId} card={card} onOpenRepo={onOpenRepo} />
               ))}
             </>
           )}
 
-          {holds.actionable.length > 0 && (
+          {actionableCards.length > 0 && (
             <>
               <button
                 type="button"
@@ -222,15 +230,15 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
                   {holdsOpen ? '▾' : '▸'}
                 </span>
                 <span className="text-[13px] font-medium text-text">
-                  {describeHoldCount(holds.actionable.length)}
+                  {describeHoldCount(actionableCards.length)}
                 </span>
                 <span className="text-[11.5px] text-text/55">
                   {holdsOpen ? 'every hold states its rule' : 'open to see each hold and its rule'}
                 </span>
               </button>
               {holdsOpen &&
-                holds.actionable.map(hold => (
-                  <HoldCard key={`${hold.repoId}-${hold.rule}`} hold={hold} onOpenRepo={onOpenRepo} />
+                actionableCards.map(card => (
+                  <HoldCard key={card.repoId} card={card} onOpenRepo={onOpenRepo} />
                 ))}
             </>
           )}
@@ -313,7 +321,7 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
                 <th scope="col" className="px-3 py-2 font-semibold">Repository</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Why now</th>
                 <th scope="col" className="px-3 py-2 font-semibold">Next action</th>
-                <th scope="col" className="px-3 py-2 font-semibold">Effort</th>
+                {showEffort && <th scope="col" className="px-3 py-2 font-semibold">Effort</th>}
                 <th scope="col" className="px-3 py-2 font-semibold">Ready for unattended work</th>
               </tr>
             </thead>
@@ -324,7 +332,12 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
                 );
                 return (
                   <tr key={row.repoId} className="border-t border-text/8 align-top hover:bg-text/5">
-                    <td className="px-3 py-3 font-mono text-xs text-text/45 tabular-nums">{row.rank}</td>
+                    <td
+                      className="px-3 py-3 font-mono text-xs text-text/45 tabular-nums"
+                      title={row.rank === null ? 'The portal host sent no ranking for this repository.' : 'The same rank the Dispatch Board shows.'}
+                    >
+                      {row.rank ?? '—'}
+                    </td>
                     <td className="px-3 py-3">
                       {/* A greyed control with nothing behind it is worse than
                           no control: when there is nowhere to go, this is just
@@ -386,11 +399,11 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
                         <span className="text-xs text-text/45">None warranted</span>
                       )}
                     </td>
-                    <td className="px-3 py-3">
-                      <span className={`text-xs ${EFFORT_TEXT[row.effort?.band ?? 'unknown']}`}>
-                        {row.effort?.label ?? 'Effort not estimated'}
-                      </span>
-                    </td>
+                    {showEffort && (
+                      <td className="px-3 py-3">
+                        <span className={`text-xs ${EFFORT_TEXT[row.effort.band]}`}>{row.effort.label}</span>
+                      </td>
+                    )}
                     {/* Readiness for UNATTENDED WORK — four named checks, not a
                         score. The `value` figure that used to sit here came
                         from the item value model (impact, unblock potential,
@@ -408,7 +421,7 @@ export const TodayView: React.FC<TodayViewProps> = ({ entries, onOpenRepo, onRun
                       >
                         {row.readiness.summary}
                       </span>
-                      <div className="mt-0.5 text-[11px] text-text/45">{assessedAt}</div>
+                      {assessedAt && <div className="mt-0.5 text-[11px] text-text/45">{assessedAt}</div>}
                     </td>
                   </tr>
                 );
