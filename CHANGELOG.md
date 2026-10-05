@@ -124,6 +124,18 @@ dry-run plan.
   deferred, so that sentence needs an owner decision; it is recorded as a
   known issue in Release 4.1.
 
+## 2026-10-05 — One dispatch-eligibility rule, server side (Lane 0.22, slice 1)
+
+- **`Get-DispatchEligibility`** (`backend/modules/execution/Execution.Eligibility.ps1`)
+  answers `{ ok, reasons[] }` for a ledger entry. It holds a repository for
+  uncommitted changes, archived curation, a blocked ledger entry, or a folder
+  the index does not hold. An unmeasured input is never a hold.
+- **`GET /api/execution/queue`** puts `eligibility` on every entry, queues only
+  eligible ready entries in `rankedQueue`, and returns `heldSummary`
+  (`heldCount`, per-reason repos) for the board's "N held (why)".
+- Not yet done: the frontend board and Dispatch controls reading `eligibility`,
+  and enforcing it on the dispatch route.
+
 ## 2026-09-30 — One ranking for Today and the Dispatch Board (Release 4.0 phase A)
 
 Today ranked the portfolio in the browser (`frontend/lib/todayRanking.ts`).

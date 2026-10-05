@@ -63,9 +63,11 @@ flight.
       server-side rule answers `{ ok, reasons[] }`. The board lists only
       eligible items and collapses the rest into "N held (why)". Every Dispatch
       control is disabled with its reason when `ok` is false. Slice 1, the
-      server rule, is on its review branch (rebased from PR #327, stacked on
-      this roadmap change), which wires its check into the suite and moves
-      this item to `built`; the board and controls are slice 2. _(state: planned)_
+      server rule, is on this branch (rebased from PR #327, stacked on the
+      roadmap change): `Get-DispatchEligibility` answers `{ ok, reasons[] }`
+      and `GET /api/execution/queue` queues only eligible entries, with
+      `heldSummary` for "N held (why)". Slice 2 is the board and the controls,
+      and the dispatch route refusing when `ok` is false. _(state: built)_
       `check: pwsh ./tests/Test-DispatchEligibility.ps1 -FailOnError`
 - [ ] **Record the outcome of every decision (loop step 7).** Each decision in
       the ledger gains its outcome as it happens: PR opened (URL and head SHA),
