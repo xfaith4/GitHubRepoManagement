@@ -792,7 +792,18 @@ function Get-ExecutionQueueSummary {
 
     $lanes = Get-LaneSummary -Ledger $ledger
     $boardOrder = Get-BoardOrder -Ledger $ledger -PortfolioEntries $PortfolioEntries
-    $ranked = @($boardOrder.entries | Where-Object { $_.executionState -eq 'ready' })
+    # Lane 0.22 - one eligibility rule. Only eligible ready entries are queued;
+    # the rest collapse into heldSummary ("N held (why)"). Without the portfolio
+    # entries nothing can be established, so nothing is held on that account.
+    $hasEligibility = $null -ne $PortfolioEntries -and (Get-Command -Name 'Add-DispatchEligibility' -ErrorAction SilentlyContinue)
+    $held = $null
+    if ($hasEligibility) {
+        $null = Add-DispatchEligibility -QueueEntries @($boardOrder.entries) -PortfolioEntries @($PortfolioEntries)
+        $held = Get-HeldSummary -Entries @($boardOrder.entries | Where-Object { $_.executionState -eq 'ready' })
+        $ranked = @($boardOrder.entries | Where-Object { $_.executionState -eq 'ready' -and $_.eligibility.ok })
+    } else {
+        $ranked = @($boardOrder.entries | Where-Object { $_.executionState -eq 'ready' })
+    }
 
     $byState = @{}
     foreach ($state in @('idle','ready','running','blocked','complete')) {
@@ -809,6 +820,7 @@ function Get-ExecutionQueueSummary {
         rankedQueue    = $ranked
         rankSource     = $boardOrder.rankSource
         rankUnavailableReason = $boardOrder.rankUnavailableReason
+        heldSummary    = $held
         entries        = @($boardOrder.entries)
         recentHistory  = @($ledger.history | Select-Object -Last 50)
     }

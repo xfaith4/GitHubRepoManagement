@@ -27,13 +27,16 @@ by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 **Current focus (next agent actions), in order.** Every item here is agent-closable;
 the operator queue is a separate file. Take the first `[ ]` and open a PR.
 
-- [ ] **Lane 0.22 — one dispatch-eligibility rule, enforced everywhere.** The
-      Dispatch Board read "Ready" for repositories Today holds for uncommitted
-      changes, for a curated-out archived repository, for one whose own detail
-      reads "blocked", and for folders not in the index. One server-side rule
-      answers `{ ok, reasons[] }`. The board lists only eligible items and
-      collapses the rest into "N held (why)". Every Dispatch control is
-      disabled with its reason when `ok` is false. _(state: planned)_
+- [ ] **Lane 0.22 — one dispatch-eligibility rule, enforced everywhere.**
+      _Server rule landed (slice 1): `Get-DispatchEligibility` answers
+      `{ ok, reasons[] }` and `GET /api/execution/queue` queues only eligible
+      entries, with `heldSummary` for "N held (why)". Remaining: the Dispatch
+      Board lists only eligible items and renders the held collapse, and every
+      Dispatch control (and the dispatch route itself) is disabled with its
+      reason when `ok` is false._ The Dispatch Board read "Ready" for
+      repositories Today holds for uncommitted changes, for a curated-out
+      archived repository, for one whose own detail reads "blocked", and for
+      folders not in the index. _(state: built)_
       `check: pwsh ./tests/Test-DispatchEligibility.ps1 -FailOnError`
 - [ ] **D-012 — the permission envelope binds.** For every adapter, a post-run
       diff touching any `forbiddenPaths` entry (`.github/workflows/**`) fails the
