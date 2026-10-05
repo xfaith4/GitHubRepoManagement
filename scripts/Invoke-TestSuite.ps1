@@ -351,6 +351,9 @@ Invoke-ScriptGate -Name 'Fixture isolation' -ScriptPath (Join-Path $WorkspaceRoo
 # of its inputs.
 Invoke-ScriptGate -Name 'One ranking' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-OneRanking.ps1') -ScriptArgs @('-FailOnError')
 
+# Lane 0.22 - one server-side dispatch-eligibility rule.
+Invoke-ScriptGate -Name 'Dispatch eligibility' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchEligibility.ps1') -ScriptArgs @('-FailOnError')
+
 # Validator R024 - a built or verified milestone's check is a step CI runs; the
 # milestone's own check line. The rule itself also runs inside the lint below.
 Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError')
