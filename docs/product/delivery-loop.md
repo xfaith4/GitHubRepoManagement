@@ -76,7 +76,7 @@ sync operation and its operator surface, then again as milestones 3-6 landed.
 | 6 | Push feature branch | built, operator-gated — Release 3.8: runner pushes; host opens the PR on the reconcile tick; approval binds to the verified SHA (H38-21/22/24) |
 | 7 | Open the pull request | built — approve-push opens the PR through `Open-RepoBranchPullRequest`, the same refusal matrix as the roadmap repair; a PR refusal after a proven push reports as partial success by name — Release 3.8: runner pushes; host opens the PR on the reconcile tick; approval binds to the verified SHA (H38-21/22/24) |
 | 8 | CI / verification | built — `MergeReadiness.ps1`, including a `merge-conflicts` blocker — Release 3.8: runner pushes; host opens the PR on the reconcile tick; approval binds to the verified SHA (H38-21/22/24) |
-| 9 | Merge on GitHub | built, explicit operator action |
+| 9 | Merge on GitHub | supervised exact-head approval; guarded automatic promotion permitted by D-025 |
 | 10 | Sync local `main` | built — `POST /api/git/sync-default-branch` and the control in the per-repo git status modal; operator-invoked, not automatic after merge |
 | 11 | Delete the feature branch | built — `Remove-MergedRepoBranch` requires the merged PR's head SHA; `tip-advanced`, `checked-out`, `default-branch` and `no-merge-evidence` refuse by name; `POST /api/git/cleanup-branch` is the door |
 | 12 | Record completion | built — the runner commits the completion edit on the feature branch; the write-back gate verifies the merged result and records `verified-merged`, writing nothing |
@@ -202,15 +202,16 @@ eligibility and remaining subscription capacity and recording why. The
 capability rule above survives as an eligibility input rather than the whole
 answer: a conflicted working tree still cannot go to a GitHub-side agent.
 
-**Approval moves from pre-push to pre-merge.** Today the runner stops at
-`awaiting-review` and the operator clicks Approve & push, which was the right
-gate when the runner held the only credential. Release 3.8 has the agent exit
-at `IMPLEMENTATION_COMPLETE`, Repo Manager push and open the pull request, and
-the operator approve a **verified head SHA** after CI. This is exactly the
-substitution "Approval is a layer, not a hard-coded step" was written to allow:
-push and PR become trusted transitions, and the human gate moves to the one
-transition that is genuinely irreversible. Steps 6 and 7 keep their refusal
-matrices; only who invokes them changes.
+**Promotion is governed by execution posture (D-025, 2026-10-13).** Repo Manager
+may push and open the pull request after implementation. In supervised posture,
+the operator approves its verified head SHA. In guarded posture, standing owner
+approval permits deterministic promotion under a recorded repository-scoped
+execution authorization when every exact-head verification, independent review,
+scope, budget, cancellation and protection input passes. A changed head
+invalidates the evidence and requires verification and review again. Reserved
+owner-review changes retain human review. Merge reachability and reconciliation
+must succeed before dependent work advances. Policy permission alone is not a
+runtime gate; implementations fail closed when a required input is absent.
 
 **A provider limit becomes state rather than a failed run.** The runner reads
 the CLI's exit code today, so a usage limit records as `failed` and the work

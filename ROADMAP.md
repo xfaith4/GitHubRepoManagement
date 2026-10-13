@@ -27,6 +27,17 @@ by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
 **Current focus (next agent actions), in order.** Every item here is agent-closable;
 the operator queue is a separate file. Take the first `[ ]` and open a PR.
 
+- [ ] **D-025 — prove roadmap execution on MusicLibrary_v2.** Owner-approved
+      automation and guarded automatic engineering promotion replace the blanket
+      manual-merge exclusion. Pilot the existing roadmap, beginning with its
+      Phase 28 release blocker; retain Phases 26/27 and deferred work explicitly.
+      Pure promotion gate refuses missing/stale checks, self-review, expired
+      authorization, scope violations and unreviewed reserved changes. Runtime
+      wiring, independent review, actual promotion, restart/continuation and
+      finalized-product acceptance remain open.
+      _(state: built — [Execution.PromotionPolicy.ps1](backend/modules/execution/Execution.PromotionPolicy.ps1),
+      [pilot plan](docs/product/musiclibrary-roadmap-pilot.md))_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
 - [ ] **Lane 0.22 — one dispatch-eligibility rule, enforced everywhere.** The
       Dispatch Board read "Ready" for repositories Today holds for uncommitted
       changes, for a curated-out archived repository, for one whose own detail
@@ -203,8 +214,9 @@ and `[x]` means the item leaves this file for the archive in the same PR.
 [`docs/governance/operator-queue.md`](docs/governance/operator-queue.md) via
 `scripts/Add-OperatorVerification.ps1`. A ratchet may be recorded any time after
 `verified`, may be recorded never, and never blocks a later milestone. The
-promotion boundary — merge to the protected default branch on an operator-approved
-verified head SHA — is unchanged and lives in §8; it gates *merge*, not *the next item*.
+promotion boundary — merge to the protected default branch on a verified head
+SHA under supervised approval or guarded authorization (D-025) — lives in §8;
+it gates integration and dependent continuation.
 
 **Milestone format.** One bullet, action-first, with the check on its own line:
 
@@ -779,7 +791,7 @@ to the queue — never fails it — when a provider is exhausted.
       opens the pull request and monitors CI on a cadence without holding an
       execution slot — which also closes Lane 0.17's open "nothing refreshes the
       board" non-blocker. A head change after verification invalidates
-      `READY_FOR_OPERATOR`. Merge stays an explicit operator action.
+      `READY_FOR_OPERATOR`. Promotion follows the active execution posture (D-025).
       _(state: built 2026-09-08 — H38-21 `Resolve-PostImplementationTransition`
       and `Invoke-RunnerBranchPush` in
       [`scripts/Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
@@ -902,7 +914,8 @@ to the queue — never fails it — when a provider is exhausted.
 - Concurrency above one local execution slot, raised only after capacity
   accounting, session persistence, CI reconciliation and restart recovery are
   proven.
-- Automatic merge. The promotion boundary stays an explicit operator action.
+- Unbounded automatic merge. D-025 permits guarded automatic promotion of
+  authorized engineering; reserved owner-review changes remain supervised.
 
 **Validation plan:** module smoke covers the pure decision tables — eligibility,
 ranking, capacity arithmetic, handoff construction — offline, in the shape
@@ -2523,8 +2536,9 @@ headline guardrails for the active release and near-term roadmap:
   Actions result, validation evidence, and unresolved blockers.
 - Do not let dashboard badges become decorative; every badge must drill
   into the source data or explanation that produced it.
-- Do not merge automatically; merge must remain an explicit operator action
-  after readiness passes.
+- Automatic merge is permitted under D-025 for authorized engineering only
+  after exact-head readiness, independent review and branch protection pass.
+  Missing evidence or reserved owner-review changes prevent promotion.
 - **Do not leave a control enabled that cannot succeed.** A disabled control
   names its unmet precondition; an enabled one is a promise.
 - **Do not mark an item `[x]` while it still names an outstanding proof.**
@@ -2543,8 +2557,9 @@ headline guardrails for the active release and near-term roadmap:
   Ordinary roadmap work may not consume a provider's configured reserve.
 - **Operator approval applies to a verified head SHA, not a pull request
   number.** Any change to the pull request head after verification invalidates
-  readiness and requires re-approval. Agent execution may be autonomous;
-  promotion to the protected default branch is not.
+  readiness and requires new verification and review. In supervised posture it
+  also requires new operator approval; guarded posture uses the active bounded
+  authorization. D-025 permits automatic promotion, never protection bypass.
 
 ---
 

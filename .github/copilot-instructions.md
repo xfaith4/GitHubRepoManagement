@@ -66,26 +66,28 @@ valid mandate already grants that authority and deterministic policy verifies
 every required condition. Agents do not create or interpret their own
 authority.
 
-## Transitional execution posture
+## Execution posture and standing owner approval
 
-Until ROADMAP Release 3.9 G39-01 through G39-06 are integrated, this repository
-operates in **supervised** posture:
+On 2026-10-13 the owner approved roadmap automation and automatic merge moving
+forward (D-025). Automatic merge is permitted for bounded engineering work;
+it is no longer categorically excluded or dependent on nonexistent G39 item IDs.
 
-- Agents may prepare work, edit authorized files, run checks, update the
-  proposed roadmap state, commit, push when assigned, open or update a PR, and
-  monitor evidence.
-- Promotion requires operator approval bound to the exact verified head SHA.
-- The former D-019 permission to merge pure engineering merely because GitHub
-  reports `CLEAN` is retired.
-- Do not simulate a mandate, guarded promotion, or automatic phase continuation
-  before the corresponding schemas, policy, and gates exist.
+- **supervised** — use exact-head operator approval when no applicable active
+  execution authorization exists.
+- **guarded** — deterministic orchestration may promote under standing owner
+  approval recorded in an active, repository-scoped execution authorization,
+  after exact-head checks, independent review, scope, budgets, cancellation,
+  and branch protection all pass. No repeated merge confirmation is required.
+- **extended** — unsupported.
 
-After G39-06, the active execution posture controls promotion:
-
-- **supervised** — operator approval is required for the verified head SHA;
-- **guarded** — deterministic policy may promote only when an active mandate
-  explicitly authorizes it and every policy input passes;
-- **extended** — unsupported until a later release proves and enables it.
+Standing approval does not waive checks or authorize agents to self-certify,
+bypass protection, change production, or merge reserved owner-review changes.
+Governance, CI, credentials/permissions, destructive-data, application config,
+modelVersion and verdict semantics retain their owner-review requirements.
+The owner explicitly authorized the D-025 policy amendment itself in this session.
+A documented authorization is not evidence that runtime enforcement exists:
+fail closed until the promotion path can enforce and record every required input.
+After merge, verify reachability and reconcile before advancing dependent work.
 
 ## Roadmap work and state
 

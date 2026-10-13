@@ -81,7 +81,10 @@ that weakens one is wrong even if every test passes.
    or one has silently disabled the other.
 
 10. **Nothing that changes governance, CI, or what the product claims about
-    itself merges on a green light alone.** The owner reviews it.
+    itself merges on a green light alone.** The owner reviews it. D-025
+    (2026-10-13) permits automatic promotion of authorized ordinary engineering
+    after exact-head checks and independent review; reserved changes still
+    require owner review. The owner explicitly authorized the D-025 amendment.
 
 11. **A canonical verdict is reproducible from index SHA + config +
     `modelVersion`, and nothing else.** Same three inputs, same conclusion,

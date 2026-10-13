@@ -989,29 +989,20 @@ COMPLETE
 
 # Promotion invariant
 
-Agent execution may be autonomous.
+D-025 (owner-approved 2026-10-13) permits guarded automatic promotion for bounded
+engineering. A roadmap alone never grants merge authority. The orchestrator
+requires an active repository-scoped authorization with standing owner approval,
+matching plan/work unit, exact-head executed checks, independent review, scope,
+budgets, cancellation and branch protection. Reserved classes retain owner review.
 
-Promotion is not.
+Supervised: CI_PASSED -> READY_FOR_OPERATOR -> exact-head approval -> MERGING.
+Guarded: CI_PASSED -> independent review -> deterministic policy -> MERGING.
 
-A well-formed roadmap grants permission to prepare and execute work, but it does not grant permission to merge that work into the protected default branch.
-
-The promotion boundary is:
-
-```text
-CI_PASSED
-    ↓
-READY_FOR_OPERATOR
-    ↓
-operator reviews exact verified head SHA
-    ↓
-OPERATOR_APPROVED
-    ↓
-MERGING
-```
-
-Approval applies to the verified commit SHA, not merely the pull request number.
-
-Any change to the PR head after verification invalidates `READY_FOR_OPERATOR`.
+A changed head invalidates verification and review. A missing policy input
+prevents promotion. Verify the actual merge commit is reachable from the target
+branch and reconcile roadmap/execution state before continuing dependent work.
+`Execution.PromotionPolicy.ps1` supplies a pure refusal gate; integration must
+collect trusted evidence and enforce it before any merge operation.
 
 ---
 
@@ -1070,7 +1061,7 @@ subscription capacity
 task suitability
 repository safety
 verification quality
-human promotion control
+owner-authorized promotion policy
 ```
 
 An idle worker is preferable to consuming scarce provider capacity on a poorly formed or low-value task.

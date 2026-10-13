@@ -373,16 +373,17 @@ function Invoke-AuditRepoScan {
         if (-not (Test-Path -LiteralPath $root)) { continue }
 
         try {
-            # Find all .git directories up to MaxDepth+1 to discover repo roots
-            # Use -Force to include hidden directories (e.g., .git is hidden on Linux)
-            $gitDirs = Get-ChildItem -Path $root -Recurse -Depth ($MaxDepth + 1) -Directory -Force -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -eq '.git' }
+            # Linked worktrees carry a .git FILE. Discover both marker forms;
+            # filtering at the provider avoids enumerating every payload file.
+            $gitDirs = Get-ChildItem -LiteralPath $root -Recurse -Depth ($MaxDepth + 1) -Filter '.git' -Force -ErrorAction Stop
             foreach ($gitDir in $gitDirs) {
-                $repoPath = $gitDir.Parent.FullName
+                if (-not $gitDir.PSIsContainer -and (Get-Content -LiteralPath $gitDir.FullName -Raw -ErrorAction Stop) -notmatch '^gitdir:\s+\S') { continue }
+                $repoDirectory = if ($gitDir.PSIsContainer) { $gitDir.Parent } else { $gitDir.Directory }
+                $repoPath = $repoDirectory.FullName
                 if ($seenPaths.Contains($repoPath)) { continue }
                 [void]$seenPaths.Add($repoPath)
 
-                $repoName = $gitDir.Parent.Name
+                $repoName = $repoDirectory.Name
 
                 # Look up roadmap state
                 $roadmapState = 'missing'

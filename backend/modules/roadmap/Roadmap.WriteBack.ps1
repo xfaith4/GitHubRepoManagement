@@ -223,7 +223,7 @@ function Test-RoadmapWriteBackEvidence {
             $greenNote = if ($actionsConclusion -eq 'success') { ' A green validation run means the change is safe to merge, which is not the same as merged.' } else { '' }
             & $addRefusal 'pr-not-merged' `
                 ("Pull request {0} {1}.{2}" -f $prUrl, $stateNote, $greenNote) `
-                'Merge the pull request (merge stays an explicit operator action), then re-check.'
+                'Promote the pull request under the active execution posture (D-025), then re-check.'
         }
         else {
             if (-not (_WriteBack_HasText (_WriteBack_Str -Obj $Evidence -Name 'mergeCommitSha'))) {

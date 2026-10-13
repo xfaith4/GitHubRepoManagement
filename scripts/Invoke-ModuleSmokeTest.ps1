@@ -54,6 +54,9 @@ Write-Step 'Validating copied module files exist'
 }
 Write-Host 'All expected module files are present' -ForegroundColor Green
 
+Write-Step 'Guarded promotion refuses missing, stale and forbidden evidence'
+& (Join-Path $WorkspaceRoot 'tests/Test-GuardedPromotion.ps1') -FailOnError
+
 Write-Step 'No HTTP request may run a portfolio scan — the freeze tripwire'
 # Measured on the live portal 2026-08-11: the status cache TTL is 120s and a
 # cold sweep costs 196.7s. Because the host serves requests serially and the

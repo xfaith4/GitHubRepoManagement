@@ -753,3 +753,24 @@ intact — the reasoning is what stops the next agent reopening a settled point.
   lane-card behaviour.
 - **Default proceeded under.** None needed; ruled before anything was built.
 - **Blocks.** Nothing.
+
+
+### D-025 — Roadmap execution and guarded automatic merge
+
+- **Decision (owner, 2026-10-13).** "Remove the policy that explicitly excludes
+  automatic merge. This automation has my approval moving forward."
+- **Pilot.** `F:\Development\20_Staging\MusicLibraryProjects\MusicLibrary_v2\ROADMAP.md`.
+  Objective: finish existing roadmap work and prove a finalized product with
+  acceptance evidence, not documentation improvements alone.
+- **Effect.** Supersedes categorical manual-merge language in the active roadmap,
+  execution contract and delivery-loop guidance. Bounded engineering promotion
+  may proceed automatically under recorded repository-scoped authorization.
+  No repeated approval is needed for ordinary in-scope engineering merges.
+- **Retained boundaries.** Exact-head executed checks, independent review,
+  protected-branch rules, forbidden paths, cancellation, budgets, reserved
+  owner-review classes, merge reachability and post-merge reconciliation.
+  This decision specifically authorizes the policy amendment; it does not waive
+  future reserved-class review or constitute proof of an implemented runner.
+- **Sequencing.** Owner-selected pilot and its execution loop take priority over
+  additional documentation/scoring work for this task. Establish real remaining
+  scope before estimating completion; retain post-launch/deferred distinctions.
