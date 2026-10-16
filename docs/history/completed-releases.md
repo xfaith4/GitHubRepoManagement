@@ -6928,3 +6928,841 @@ synced ledger entries carried exactly Today's rank, and the other 12 were
 unranked with their reason. The field proof is OQ-14 (elevated restart, build,
 Today's #1 equals the board's #1); it is not a gate on these milestones.
 Release 4.0's other items stay open in ROADMAP.md.
+
+---
+
+## Reconciled 2026-10-16 (archived from ROADMAP.md by the proof-of-value reduction)
+
+Ben's decision of 2026-10-16 reduced `ROADMAP.md` to one active release
+(Release 4.1 — Proof of Value). Frozen requirements moved to
+[`docs/governance/deferred-work.md`](../governance/deferred-work.md). The blocks
+below are different: `ROADMAP.md` already recorded them as shipped, or they held
+only closure prose, yet they still sat in the active roadmap. They are the
+contradictions the reduction fixed. Each block is moved verbatim; its checkbox
+and `(state: ...)` text is as it stood, and nothing below was re-verified on
+2026-10-16.
+
+- **Release 3.8.** Its status line read `done` (2026-09-11) while all seven
+  milestones still read `[ ]` / `built`. Each names
+  `pwsh ./scripts/Invoke-ModuleSmokeTest.ps1` as its check, which the required
+  CI smoke runs on every PR to `main`; the code is on `main`. What none of it
+  has had is a live dispatch: no agent run outside the smoke tests since
+  2026-09-01. That proof is Release 4.1's dispatch milestone, not a reason to
+  keep 3.8 open.
+- **Lane 0.18.** Its four items read `built`, each "delivered as Release 3.8"
+  H38-30, H38-36, H38-09/H38-27 and H-13a/b, with the same check.
+- **Lane 0.17.** Two items read `built`: one "closed by Release 3.8 H38-22",
+  one delivered as H-07 under the module smoke. The third asked to archive the
+  lane's eight closed items, which the 2026-09-13 archive pass already did (see
+  Lane 0.17 above). Its one open item, the api-host smoke against a live
+  runner, is deferred.
+- **Lane 0.15.** Six items read `built`, citing
+  `evidence/verified/trial-truth-readiness-2026-09-05.md`. They merged in #228
+  (2026-09-05), and both their checks (`npx vitest run frontend` and
+  `pwsh ./scripts/Invoke-ApiContractTest.ps1`) run in the required CI. They
+  stayed open under the pre-2026-09-13 rule that held an item for its field
+  proof; that rule is retired, and the field proof is OQ-11.
+- **Lanes 0.3–0.6 and 0.20.** Closure prose only, with no open item.
+- **The 2026-09-30 Current Status narrative and release index**, superseded by
+  the 2026-10-16 status block.
+
+### Current Status narrative (ROADMAP.md, last updated 2026-09-30)
+
+**Last updated:** 2026-09-30
+
+Releases 0.4 through 2.6, 2.8 and 3.0 are **engineering-complete and archived**,
+as is every completed milestone from the releases and lanes still open below.
+Their full text lives in
+[`docs/history/completed-releases.md`](docs/history/completed-releases.md).
+
+**This file carries open work only.** Every checkbox in it is something still
+to do — if an item is `[x]` here it is a mistake, not a record (rule restored
+by the 2026-08-11 archive pass, recorded in `CHANGELOG.md`).
+
+**Forward arc.** Releases 3.0-3.5 describe the finished product: dispatch that
+runs, the loop closing legibly and without a hand-off, numbers an operator can
+act on, an 80+ repo portfolio that feels immediate, unattended operation.
+Release 3.6 extends it to "every repository ends with an explainable
+conclusion"; Release 3.7 makes the product prove, on ten real repositories,
+that it returns more time than it takes. Release 3.8 makes the execution layer
+provider-aware, so that proof is not capped by one agent's subscription.
+
+### Release index (ROADMAP.md §4, as of 2026-09-30)
+
+| Version   | Title                                                                    | Status                                                                                     |
+| --------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| 0.4 - 1.1 | Foundation through Standardization and Guardrails                        | `done` — see [archive](docs/history/completed-releases.md)                                 |
+| 1.2       | Enhanced Portfolio Intelligence                                          | `done` — closed 2026-07-05; see archive                                                    |
+| 1.3 - 1.7 | Frontend build, repo evaluation, README generation, dispatch, git status | `done` — see archive                                                                       |
+| 1.7.5     | Portfolio Mission Alignment, Indexed Scanning, Value-Ranked Planning     | `done` — shipped 2026-05-28; see archive                                                   |
+| 1.8 - 2.0 | Operations workspace, AI doc cycles, agent-run monitoring                | `done` — see archive                                                                       |
+| 2.1       | Persistent Data Layer                                                    | `done` (engineering) — closed 2026-08-07; operator sign-off tracked in 2.9                 |
+| 2.2       | API Auth, Network Security, Onboarding, GitHub App                       | `done` (engineering) — 2026-07-05; optional live App-token exchange tracked in 2.9         |
+| 2.3       | Portfolio Analytics, Trend Visualization, Distribution                   | `done` (engineering) — 2026-07-06; 7/90-day accrual is calendar-gated, tracked in 2.9      |
+| 2.4       | Agent Integration Protocol and AI Repair Loop                            | `done` — 2026-07-05; live submit-PR proof landed 2026-08-09 (2.7 Phase A, PR #96)          |
+| 2.5       | Mobile-Friendly Operator Experience                                      | `done` (engineering) — 2026-07-05; two surfaces + device proof tracked in 2.9              |
+| 2.6       | Interface Clarity and Operator Orientation                               | `done` — 2026-07-06; device sign-off tracked in 2.9                                        |
+| 2.7       | Guarded Scheduled Automation (Curated-Subset, Preview-First)             | `done` — closed 2026-08-11; see archive. Live service install re-homed to 2.9              |
+| 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                        |
+| **2.9**   | **Operator Field Proof + Mobile Completion**                             | **active** — promoted 2026-08-19; mobile UN-DEFERRED (its resume condition was met)        |
+| 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                  |
+| 3.1       | Closed-Loop Delivery                                                     | `done` 2026-08-15 — manual loop proof recorded; portal + scheduled proofs re-homed to 2.9  |
+| 3.2       | Portfolio Scale and Responsiveness                                       | `done` 2026-08-19 — budget + bounded sweep + observable/cancellable scan + render bound    |
+| 3.3       | Steady-State Operation                                                   | `done` 2026-08-19 — retention, rehearsed restore, honest transport, decision-grade exports |
+| **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
+| 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
+| 3.6       | Every Repository Gets an Outcome                                         | `done` — closed 2026-09-14 (D-018 PR 2); see archive. Field proof: OQ-1. Its two non-blockers live on as Current focus M4a and the 2.9 trend accrual |
+| **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
+| **3.8**   | **Provider-Aware Execution**                                             | **`planned`** 2026-09-06 — Codex/Claude/Copilot behind one provider-neutral task contract  |
+| **4.0**   | **Rule-Driven Lane Assignment**                                          | **`planned`** 2026-09-24 — engine outward: a pure assigner, then the v2 console (D-024)    |
+
+> **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
+> default new work to integer minor releases.
+
+### Release 3.8 — Provider-Aware Execution
+
+**Status:** done — all six engineering milestones and Lane 0.18 items
+complete 2026-09-11. The design authority is
+[`docs/governance/Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md);
+this block carries only milestones and gates. It supersedes the 2026-07-07
+decisions in [`docs/execution-orchestrator-design.md`](docs/execution-orchestrator-design.md),
+whose P0 is the only part ever built. Follows Release 3.7 — the value trial
+measures the loop that exists, and this release changes what runs inside it.
+
+**Goal:** the work contract becomes provider-neutral and the scheduler becomes
+provider-aware. A task carries objective, scope, acceptance criteria,
+verification and a permission envelope, and says nothing about which agent runs
+it; the orchestrator chooses between Codex, Claude Code and GitHub Copilot on
+eligibility and remaining subscription capacity, records why, and returns work
+to the queue — never fails it — when a provider is exhausted.
+
+#### Product outcomes
+
+- Roadmap work keeps moving when one provider hits a limit, because
+  `CAPACITY_WAIT` is a normal operating state rather than a failed run.
+- No subscription is unexpectedly exhausted by ordinary roadmap work: each
+  provider keeps a configured reserve only remediation may consume.
+- The operator approves a **verified head SHA**, not a pull request number, and
+  execution below that line needs no per-step attendance.
+
+#### Engineering milestones
+
+- [ ] **Give a task a provider-neutral contract and a structured result.** A
+      `WorkPacket` (objective, scope paths, acceptance criteria, verification
+      commands, permission envelope) persisted outside the commit-eligible tree,
+      which each adapter renders into its own prompt.
+      [`Roadmap.Dispatcher.ps1`](backend/modules/roadmap/Roadmap.Dispatcher.ps1)
+      builds prose today and nothing reads a result back. A run producing no
+      structured `ExecutionResult` fails by name instead of reaching
+      `awaiting-review`. _(state: built 2026-09-07 — H38-01 WorkPacket schema v1
+      under output/work-packets/; H38-02 dispatch and approval both save one and
+      carry workPacketPath; H38-03 ExecutionResult schema v1, a headless run with
+      no/invalid result is failed by name; H38-04 Adapter.Claude.ps1 parses
+      stream-json, session_id and usage recorded on the run's result.json;
+      H38-05 ConvertTo-WorkPacketPrompt renders the packet with criteria
+      verbatim, enforcement waits on D-012)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Persist capacity per provider, in the provider's own unit.** Named
+      windows with `remainingRatio`, `resetAt` and a confidence rank; reserves
+      and ranking weights live in `backend/config/`, not in code.
+      [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1) keeps the
+      portfolio work-unit quota and gains no token conversion it cannot source.
+      A limit re-queues the task with workspace, branch, attempt and session
+      intact. _(state: built 2026-09-07 — H38-07 added
+      agent-providers.json (schemaVersion v1) and Get-AgentProviderConfig;
+      ranking weights and tieBreak are the decided D-013 values; corrected the
+      same day — `providers.<name>.supported` replaces `enabled`, a repository fact
+      CI can verify, because whether a provider is installed and funded is
+      per-installation state detected at runtime and shown in Settings, never
+      committed on every operator's behalf; H38-08
+      Execution.ProviderCapacity.ps1 — one record per provider under
+      output/provider-capacity/, native units preserved, confidence from the
+      spec's six-source ladder, and a merge that refuses to let a worse source
+      overwrite a better one; H38-09 Resolve-ProviderCapacityVerdict applies the
+      D-011 reserves (15% short, 20% weekly, decided 2026-09-07 and no longer
+      provisional; remediation may use the weekly reserve; operator override
+      recorded in the reason) — enforcement stays OFF because the per-task cost
+      estimate is still a guess, so verdicts are recorded and refuse nobody;
+      H38-10 a matched limit signal writes status=queued with capacityWait and
+      sets the provider's cooldownUntil — branch, attempt and session survive,
+      and the run does not commit; before this a limit fell through to
+      verify-commit-push and called an exhausted subscription ready for
+      review; H38-11 Test-RunnerClaimAllowed — no claim during cooldown or with
+      the one local slot busy, an unknown target refused by name rather than run
+      as claude, auto deferred to the router; a running summary counts only
+      while the heartbeat pid is live, and startup marks orphans
+      failed/orphaned with branch and session kept; H38-12 usage observations
+      accumulate as rank-4 evidence without ever moving a window ratio — token
+      telemetry is not subscription capacity — and GET /api/providers reports
+      the record, the verdict and its reason per provider; H38-13 closed the
+      milestone — six module-smoke sections green in one run, capacity and
+      cooldown documented in local-task-runner.md, and the delivery-loop
+      addendum names where a wait is persisted)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Route between providers, and add the Codex adapter.** One registry
+      replaces the `claude`/`copilot` pair hardcoded in
+      [`Automation.RoadmapQueue.ps1`](backend/modules/automation/Automation.RoadmapQueue.ps1),
+      [`Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1) and
+      `frontend/types.ts`, and reconciles the third vocabulary
+      (`operator-runner`) the approval route writes. Eligibility then ranking,
+      selection reason recorded, presence counts derived from the registry
+      rather than naming providers. _(state: built 2026-09-08 —
+      H38-14 Execution.ProviderRegistry.ps1 is the one token list (claude,
+      codex, copilot, auto); the queue module and the runner delegate to it,
+      and the two ValidateSet attributes that cannot are gated against it so
+      drift fails a smoke rather than rejecting a valid provider unnoticed;
+      Invoke-QueuedTask now refuses a known token it has no branch for, so the
+      wider vocabulary cannot run Claude Code in codex's place; H38-15
+      seven-function adapter contract gated per supported provider, naming
+      every missing function at once; Adapter.Copilot.ps1 holds the three moved
+      runner functions unchanged, asserted byte-identical, and a cloud dispatch
+      now writes an ExecutionResult like every other provider; H38-15b provider
+      availability detected per installation (PATH probe, and deliberately no
+      authentication — proving an account works would spend its quota) and
+      surfaced in GET /setup/prerequisites, which the setup wizard already
+      renders, plus GET /api/providers; the operator opt-out lives in an
+      untracked installation.local.json that a gate refuses to let become
+      tracked; H38-16 Adapter.Codex.ps1 from a synthetic codex exec --json
+      transcript, with the thread id and the terminal turn matched exactly
+      rather than by pattern — item.id and item.completed both match the loose
+      forms and mean something else entirely; the runner runs codex tasks
+      through the same branch, launch, parse, verify and commit path, with the
+      provider held in a variable at every launch and ledger site so a codex
+      run is never recorded, rested or billed as a claude one; H38-17
+      Resolve-ProviderSelection is eligibility THEN ranking with the reason
+      recorded — every Stage 1 condition is kept per candidate whether it
+      passed or failed and the first failure becomes ineligibleBecause, so a
+      provider that is never chosen is explainable without reading a log;
+      Stage 2 weights eight factors each normalised to [0,1] and a tie names
+      the rule that broke it. An unenforced capacity verdict is recorded as
+      advisory and does not exclude, because D-011 left the per-task estimate
+      provisional and refusing work on a guessed cost would block real
+      execution on an unmeasured number. The runner resolves `auto` at CLAIM
+      time, not enqueue time, since capacity and cooldowns move in between,
+      and writes selectedProvider and selectionReason onto the run summary;
+      with no eligible provider the entry stays queued rather than failing.
+      dispatch.autoEnabled and defaultTarget are now true/auto (D-013), and
+      the config tripwire inverted to guard that rather than disappearing;
+      H38-18 dispatch/execute takes a target (default from config, auto
+      refused when the config disables it), approval reports the real token,
+      backlog is counted per registry token — queuedClaude/queuedCopilot
+      unchanged; H38-19 ProviderToken union, queuedByProvider on the presence
+      payload, preview names the intended provider; H38-19b Settings shows each
+      provider as available, not installed, switched off or not in this build,
+      and the opt-out writes per-machine state that is never committed.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Move push and PR opening to Repo Manager; bind approval to the verified
+      SHA.** The agent exits at `IMPLEMENTATION_COMPLETE`; Repo Manager pushes,
+      opens the pull request and monitors CI on a cadence without holding an
+      execution slot — which also closes Lane 0.17's open "nothing refreshes the
+      board" non-blocker. A head change after verification invalidates
+      `READY_FOR_OPERATOR`. Merge stays an explicit operator action.
+      _(state: built 2026-09-08 — H38-21 `Resolve-PostImplementationTransition`
+      and `Invoke-RunnerBranchPush` in
+      [`scripts/Invoke-RoadmapTaskRunner.ps1`](scripts/Invoke-RoadmapTaskRunner.ps1)
+      push after a complete, verified result (`autoPush` per provider, default on
+      for local providers); awaiting-review survives at off or on push failure,
+      and the default branch is refused before git is asked. H38-22
+      `Invoke-DeliveryReconciliation` and `POST /api/delivery/reconcile` in
+      [`backend/api-host/Start-RepoManagementApiHost.ps1`](backend/api-host/Start-RepoManagementApiHost.ps1)
+      open pending PRs with the host's token and refresh CI; the runner calls it
+      every fourth poll. H38-23 `Invoke-AgentRunRefresh` in
+      [`backend/modules/agent-runs/AgentRuns.ps1`](backend/modules/agent-runs/AgentRuns.ps1)
+      records `prHeadSha` and `verifiedHeadSha` only when CI passed on that exact
+      head; a moved head clears it and emits `run.head-moved`. H38-24
+      `POST /api/agent-runs/{id}/approve` stores `operatorApproval` bound to
+      `verifiedHeadSha`, and `Get-MergeReadinessEvaluation` in
+      [`backend/modules/agent-runs/MergeReadiness.ps1`](backend/modules/agent-runs/MergeReadiness.ps1)
+      refuses `no-verified-head`, `no-operator-approval` and
+      `head-moved-since-approval`. H38-25 the merge control in
+      [`frontend/components/OperationsWorkspaceView.tsx`](frontend/components/OperationsWorkspaceView.tsx)
+      shows and approves the verified SHA and disables on head drift. H38-24b
+      risk-based independent review in
+      [`backend/modules/execution/Execution.ReviewPolicy.ps1`](backend/modules/execution/Execution.ReviewPolicy.ps1)
+      — high risk requires a different provider, medium risk requires one on
+      four named triggers, and the reviewer is never the implementer. All six
+      are gated in
+      [`scripts/Invoke-ModuleSmokeTest.ps1`](scripts/Invoke-ModuleSmokeTest.ps1)
+      and [`OperationsWorkspaceView.test.tsx`](frontend/components/OperationsWorkspaceView.test.tsx))_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Remediate from evidence, and hand off between providers.** Attempt and
+      remediation counts survive a restart; a CI failure builds a
+      `RemediationPacket`, resumes the original session where capacity allows,
+      and otherwise transfers a `HandoffPacket` of durable evidence to another
+      eligible provider. No provider depends on another's conversation.
+      _(state: built 2026-09-09 — H38-27 `attempt` and `remediationCount` live on the run summary, written with the claim so a crash cannot lose them, and `Write-RemediationAttempt` in
+      [`backend/modules/execution/Execution.WorkPacket.ps1`](backend/modules/execution/Execution.WorkPacket.ps1)
+      persists the incremented count before it evaluates the cap; an
+      unwritable summary throws rather than returning a verdict. H38-28b
+      provider and model are separate fields across registry, capacity and
+      routing records, with a pre-packet record's model marked inferred rather
+      than observed; every provider declares `unknown` explicitly, because no
+      model identifier is determinable without running a CLI (R12); H38-28
+      `New-RemediationPacket` carries the CI failures as acceptance criteria
+      and the prior session/provider, with the original criteria surviving
+      verbatim as a superset; H38-29 `Resolve-RemediationRoute` resumes the
+      original session when it exists, the provider supports it and
+      remediation capacity allows, and `Resolve-RemediationLaunch` evaluates
+      the cap first so a halted attempt never builds an argument vector;
+      H38-30 `New-HandoffPacket` carries only durable evidence — a
+      `priorResult` holding a transcript is refused by name and by length —
+      and a switch excludes the previous provider through the router's new
+      `-Exclude` and starts a fresh session; H38-31 the reconcile tick enqueues
+      one remediation per failing CI run, idempotent on the Actions run URL,
+      cap checked first, target read from `dispatch.defaultTarget` rather than
+      any literal — the host enqueues and never executes, so resume-versus-
+      handoff stays a claim-time decision made against the capacity that is
+      true then)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Normalize execution events onto the Dispatch Board.** Provider output
+      converts to the canonical `execution.*` vocabulary, reconciled with
+      [`roadmap-events.md`](standards/roadmap/roadmap-events.md) so exactly one
+      is canonical. New states arrive as a mapped dimension in
+      [`status-vocabulary.md`](docs/reference/status-vocabulary.md), keeping the
+      Release 3.5 rule that no two dimensions share a word. Per D-008 this is
+      the one surface that dispatches. _(state: built 2026-09-11 —
+      H38-34 `Execution.Events.ps1` defines the 14-type canonical
+      `execution.*` vocabulary; `New-ExecutionEvent` rejects unknown types so a
+      producer typo fails immediately; `Test-ExecutionEvent` validates all
+      required envelope fields; `Get-DeliveryState` maps run-summary and
+      lane-verdict strings to the ALL_CAPS delivery states from the spec,
+      returns `$null` for unknown inputs, and is case-insensitive.
+      `docs/reference/status-vocabulary.md` now documents the sixth dimension
+      with its full state progression; the ALL_CAPS invariant is gated in the
+      smoke so no delivery state word can collide with the five existing
+      dimensions. `roadmap-events.md` is complementary and non-overlapping:
+      `execution.*` events are per-agent-run step events; `roadmap-events.jsonl`
+      is phase-level lifecycle history.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Amendments from the execution strategy — the three that are cheap now
+      and expensive later.** Absorbed into
+      [`Agent-Execution-Governance.md`](docs/governance/Agent-Execution-Governance.md)
+      on 2026-09-08. These three are in 3.8 **only** because a packet that has
+      not been written yet is their natural home; deferring them means reopening
+      work that has already shipped. Everything else the strategy adds is
+      Release 3.9. **(a)** Cost, duration and first-pass telemetry join the
+      canonical `execution.*` vocabulary as it is defined, not after — adding
+      them later is a second vocabulary migration through the reconciliation
+      that follows it, and no run executed before then can be costed
+      retroactively. **(b)** Provider and model become separate fields before
+      the resume path encodes provider-only session assumptions. **(c)**
+      Risk-based independent review enters the approval flow while that flow is
+      being built, rather than reopening the approve-binds-to-SHA contract and
+      its frontend afterwards. _(state: built 2026-09-11 —
+      **(a)** H38-35: `New-ExecutionCompletedPayload` adds `startTime`,
+      `completionTime`, `durationSeconds`, `cost` (with unit), `firstPassSuccess`,
+      `inputTokens`, `outputTokens`, and `attemptCount` to the
+      `execution.completed` event payload; duration is computed from timestamps
+      when both are present, cost is `$null` when no unit-cost is measurable
+      (subscription allowances carry no per-token price), and the payload
+      attaches to a full `execution.completed` event via `New-ExecutionEvent`.
+      **(b)** Delivered 2026-09-08 as H38-28b. **(c)** Delivered 2026-09-08 as
+      H38-24b.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+
+#### Acceptance criteria
+
+- A task contract carries no provider-specific execution assumption unless the
+  task genuinely requires a provider-specific capability.
+- A provider at a hard limit is not dispatched; exhaustion re-queues the task
+  rather than failing it, and the task resumes after the window resets.
+- Capacity is persisted per provider in its native unit with no invented token
+  conversion, and survives a restart along with attempt count, session id,
+  cooldown and verified SHA.
+- Provider selection records its reason; a run records the provider, session id
+  and usage it actually consumed.
+- Operator approval names a verified head SHA, and a head change after
+  verification invalidates readiness.
+
+#### Out of scope
+
+- Concurrency above one local execution slot, raised only after capacity
+  accounting, session persistence, CI reconciliation and restart recovery are
+  proven.
+- Automatic merge. The promotion boundary stays an explicit operator action.
+
+**Validation plan:** module smoke covers the pure decision tables — eligibility,
+ranking, capacity arithmetic, handoff construction — offline, in the shape
+`Resolve-LaneObservation` already uses; api-host smoke covers the routes; every
+new gate is proven red against a violating fixture before it is trusted.
+
+**Risks:** an adapter that quietly widens the packet's scope or permission
+envelope (the contract forbids it and a gate asserts it); equating provider
+token telemetry with remaining subscription allowance; reserves set so high that
+ordinary work starves.
+
+**Dependencies:** D-001 for the dependency clause of eligibility; D-003's
+`Checks: Read` grant for check-run-level CI evidence; Release 3.7's trial for
+the measured baseline this release changes.
+
+### Lanes 0.3, 0.4 and 0.6 — closed entirely
+
+All three shipped and closed 2026-08-09; detail moved to
+[the archive](docs/history/completed-releases.md#closed-2026-08-11-archived-from-roadmapmd)
+on 2026-08-11. Kept as named headings because surviving lanes and the
+completed-release history reference them by name: **0.3** layout follow-ups,
+**0.4** smoke coverage gaps (the extended deadline tier Release 3.2 inherits),
+**0.6** the silent workspace-path failure.
+
+### Lane 0.5 — Portal UX follow-ups (empty-state audit 2026-08-08)
+
+Three of four closed 2026-08-10 and are archived (error boundary, bulk-scope confirmation, tab inversion).
+
+- The progressive-disclosure question — **decided 2026-08-23, resolved 2026-08-27**: the ranked `Today` landing with one primary action per row is Release 3.6's first-interaction milestone, and it shipped — `Today` is now the default view, the six peers sit behind it, and every tab poses the question it answers. The three 2026-08-15 review inputs are [archived](docs/history/completed-releases.md#release-29--completed-items-archived-2026-08-23-from-roadmapmd). Nothing remains in this lane.
+
+### Lane 0.15 — The console contradicts itself (operator audit 2026-08-29)
+
+**2026-09-05 implementation:** trial-facing fixes are connected in the working
+branch. Validation and live deployment boundaries are recorded in
+`evidence/verified/trial-truth-readiness-2026-09-05.md`; open checkboxes remain
+until the required proof is complete. The paragraphs below retain the original
+audit observations; their old line numbers are historical pointers.
+
+The audit's headline, and the reason it outranks every visual finding: once an
+operator catches the console disagreeing with itself on a number, they stop
+trusting all of it. Each item below was **confirmed in code**, not inferred
+from the screenshot.
+
+- [ ] **Give the six `Blocked` counts six names.** `Blocked` reads **1, 17 and
+      58** on three surfaces simultaneously, and all three are correct — they
+      count different things: queue items in `blocked` execution state
+      ([`ExecutionQueuePanel.tsx:27`](frontend/components/ExecutionQueuePanel.tsx#L27)),
+      repos blocked from dispatch for missing docs or a roadmap parse error
+      ([`PortfolioMissionSection.tsx:36`](frontend/components/PortfolioMissionSection.tsx#L36)),
+      merge blockers on a single PR
+      ([`OperationsWorkspaceView.tsx:2179`](frontend/components/OperationsWorkspaceView.tsx#L2179)),
+      plus a per-repo badge and a filter value in `RepoGrid`. Reconciling the
+      numbers is the wrong fix — they are different quantities wearing one
+      word. Name each, and state the denominator on the surface that shows it.
+      _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: npx vitest run frontend`
+
+- [ ] **Stop the app switching data source without being asked.**
+      [`App.tsx:240`](frontend/App.tsx#L240) calls `setViewMode('github')` on a
+      successful GitHub fetch, and that fetch is reachable from inside the
+      Settings dialog via `onConnectGitHub` — so connecting a credential
+      silently changes which source the operator is _looking at_, and `Cancel`
+      cannot revert it because `viewMode` was never modal state. Connecting a
+      credential and choosing a view are different acts; the source toggle
+      already exists for the second. _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: npx vitest run frontend`
+
+- [ ] **Show the Today rank basis instead of hiding it in a tooltip.** The
+      audit read a value-49 repo above a value-80 one as a sort bug; it is not.
+      `todayRanking` ranks conclusion, then curation, then whether a row offers
+      an action, and only then value
+      ([`todayRanking.ts:120-145`](frontend/lib/todayRanking.ts#L120-L145)), so
+      that order is correct and deliberate. The defect is that the `rankBasis`
+      audit trail the module already builds for exactly this question renders
+      **only as a `title=` tooltip**
+      ([`TodayView.tsx:187`](frontend/components/TodayView.tsx#L187)) — invisible,
+      hover-only, unreachable by keyboard. Do not change the comparator.
+      _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: npx vitest run frontend`
+
+- [ ] **Fix the dead-end automation instruction.**
+      [`automationStatus.ts:100`](frontend/lib/automationStatus.ts#L100) tells
+      the operator _"Enable it in Settings to keep favorites assessed
+      automatically."_ The Settings dialog holds seven fields and none of them
+      is that toggle — nor packaging, auto-scan, lane concurrency, or the
+      scoring thresholds that drive every number in the product. Either build
+      the control or stop naming it. _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: npx vitest run frontend`
+
+**Already fixed (2026-08-29) — the snapshot route answered 500 on every
+operator machine.** `Get-StatusFromCache` returns
+`{ hit, source, ageSeconds, cachedAt, response }` on every path: the payload is
+an API envelope under `response`, and the four other callers unwrap it that
+way. The snapshot route instead read `.entries` and `.scannedAt`, which is
+**`Get-RoadmapFromCache`'s** shape, so StrictMode threw the moment a status
+cache existed. All seven `/api/portfolio/snapshot` contract tests failed at
+their FIRST assertion (`StatusCode | Should -Be 200`), so every rule after it —
+including the timezone-basis and denominator invariants — never executed at
+all. CI passed because a fresh clone has no cache, `hit` is false, and the
+branch never ran: the gate was real but had **never once evaluated this path**.
+Fixed by unwrapping `response.data.repos` and taking the UTC `cachedAt` as the
+status basis. A regression test now writes a cache fixture so the branch runs
+on a fresh clone too, and asserts the fixture's own repo count so a key
+mismatch fails loudly instead of silently skipping — verified by re-injecting
+the bug and watching the guard alone go red.
+
+**Re-audit against a working snapshot (2026-08-29).** Run once the unifier
+actually returned 200, to test the prediction that these contradictions were
+consumers stamping their own values because `Build-PortfolioSnapshot` 500'd.
+The prediction was half right, and the half that was wrong matters more.
+
+**Collapsed, as predicted — the denominators.** They now form one stated chain
+rather than six free-floating numbers: `repoCount` **72** (`status-scan`),
+`inScopeRepoCount` **58** with `denominator: 72` declared on the metric,
+`staleRepoCount` and `dirtyRepoCount` both carrying `denominator: 58`. The 57
+is `blockedCount` — 57 of the 58 in-scope. So 72 → 58 → 57 is coherent and
+self-describing.
+
+**Did NOT collapse — Blocked.** Two live surfaces still report different
+numbers, and both are right: `/api/execution/metrics` says `blocked=17`
+(ledger **execution state**, alongside `idle=30 ready=20 complete=4`), while
+`/api/portfolio/assessment` says `blockedCount=57` (repos **blocked from
+dispatch**). The fallback theory is therefore dead for this one: these are two
+definitions sharing one word, and reconciling them is hand work, not a
+consequence of the fix.
+
+**Did NOT collapse — the clock bases.** Three remain, and the fix did not
+touch two of them: the snapshot emits UTC `Z`, `/api/execution/metrics` emits
+a local offset `-04:00`, and **`/api/portfolio/assessment` and
+`/api/operations/repos` emit `createdAt` as locale text with no basis at all**
+(`01/12/2026 05:25:34`, on the wire, unparsed). The "four hours fast" reading
+is explained by the first two: `...T08:56:29Z` and `...T04:56:29-04:00` are
+the SAME instant, so any surface rendering the UTC one as if it were local
+runs exactly four hours ahead.
+
+**A new discrepancy the guard surfaced — resolved 2026-09-04.** An independent
+filesystem walk found **70** working trees under the configured root at depth
+3 while the status cache reported **72**. The scan was right and the walk was
+wrong; both reasons are recorded on the closed item below.
+
+The re-audit's two live `Blocked` definitions are covered by the first naming
+item above; they are not a second implementation task.
+
+- [ ] **Give `/api/portfolio/assessment` and `/api/operations/repos` a
+      timezone basis.** Both serialize `createdAt` as locale text
+      (`01/12/2026 05:25:34`) with no `Z` and no offset — the only two
+      surfaces with no basis at all. This is what the existing contract
+      assertion was written to catch and cannot, because it skips any value
+      `ConvertFrom-Json` has already promoted to `[datetime]`. Fix the
+      serializer and the assertion together. _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: pwsh ./scripts/Invoke-ApiContractTest.ps1`
+
+- [ ] **Close the timestamp-basis test's own blind spot.** The contract test
+      _"every timestamp field in key payloads carries an explicit timezone
+      basis"_ guards its check with `-and $value -is [string]`, and
+      PowerShell's `ConvertFrom-Json` silently promotes an ISO-8601 string to
+      `[datetime]`. Every timestamp that parses as a date is therefore skipped
+      by the very test that exists to check timestamps. Assert against the raw
+      response body instead, as the new cache-fixture test does.
+      _(state: built — `evidence/verified/trial-truth-readiness-2026-09-05.md`)_
+      `check: pwsh ./scripts/Invoke-ApiContractTest.ps1`
+
+### Lane 0.17 — The dispatch console could not dispatch (operator evaluation 2026-08-30)
+
+An operator evaluation of the Copilot Execution Lanes tab found the page's
+one verb broken end to end: **Dispatch** opened a preview modal instead of
+assigning a lane, the modal had no dispatch action of its own, the packet
+build failed for a repo the queue itself called Ready, and the failure
+surfaced as the browser's bare _"Failed to fetch"_ because the host wrote
+the 500 to the wrong stream under TLS. Around the broken verb, the surface
+over-promised: five state tiles that count but cannot filter, a three-tab
+layout where "Top Candidates" duplicates rows 1–3 of "Ready Queue", and a
+tab name ("Copilot Execution Lanes") that claims execution monitoring the
+ledger does not do — states are manual bookkeeping derived from audit data,
+not observed agent activity.
+
+The lane's one open item (the api-host smoke against a live runner) moved to
+`docs/governance/deferred-work.md` on 2026-10-16. The three items below were
+already recorded as closed or satisfied:
+
+- [ ] **[non-blocker]** The board reads observed state; nothing refreshes it on
+      a cadence. `Invoke-AgentRunAutoClose` advances open runs only when
+      someone loads Agent Runs, so a lane can sit on a `lastObservedAt` that is
+      hours old and be reported — correctly — as stuck for want of a poll
+      rather than want of progress. The verdict is honest either way (it says
+      when it last observed), but a board that refreshed its own runs would
+      distinguish "the agent stopped" from "nobody looked". Release 3.8's
+      fourth milestone owns the cadence — Repo Manager monitors CI without
+      holding an execution slot — so close this item there rather than building
+      a second poller. _(state: built 2026-09-08 — closed by Release 3.8
+      H38-22: the runner's poll loop calls POST /api/delivery/reconcile every
+      fourth poll, which runs Invoke-AgentRunAutoClose)_
+- [ ] **Restrict dispatch authority to the Dispatch Board.** _(state: built 2026-09-09 — H-07: the dispatch callback is passed only when the preview was opened from the `execution-queue` view; Work Queue and Operations previews offer `Open on Dispatch Board` in the same slot and keep the full preview unchanged; the origin is snapshotted at open time rather than read live, so a tab switch cannot change the operator's available actions mid-preview, and a surface added later inherits no dispatch authority by default; gated by four component tests, the decisive one proven red against the unchanged component; the board has no row-focus prop today so switching the view is the whole of the navigation)_
+      Decided 2026-09-06 (D-008), and it **reverses the default shipped the
+      same day** under D-010. `CopilotTaskPreviewModal` opens from the Dispatch
+      Board, the Work Queue and Operations, and
+      [`Dashboard.tsx`](frontend/components/Dashboard.tsx) passes its dispatch
+      callback unconditionally — so all three now queue real agent work and
+      spend quota, where before they only wrote a ledger row. Previewing a task
+      must not implicitly grant authority to consume agent budget. Work Queue
+      and Operations keep the full preview — readiness, estimated resource
+      requirement, intended provider — and navigate the operator to that task
+      on the board instead of invoking the dispatch endpoint themselves. This
+      also gives Release 3.8's capacity governor, provider selection and budget
+      impact one consistent surface to appear on before work begins. Gate:
+      component tests prove the dispatch action is present from the board and
+      absent from the two preview-only surfaces.
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **[non-blocker]** Archive this lane's eight closed items to
+      [`docs/history/completed-releases.md`](docs/history/completed-releases.md).
+      The roadmap's own rule is that this file carries open work only and an
+      `[x]` here is a mistake rather than a record; the lane has held eight
+      since 2026-08-30. Left in place deliberately on 2026-09-06 so the
+      execution-model pass stayed reviewable — a verbatim move of ~110 lines
+      does not belong in the same diff as a new release contract. It is the
+      larger half of `R010-FILE-LENGTH`, which has warned since the file passed
+      2,000 lines. _(state: planned)_
+
+### Lane 0.18 — Execution depth: four mechanisms RoadmapOrchestrator already solved (evaluated 2026-09-04)
+
+**Trial boundary (approved 2026-09-05):** independently verify acceptance
+criteria for each Release 3.7 improvement. The operator may perform and record
+that check through the existing workflow; this lane's new automated gate,
+carryover, cumulative sequence cap and dependency selector are not blanket
+prerequisites for the trial. Preserve existing merge gates.
+
+`RoadmapOrchestrator` (`xfaith4/RoadmapOrchestrator`, local at
+`F:\Development\20_Staging\AI Projects\RoadmapOrchestrator`) reaches the same
+end as this console from the opposite side. This product decides **what**
+deserves an agent across a portfolio and dispatches one item; that one takes a
+single target and drives a dependency-ordered roadmap to completion in a closed
+loop, gating every phase against the real repository. Its `README.md` states
+the split worth borrowing: phase selection is deterministic and lives in
+PowerShell, while execution and self-assessment are delegated to the model.
+Both products already refuse an agent's self-report —
+[`Roadmap.WriteBack.ps1`](backend/modules/roadmap/Roadmap.WriteBack.ps1)
+demands merge evidence, the orchestrator demands an independent gate — so these
+items extend a conviction this repo already holds rather than importing a
+foreign one.
+
+**Each item adds a step that does not exist today; none changes what a current
+surface already does.** Every acceptance line below names the unchanged
+behaviour explicitly, because that is the cheap half to get wrong.
+
+**Do not build on its `maintain_existing_app` pipeline.** `Get-Pipeline`
+(`orchestrator\Invoke-RoadmapOrchestrator.ps1`) names eleven agents,
+`agents\agent-library.json` defines eight, and `RepoContextBuilder`,
+`ReviewGate` and `PRPublisher` exist only as prose in `agents\agents-full.md`.
+`Invoke-Agent` returns failure for an unknown agent, so that pipeline halts on
+its first step. None of the items below depend on it.
+
+**The third-dispatch-target option is withdrawn — D-004, decided 2026-09-06.**
+GitHub Repo Manager is the orchestration authority, and a second closed-loop
+orchestrator beneath it would duplicate ownership of task selection, execution
+state, budgeting, remediation and completion. Mechanisms still come across —
+that is exactly what the items below are. If the tool is integrated later it
+participates through Release 3.8's provider-adapter contract, which is bounded
+by construction: an adapter translates packets and events, and makes no
+roadmap, merge or portfolio-priority decisions. **Three of the four items below
+are re-scoped into Release 3.8** rather than built standalone; each says how.
+
+- [ ] **Carry an amendment forward between dispatches.** Every dispatch starts
+      cold: what the last agent learned, or deliberately left undone, dies
+      unless it reaches the pull-request body, so the next prompt for the same
+      repository re-asks settled questions. Port the carryover channel from
+      `.orchestration\STATE_SCHEMA.md` — a `carryover[]` replaced wholesale
+      each run and injected into the next run's context by
+      `Invoke-PhasePipeline`. **Translate, do not copy:** there it lives in a
+      state file written by the very agent being judged, a weaker trust model
+      than this repo's append-only ledgers, so carryover belongs beside the run
+      that produced it in the agent-run ledger and is read by the dispatch
+      prompt builder. Acceptance: a second dispatch to the same repository
+      carries the prior run's unresolved note into its prompt; a repository
+      with no prior run produces exactly the prompt it produces today.
+      **Re-scoped 2026-09-06:** this is the `HandoffPacket`'s `priorResult` and
+      `remainingScope` in Release 3.8 — build it there, once, rather than as a
+      separate carryover channel that a cross-provider handoff would then have
+      to duplicate. _(state: built 2026-09-09 — delivered as Release 3.8 H38-30: `HandoffPacket.priorResult` and `remainingScope` carry the prior run's evidence into the next prompt, and a repository with no prior run renders the H38-05 prompt unchanged)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Check the acceptance criteria before a pull request is called ready.**
+      Dispatch prompts already carry acceptance criteria and nothing verifies
+      them; merge evidence answers "did this land", not "did it do what the
+      item asked". Port `Test-PhaseGate`
+      (`orchestrator\Invoke-RoadmapOrchestrator.ps1`): a separate read-only
+      pass that re-checks the named deliverables against the repository, with
+      an unparseable verdict treated as rejection rather than a pass. Its
+      refusal shape and read-only tool set transfer directly; its inputs do
+      not, so run it against the agent's branch and record the verdict in the
+      agent-run ledger. Acceptance: an item whose criteria are unmet reports
+      the failing criterion by name, and every existing merge gate keeps its
+      current strictness. **Re-scoped 2026-09-06:** this check is what gives
+      Release 3.8's `LOCAL_VERIFYING` state its meaning — without it
+      `IMPLEMENTATION_COMPLETE` asserts only that an agent stopped. Build it as
+      that gate. _(state: built 2026-09-11 — H38-36
+      `Execution.AcceptanceVerification.ps1` implements the LOCAL_VERIFYING
+      read-only pass: `Invoke-LocalAcceptanceVerification` checks each
+      acceptance criterion against its verification command via an injected
+      `CommandRunner` scriptblock (pure, offline-testable); a passing command
+      yields `passed`, a non-zero exit yields `failed`, a missing command yields
+      `skipped` (not `failed` — an environment lacking a tool must not block
+      valid work), and a `CommandRunner` exception is `skipped` not `failed`.
+      `Resolve-LocalVerifyingTransition` is the decision table: `failed` →
+      `remediation` (no push), `passed`/`skipped` → `implementation_complete`.
+      The gate exercises all six cases including mixed pass+fail (overall
+      `failed`) and the empty-criteria list (proceeds without error).)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Cap cumulative spend across a dispatch sequence.**
+      [`BudgetLedger.ps1`](backend/modules/agent-runs/BudgetLedger.ps1)
+      evaluates one dispatch against a work-unit quota. The orchestrator's run
+      loop caps per agent, per gate and per roadmap, halts on the cap, and
+      persists banked cost **before** halting so the figure is never lost.
+      Port the cumulative cap and the persist-before-halt ordering; translate
+      the unit, since this product counts work units and captured token cost
+      rather than one headless price. Acceptance: a sequence that reaches the
+      cap stops with its spend recorded, and a single dispatch inside quota
+      behaves as it does today. **Re-scoped 2026-09-06:** the cumulative cap
+      becomes Release 3.8's per-provider reserve, which is the same
+      persist-before-halt ordering applied to the unit each provider actually
+      exposes; the work-unit quota stays the portfolio budget beside it. The
+      two measure different things and neither replaces the other.
+      _(state: built 2026-09-09 — delivered as Release 3.8 H38-09/H38-27: per-provider reserves in `agent-providers.json` and a remediation cap persisted before the halt; the work-unit quota in `BudgetLedger.ps1` is unchanged)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+- [ ] **Order work inside one repository's roadmap, and detect dead ends.**
+      [`Roadmap.DependencyTracker.ps1`](backend/modules/roadmap/Roadmap.DependencyTracker.ps1)
+      finds references _between_ repositories; nothing orders items _within_ a
+      roadmap, so an operator re-picks after every merge. Port `Get-NextPhase`
+      (`orchestrator\Invoke-RoadmapOrchestrator.ps1`): the first item whose
+      `depends_on` are all complete, plus its Phase 3 dead-end rule, where
+      incomplete-but-ineligible halts as blocked instead of reporting the
+      roadmap complete. **This is the one piece that transfers as code** — a
+      pure function over item ids and a completed set, liftable almost
+      verbatim into a module and covered by module smoke. It needs a
+      `depends_on` notion in this product's roadmap contract first, which is a
+      spec decision in `standards/roadmap` and `spec/roadmap-contract`, not a
+      code change. Acceptance: selection is deterministic for a given completed
+      set; a cycle or an unresolved id halts as blocked; a roadmap with no
+      dependency declarations ranks exactly as it does today.
+      **Unblocked 2026-09-06 (D-001):** dependencies are permitted, optional,
+      within one repository, acyclic, keyed on stable item ids, and they gate
+      dispatch eligibility. Less new notation than it looks —
+      [`ROADMAP_TEMPLATE.md`](standards/roadmap/ROADMAP_TEMPLATE.md) already
+      recommends `[[M3]]` ids and an inline `(depends: M3)` tag that nothing
+      reads; the schema and parser have to catch up with the authoring
+      convention. _(state: built 2026-09-07 — H-13a notation
+      parsed into item id/dependsOn and published on the parse result as an
+      additive `items` array, so the fifteen consumers of the existing
+      string lists are untouched; unknown-id and cycle findings are
+      FINDINGS (ROADMAP-013/014), never parse errors, so a roadmap carrying
+      either still reads normally everywhere else. The notation was not
+      merely unread: `[[M4]]` contains `[M4]`, so the tag extractor claimed
+      the inner pair, lowercased the id into allTags and left a stray `[]`
+      on the item text that reached the console, the queue and the dispatch
+      prompt. Both rules declare an applicabilityCondition and leave the
+      DENOMINATOR when a roadmap declares no dependencies — without that,
+      adding them moved an unrelated fixture from 64 to 67 and across the
+      L2/L3 boundary without a character of it changing. H-13b
+      Get-NextEligibleRoadmapItem then gates SELECTION on it: the next item
+      is the first ELIGIBLE one in document order, and complete and blocked
+      stay distinct verdicts because collapsing them into a null next item
+      makes a dead end look like a finished roadmap. A graph with an
+      unresolved id or a cycle refuses BY NAME rather than answering from an
+      input it cannot trust, and that refusal surfaces through the execution
+      contract checks where every other dispatch refusal already does. A
+      roadmap with no notation selects exactly what first-pending selected
+      before, asserted against this file.)_
+      `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
+
+### Lane 0.20 — The console tells the operator to open a terminal (operator evaluation 2026-09-13)
+
+Found while the operator verified the Release 3.1 empty-room gate. The gate
+works: previewing a dispatch with no runner alive refuses, says why, and names
+the remedy. The remedy is the problem — it is a command to paste into a shell:
+
+> Runner stalled: nothing would pick this up. Start the operator runner first —
+> `pwsh -File "F:\Development\GitHubRepoManagement\scripts\Invoke-RoadmapTaskRunner.ps1"`.
+
+A console that hands its operator a terminal command has made them the
+mechanism. Operator intent, 2026-09-13: **the app should start the runner
+itself when one is not running**, not ask.
+
+**The constraint that makes this non-trivial, stated once so it is not
+rediscovered.** The runner must execute as the OPERATOR, because it launches
+their authenticated Claude Code. The portal is a LocalSystem service. A runner
+spawned by the service would come up as SYSTEM with no Claude credentials,
+claim packets and fail them — strictly worse than refusing, and the same
+boundary that made this product enqueue rather than dispatch at all. So "start
+it from the service" is not a missing button; it is a cross-identity problem.
+
+**Auto-start is not auto-approve.** The runner only claims what approval has
+already queued, so starting it unattended does not let unsanctioned work begin.
+That separation must survive this lane.
+
+**Two thirds of this lane was closed the day it was written; recorded here as
+prose because a `[x]` in this file is a mistake, not a record.**
+
+The logon-triggered task **already existed** and this lane was wrong to propose
+building it: [`Install-RoadmapTaskRunner.ps1`](scripts/service/Install-RoadmapTaskRunner.ps1)
+registers `RepoMgmtRoadmapTaskRunner` as `xfaith` / `LogonType=Interactive` /
+`RunLevel=Limited`, unelevated, and it was present and enabled on THESHIRE with
+a clean exit from 2026-09-11. The logon start was never the gap.
+
+The gap was recovery, and it is now shipped. The operator stopped the runner at
+17:59 UTC to verify the empty-room gate; two hours later nothing had restarted
+it, because a logon trigger cannot fire again until they log out. So the queue
+had nobody to work it and the console's only advice was a command to paste.
+`-RepeatMinutes` (default 5) now sets `$trigger.Repetition` on that logon
+trigger. It is safe **only** because `-MultipleInstances IgnoreNew` makes a
+repeat a no-op while a runner is alive, and the module smoke fails if either
+half is removed — a repetition without that policy would start a second runner
+against the same queue. Proved live 2026-09-13: runner up at PID 28224,
+`GET /api/roadmap/runner` reporting `state: present` with a 3.4s heartbeat.
+
+That the repeating trigger brings a stopped runner straight back is the INTENDED
+behaviour, not a problem to solve. Keeping it running is the service's job. This
+also retires the cross-identity question entirely: a LocalSystem caller never
+reaches into a user session at all.
+
+**The remaining three shipped 2026-09-13; recorded as prose, because a `[x]` in
+this file is a mistake, not a record.**
+
+*The action, not the command.* `POST /api/roadmap/runner/start` and
+`POST /api/roadmap/runner/stop`
+([`Automation.RunnerControl.ps1`](backend/modules/automation/Automation.RunnerControl.ps1))
+replace the pasted remedy everywhere it was offered: the header popover, the
+Insights pane, and the empty-room refusal text. The gate itself is untouched —
+it was operator-verified and refusing to queue into an empty room is still
+right; only the remedy it names changed. The command survives in exactly one
+place, beside the error, when the console tried to start a runner and could not.
+Three frontend assertions were INVERTED to hold that line: they used to require
+the command in the detail and the precondition, and now forbid it.
+
+The host never spawns a runner. It is LocalSystem, and a runner it spawned would
+hold no Claude credential and fail everything it claimed. It triggers the
+operator-owned scheduled task and lets Task Scheduler make the cross-identity
+hop. A start therefore reports REQUESTED, never STARTED: an Interactive task
+cannot run while the operator is logged out, so only the heartbeat may say a
+runner exists, and the console watches for it and says plainly when it never
+arrives.
+
+*The kill switch.* `roadmap-task-runner.hold.json` is the durable half the stop
+marker could never be — the marker is consumed by the runner honoring it, so on
+its own "stop" would have lasted one repeat interval. The runner reads the hold
+before anything else and leaves, making each five-minute repeat a two-second
+no-op instead of a revival. It fails CLOSED, the only reader here that does: an
+unreadable record still holds, because a corrupt byte must not resume work the
+operator deliberately halted. Resuming is releasing it, as designed above — one
+start path, not two.
+
+Both control files sit under `REPO_MGMT_RUNNER_CONTROL_ROOT`, the fifth
+resolver of its kind. The api-host smoke starts its host with the operator's
+REAL workspace root, so without it a gate exercising the stop route would have
+stopped their live runner and — a hold being durable by design — kept it
+stopped. Same shape as the gate that twice emptied the portfolio index, with a
+worse recovery, and asserted rather than assumed: the gate fails if a hold ever
+appears in the operator's own output directory.
+
+*One pane.* [`RunnerControlPanel.tsx`](frontend/components/RunnerControlPanel.tsx)
+leads the Insights tab with runner state, queued total, claimable now, stranded
+count, oldest-queued age, the per-provider backlog and the live runner's
+identity — the two facts that arrive on one route and had never been rendered
+together. It carries the kill switch, because a control to halt work put
+anywhere but where the work is visible asks the operator to decide blind. The
+header pill and this pane share one hook, so they cannot disagree.
+
+Proved 2026-09-13 against a real host on 127.0.0.1:7099 with the control root
+isolated: stop answered 202 and wrote both files, `GET /api/roadmap/runner`
+then reported `stoppedByOperator=true`, start answered 202 with
+`holdReleased=true` and `taskTriggered=true`, and the operator's live runner
+(pid 28224) kept beating throughout. The module smoke proves the behavioural
+half against a real detached runner: a held runner exits 0 without claiming, and
+does NOT consume the hold.
+
+**The limit to state plainly rather than design around.** "If the service is
+running, start the runner" cannot be wholly true. The service is LocalSystem and
+outlives any session; the runner needs the operator's session for their
+authenticated Claude Code. So the runner is up whenever they are **logged in**,
+not whenever the service is up. When they are logged out the queue accumulates
+and nothing works it — which is correct behaviour, and the console must say so
+rather than let a growing queue read as progress.
+
+**Not doing, decided 2026-09-13.** Creating a scenario where the runner is down,
+purely to watch how the app reacts to a job that is the app's own
+responsibility, spends time to learn nothing. If a real case arrives where the
+runner is not running and the service fails to start it, the error that case
+produces is the thing to read — a rehearsed one would not have told us what the
+real one will.
