@@ -144,6 +144,9 @@ $portfolioModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\portfolio'
 # Release 3.5 milestone 1 -- the reconciliation layer every view reads.
 . (Join-Path $portfolioModuleRoot 'Portfolio.Scope.ps1')
 . (Join-Path $portfolioModuleRoot 'Portfolio.Snapshot.ps1')
+# Proof of value (2026-10-16) -- decisions, PR outcomes and operator time.
+# After Portfolio.Snapshot: its summary is built from New-PortfolioMetric.
+. (Join-Path $WorkspaceRoot 'backend\modules\delivery\Delivery.Ledger.ps1')
 $aiModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\ai'
 . (Join-Path $aiModuleRoot 'AiDocImprovement.ps1')
 $automationModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\automation'
@@ -4182,6 +4185,57 @@ function Get-RoadmapRepairHistory {
     return @($items)
 }
 
+function Resolve-RepairRepoLocation {
+    <#
+    .SYNOPSIS
+        Where a repository's checkout and roadmap live, for the repair routes.
+    .DESCRIPTION
+        Proof of value, 2026-10-16. The repair preview and submit-PR routes
+        found a repository only through the roadmap scan cache, and only while
+        that cache was younger than its TTL. Past it, a repository with a
+        ROADMAP.md on disk previewed as "No roadmap file found. Create a
+        ROADMAP.md first", and submit-PR refused with "No local repo path is
+        known" - a wrong instruction, not a missing file.
+
+        A PATH does not go stale in minutes, and both routes read the file
+        fresh, so the TTL is the wrong gate here. The cache is read at any age
+        and the portfolio index is the fallback. Returns $null when neither
+        knows the repository.
+    #>
+    param([Parameter(Mandatory = $true)][string]$RepoName)
+
+    $cache = Get-RoadmapFromCache -TtlSeconds ([int]::MaxValue)
+    if ($cache.hit -and $cache.entries) {
+        $hit = @($cache.entries) | Where-Object { [string]$_.repoName -eq $RepoName } | Select-Object -First 1
+        if ($null -ne $hit) {
+            $hitRepoPath = if ($hit -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $hit['repoPath'] '') } else { [string](Get-ValueOrDefault $hit.repoPath '') }
+            $hitRoadmap = if ($hit -is [System.Collections.IDictionary]) { [string](Get-ValueOrDefault $hit['roadmapPath'] '') } else { [string](Get-ValueOrDefault $hit.roadmapPath '') }
+            if (-not [string]::IsNullOrWhiteSpace($hitRepoPath) -or -not [string]::IsNullOrWhiteSpace($hitRoadmap)) {
+                return [pscustomobject]@{ repoName = $RepoName; repoPath = $hitRepoPath; roadmapPath = $hitRoadmap; source = 'roadmap-cache' }
+            }
+        }
+    }
+
+    try {
+        $indexPath = Get-PortfolioIndexPath -WorkspaceRoot $WorkspaceRoot
+        if (Test-Path -LiteralPath $indexPath) {
+            $index = Get-Content -LiteralPath $indexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $row = @($index.repos) | Where-Object { [string]$_.repoName -eq $RepoName } | Select-Object -First 1
+            if ($null -ne $row) {
+                $rowRepoPath = [string](Get-ObjectPropertyValue -InputObject $row -PropertyName 'localPath' -Default '')
+                $rowRoadmap = [string](Get-ObjectPropertyValue -InputObject $row -PropertyName 'roadmapPath' -Default '')
+                if (-not [string]::IsNullOrWhiteSpace($rowRepoPath)) {
+                    return [pscustomobject]@{ repoName = $RepoName; repoPath = $rowRepoPath; roadmapPath = $rowRoadmap; source = 'portfolio-index' }
+                }
+            }
+        }
+    }
+    catch {
+        Write-HostLog ("[WARN] repair location: portfolio index unreadable for {0}: {1}" -f $RepoName, $_.Exception.Message)
+    }
+    return $null
+}
+
 function Build-RoadmapRepairPreview {
     <#
     .SYNOPSIS
@@ -4199,14 +4253,8 @@ function Build-RoadmapRepairPreview {
         [string]$VerificationCommand = ''
     )
 
-    # Resolve roadmap path
-    $settings  = Get-HostSettings
-    $roadmapTtl = Get-RoadmapCacheTtlSeconds -Settings $settings
-    $roadmapCacheResult = Get-RoadmapFromCache -TtlSeconds $roadmapTtl
-    $roadmapEntry = $null
-    if ($roadmapCacheResult.hit -and $roadmapCacheResult.entries) {
-        $roadmapEntry = @($roadmapCacheResult.entries) | Where-Object { [string]$_.repoName -eq $RepoName } | Select-Object -First 1
-    }
+    # Resolve roadmap path (any cache age, then the portfolio index).
+    $roadmapEntry = Resolve-RepairRepoLocation -RepoName $RepoName
 
     $effectiveRoadmapPath = $RoadmapPath
     if ([string]::IsNullOrWhiteSpace($effectiveRoadmapPath) -and $null -ne $roadmapEntry) {
@@ -13542,17 +13590,8 @@ try {
                             # appear in the normal flow is not a warning.
                             $dryRunRepoPath = $submitRepoPathOverride
                             if ([string]::IsNullOrWhiteSpace($dryRunRepoPath)) {
-                                $dryRunCache = Get-RoadmapFromCache -TtlSeconds (Get-RoadmapCacheTtlSeconds -Settings (Get-HostSettings))
-                                if ($dryRunCache.hit -and $dryRunCache.entries) {
-                                    $dryRunEntry = @($dryRunCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
-                                    if ($null -ne $dryRunEntry) {
-                                        $dryRunRepoPath = if ($dryRunEntry -is [System.Collections.IDictionary]) {
-                                            [string](Get-ValueOrDefault $dryRunEntry['repoPath'] '')
-                                        } else {
-                                            [string](Get-ValueOrDefault $dryRunEntry.repoPath '')
-                                        }
-                                    }
-                                }
+                                $dryRunEntry = Resolve-RepairRepoLocation -RepoName $repoName
+                                if ($null -ne $dryRunEntry) { $dryRunRepoPath = [string]$dryRunEntry.repoPath }
                             }
                             if (-not [string]::IsNullOrWhiteSpace($dryRunRepoPath)) {
                                 $dryRunFreshness = Get-RepoBaseFreshness -RepoPath $dryRunRepoPath -BaseBranch ([string]$plan.baseBranch)
@@ -13577,30 +13616,13 @@ try {
                             $submitSettings = Get-HostSettings
                             $submitToken = Get-ConfiguredGitHubToken -Settings $submitSettings
                             $submitRepoPath = $submitRepoPathOverride
-                            $submitRoadmapTtl = Get-RoadmapCacheTtlSeconds -Settings $submitSettings
-                            $submitCache = Get-RoadmapFromCache -TtlSeconds $submitRoadmapTtl
-                            # An explicit repoPath wins; the cache is the fallback.
-                            if ([string]::IsNullOrWhiteSpace($submitRepoPath) -and $submitCache.hit -and $submitCache.entries) {
-                                $submitEntry = @($submitCache.entries) | Where-Object { [string]$_.repoName -eq $repoName } | Select-Object -First 1
+                            # An explicit repoPath wins; the roadmap cache (any
+                            # age) and then the portfolio index are the fallback.
+                            if ([string]::IsNullOrWhiteSpace($submitRepoPath) -or [string]::IsNullOrWhiteSpace($submitRoadmapPath)) {
+                                $submitEntry = Resolve-RepairRepoLocation -RepoName $repoName
                                 if ($null -ne $submitEntry) {
-                                    # Cache entries come back as hashtables when
-                                    # rehydrated from disk and as PSCustomObjects
-                                    # when freshly scanned. Build-RoadmapRepairPreview
-                                    # already guards both; reading only the object
-                                    # form silently yielded an empty repoPath and a
-                                    # "run a scan first" refusal on a warm cache.
-                                    $submitRepoPath = if ($submitEntry -is [System.Collections.IDictionary]) {
-                                        [string](Get-ValueOrDefault $submitEntry['repoPath'] '')
-                                    } else {
-                                        [string](Get-ValueOrDefault $submitEntry.repoPath '')
-                                    }
-                                    if ([string]::IsNullOrWhiteSpace($submitRoadmapPath)) {
-                                        $submitRoadmapPath = if ($submitEntry -is [System.Collections.IDictionary]) {
-                                            [string](Get-ValueOrDefault $submitEntry['roadmapPath'] '')
-                                        } else {
-                                            [string](Get-ValueOrDefault $submitEntry.roadmapPath '')
-                                        }
-                                    }
+                                    if ([string]::IsNullOrWhiteSpace($submitRepoPath)) { $submitRepoPath = [string]$submitEntry.repoPath }
+                                    if ([string]::IsNullOrWhiteSpace($submitRoadmapPath)) { $submitRoadmapPath = [string]$submitEntry.roadmapPath }
                                 }
                             }
 
@@ -13613,15 +13635,52 @@ try {
                             # other field in this route is read the same way.
                             $submitAckStale = ($body.ContainsKey('acknowledgeStaleBase') -and [bool]$body.acknowledgeStaleBase)
 
-                            $submitResult = Invoke-RoadmapRepairPrSubmission `
-                                -RepoName $repoName -RepoPath $submitRepoPath -RoadmapPath $submitRoadmapPath `
-                                -ProposedContent $submitProposed -PreviewId $previewId -Token $submitToken `
-                                -BaseBranch $submitBase -BranchName $branch `
-                                -ApiHeaders (Get-GitHubApiHeaders -Token $submitToken) `
-                                -AcknowledgeStaleBase:$submitAckStale
+                            # Proof of value (2026-10-16) - opening the PR IS the
+                            # operator's accept, so the decision is built (and
+                            # validated) before anything is written and recorded
+                            # in the same request as the PR it produced. A bad
+                            # operatorSeconds is a 400 here, never a PR with no
+                            # decision behind it.
+                            $submitDecision = $null
+                            $submitDecisionError = $null
+                            try {
+                                $submitEdited = ($body.ContainsKey('edited') -and [bool]$body.edited)
+                                $submitDecision = New-DeliveryDecisionRecord -RepoName $repoName `
+                                    -Decision $(if ($submitEdited) { 'edit' } else { 'accept' }) -PreviewId $previewId `
+                                    -OperatorSeconds $(if ($body.ContainsKey('operatorSeconds')) { $body.operatorSeconds } else { $null }) `
+                                    -OperatorSecondsBasis $(if ($body.ContainsKey('operatorSecondsBasis')) { [string]$body.operatorSecondsBasis } else { '' }) `
+                                    -Proposal $(if ($body.ContainsKey('proposal')) { $body.proposal } else { $null })
+                            }
+                            catch { $submitDecisionError = $_.Exception.Message }
+                            $submitResult = $null
+                            $submitFailure = $null
+                            if ($null -eq $submitDecisionError) {
+                                try {
+                                    $submitResult = Invoke-RoadmapRepairPrSubmission `
+                                        -RepoName $repoName -RepoPath $submitRepoPath -RoadmapPath $submitRoadmapPath `
+                                        -ProposedContent $submitProposed -PreviewId $previewId -Token $submitToken `
+                                        -BaseBranch $submitBase -BranchName $branch `
+                                        -ApiHeaders (Get-GitHubApiHeaders -Token $submitToken) `
+                                        -AcknowledgeStaleBase:$submitAckStale
+                                }
+                                catch { $submitFailure = $_.Exception.Message }
+                            }
 
                             Add-MetricCounter -Name 'api_requests_total'
-                            if ($submitResult.refused) {
+                            if ($null -ne $submitDecisionError) {
+                                Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = $submitDecisionError; category = 'validation' }
+                            }
+                            elseif ($null -ne $submitFailure) {
+                                # The commit step restores the clone on failure and a
+                                # push/PR failure names the committed branch, so the
+                                # message is the whole story; it never carries the token.
+                                Write-HostLog ("[TRACE] roadmap.repair.submit-pr correlationId={0} repoName={1} FAILED {2}" -f $correlationId, $repoName, $submitFailure)
+                                Send-HttpJson -Stream $req.Stream -StatusCode 502 -StatusText 'Bad Gateway' -CorrelationId $correlationId -Payload @{
+                                    success = $false; error = $submitFailure; category = 'submit-failed'
+                                    data = @{ dryRun = $false; created = $false; prUrl = $null; plan = $plan }
+                                }
+                            }
+                            elseif ($submitResult.refused) {
                                 # A refusal is a 409, never a 200-with-created=false:
                                 # the caller must not be able to read "no PR" as success.
                                 Write-HostLog ("[TRACE] roadmap.repair.submit-pr correlationId={0} repoName={1} REFUSED category={2}" -f $correlationId, $repoName, $submitResult.category)
@@ -13645,6 +13704,18 @@ try {
                                     -PrNumber ([string]$submitResult.prNumber) -Branch ([string]$submitResult.branch) `
                                     -RepoSlug ([string]$submitResult.slug)
                                 Write-HostLog ("[TRACE] roadmap.repair.submit-pr correlationId={0} repoName={1} created=true pr={2}" -f $correlationId, $repoName, $submitResult.prUrl)
+                                $decisionRecordError = $null
+                                try {
+                                    $submitDecision['prUrl'] = [string]$submitResult.prUrl
+                                    $submitDecision['prNumber'] = [int]$submitResult.prNumber
+                                    Add-DeliveryLedgerRecord -WorkspaceRoot $WorkspaceRoot -Record $submitDecision
+                                }
+                                catch {
+                                    # The PR exists either way; say the ledger missed
+                                    # it rather than hide it.
+                                    $decisionRecordError = $_.Exception.Message
+                                    Write-HostLog ("[WARN] delivery ledger write failed for {0}: {1}" -f $submitResult.prUrl, $decisionRecordError)
+                                }
                                 Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                                     success = $true
                                     data = @{
@@ -13655,10 +13726,78 @@ try {
                                         branch = [string]$submitResult.branch
                                         baseBranch = [string]$submitResult.baseBranch
                                         repoSlug = [string]$submitResult.slug
+                                        commitAuthor = [string](Get-ObjectPropertyValue -InputObject $submitResult -PropertyName 'commitAuthor' -Default '')
                                         plan = $plan
+                                        decisionId = $(if ($null -eq $decisionRecordError) { [string]$submitDecision['decisionId'] } else { $null })
+                                        decisionRecordError = $decisionRecordError
                                         note = 'live PR opened; nothing was merged'
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+                # -------------------------------------------------------
+                # Proof of value (2026-10-16) - the delivery ledger.
+                # -------------------------------------------------------
+                'POST /api/delivery/decision' {
+                    # A reject (or an accept recorded outside the PR route).
+                    # Accepts that open a PR are recorded by submit-pr itself.
+                    $body = Parse-JsonBody -Body $req.Body
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $decisionError = $null
+                    $decisionRecord = $null
+                    try {
+                        $decisionRecord = New-DeliveryDecisionRecord `
+                            -RepoName ([string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'repoName' -Default '')) `
+                            -Decision ([string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'decision' -Default '')) `
+                            -PreviewId ([string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'previewId' -Default '')) `
+                            -ActionKind ([string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'actionKind' -Default 'roadmap-repair')) `
+                            -Reason ([string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'reason' -Default '')) `
+                            -OperatorSeconds (Get-ObjectPropertyValue -InputObject $body -PropertyName 'operatorSeconds' -Default $null) `
+                            -OperatorSecondsBasis ([string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'operatorSecondsBasis' -Default '')) `
+                            -PrUrl ([string](Get-ObjectPropertyValue -InputObject $body -PropertyName 'prUrl' -Default '')) `
+                            -Proposal (Get-ObjectPropertyValue -InputObject $body -PropertyName 'proposal' -Default $null)
+                    }
+                    catch { $decisionError = $_.Exception.Message }
+                    if ($null -ne $decisionError) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{ success = $false; error = $decisionError; category = 'validation' }
+                    }
+                    else {
+                        Add-DeliveryLedgerRecord -WorkspaceRoot $WorkspaceRoot -Record $decisionRecord
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{ success = $true; data = $decisionRecord }
+                    }
+                }
+                'GET /api/delivery/summary' {
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $ledgerRead = Get-DeliveryLedgerRecord -WorkspaceRoot $WorkspaceRoot
+                    $deliverySummary = Get-DeliverySummary -Record @($ledgerRead.records) -AsOfUtc ([datetime]::UtcNow.ToString('o'))
+                    Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                        success = $true
+                        data    = @{
+                            summary        = $deliverySummary
+                            records        = @($ledgerRead.records | Select-Object -Last 200)
+                            recordCount    = @($ledgerRead.records).Count
+                            skippedLines   = $ledgerRead.skipped
+                        }
+                    }
+                }
+                'POST /api/delivery/outcomes/refresh' {
+                    # Ask GitHub what became of each opened PR (merged, closed,
+                    # CI) and record changes. Read-only against GitHub.
+                    Add-MetricCounter -Name 'api_requests_total'
+                    $refreshToken = Get-ConfiguredGitHubToken -Settings (Get-HostSettings)
+                    if ([string]::IsNullOrWhiteSpace($refreshToken)) {
+                        Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{ success = $false; category = 'auth'; error = 'No GitHub token is configured, so PR outcomes cannot be read.' }
+                    }
+                    else {
+                        $refresh = Update-DeliveryOutcome -WorkspaceRoot $WorkspaceRoot -Token $refreshToken
+                        $ledgerRead = Get-DeliveryLedgerRecord -WorkspaceRoot $WorkspaceRoot
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = @{
+                                refresh = $refresh
+                                summary = (Get-DeliverySummary -Record @($ledgerRead.records) -AsOfUtc ([datetime]::UtcNow.ToString('o')))
                             }
                         }
                     }

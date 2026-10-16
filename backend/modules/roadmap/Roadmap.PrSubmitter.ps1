@@ -365,6 +365,205 @@ function Get-GitTokenPushArgs {
     return @('-c', ("http.extraheader=AUTHORIZATION: basic {0}" -f $basic))
 }
 
+function Resolve-GitCommitIdentity {
+    <#
+        .SYNOPSIS
+            Decide who a product-made commit is authored as.
+        .DESCRIPTION
+            2026-10-16, proof of value. The portal runs as a Windows service
+            under LocalSystem, which has no git identity: no global gitconfig,
+            no system user.email. Every commit it attempted failed with
+            "Author identity unknown", so the console's live repair PR could
+            never have succeeded from the service. PR #96, the one live repair
+            PR on record, ran from an interactive host under Ben's account.
+
+            Order: the checkout's own effective user.email wins (an operator
+            who configured one meant it). Otherwise the token's owner is looked
+            up and the commit is authored as their GitHub noreply address, so
+            the commit belongs to the account whose token pushes it. Anything
+            else is 'unresolved' with a reason the caller surfaces. Never
+            invents an identity.
+        .PARAMETER GitHubUserLookup
+            Injectable for tests: receives the token, returns an object with
+            login, id and optionally name. Defaults to GET /user.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string]$RepoPath,
+        [Parameter()][AllowEmptyString()][string]$Token = '',
+        [Parameter()][AllowNull()][scriptblock]$GitHubUserLookup = $null
+    )
+
+    $configured = ((& git -C $RepoPath config --get user.email 2>&1) | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($configured)) {
+        return [pscustomobject]@{ source = 'git-config'; name = $null; email = $configured; reason = '' }
+    }
+    if ([string]::IsNullOrWhiteSpace($Token)) {
+        return [pscustomobject]@{ source = 'unresolved'; name = $null; email = $null
+            reason = 'git has no user.email for this checkout and no GitHub token is available to derive one.' }
+    }
+
+    $lookup = $GitHubUserLookup
+    if ($null -eq $lookup) {
+        $lookup = {
+            param([string]$LookupToken)
+            Invoke-RestMethod -Uri 'https://api.github.com/user' -Method Get -TimeoutSec 15 -Headers @{
+                Authorization = ('Bearer {0}' -f $LookupToken); 'User-Agent' = 'GitHubRepoManagement'; Accept = 'application/vnd.github+json'
+            }
+        }
+    }
+
+    $user = $null
+    try { $user = & $lookup $Token }
+    catch {
+        return [pscustomobject]@{ source = 'unresolved'; name = $null; email = $null
+            reason = ('git has no user.email and the GitHub /user lookup failed: {0}' -f $_.Exception.Message) }
+    }
+    $login = [string](_PrSubmitterField -Obj $user -Name 'login' -Default '')
+    $id = [string](_PrSubmitterField -Obj $user -Name 'id' -Default '')
+    if ([string]::IsNullOrWhiteSpace($login) -or [string]::IsNullOrWhiteSpace($id)) {
+        return [pscustomobject]@{ source = 'unresolved'; name = $null; email = $null
+            reason = 'git has no user.email and the GitHub /user response carried no login and id.' }
+    }
+    $displayName = [string](_PrSubmitterField -Obj $user -Name 'name' -Default '')
+    if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = $login }
+    return [pscustomobject]@{
+        source = 'github-noreply'
+        name   = $displayName
+        email  = ('{0}+{1}@users.noreply.github.com' -f $id, $login)
+        reason = ''
+    }
+}
+
+function New-RoadmapRepairCommit {
+    <#
+        .SYNOPSIS
+            Branch, write the approved roadmap, commit - and always return the
+            checkout to where it started.
+        .DESCRIPTION
+            Local only: nothing here talks to a remote. Split out of
+            Invoke-RoadmapRepairPrSubmission on 2026-10-16 because the old
+            inline version left the operator's clone damaged when the commit
+            failed: it checked out the start branch with the rewritten roadmap
+            still STAGED, so the next scan read the clone as dirty and every
+            later submit refused with 'conflict'.
+
+            The caller has already proved the tree clean (a precondition), so
+            on failure the only change to undo is this function's own write to
+            RoadmapPath. It is restored (or removed, if the file was new), the
+            start branch is checked out, and the empty work branch is deleted
+            with `branch -d`, which refuses to delete anything holding a
+            commit. Then it throws a named reason.
+
+            On success the work branch keeps exactly one commit and the
+            checkout is back on the start branch; pushing does not need the
+            branch checked out.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string]$RepoPath,
+        [Parameter(Mandatory)][string]$RoadmapPath,
+        [Parameter(Mandatory)][string]$ProposedContent,
+        [Parameter(Mandatory)][string]$BranchName,
+        [Parameter(Mandatory)][string]$Message,
+        [Parameter()][AllowNull()][object]$Identity = $null,
+        # A reading the caller already took (Invoke-RoadmapRepairPrSubmission
+        # does). Absent, this function takes its own: it branches from the
+        # working copy, so it must not trust a base nobody checked.
+        [Parameter()][AllowNull()][object]$BaseFreshness = $null,
+        [Parameter()][AllowEmptyString()][string]$BaseBranch = '',
+        [Parameter()][switch]$AcknowledgeStaleBase
+    )
+
+    if (-not $PSCmdlet.ShouldProcess($RepoPath, ("commit roadmap repair on new branch '{0}'" -f $BranchName))) {
+        return $null
+    }
+
+    $freshness = $BaseFreshness
+    if ($null -eq $freshness) {
+        $probeBase = if (-not [string]::IsNullOrWhiteSpace($BaseBranch)) { $BaseBranch } else { Get-GitCurrentBranch -RepoPath $RepoPath }
+        $freshness = Get-RepoBaseFreshness -RepoPath $RepoPath -BaseBranch $probeBase
+    }
+    if ([bool](_PrSubmitterField -Obj $freshness -Name 'isStale' -Default $false) -and -not $AcknowledgeStaleBase) {
+        throw ("Refusing to branch from a stale base in '{0}': {1}" -f $RepoPath, [string](_PrSubmitterField -Obj $freshness -Name 'summary' -Default 'the clone is behind its remote base.'))
+    }
+
+    $startBranch = Get-GitCurrentBranch -RepoPath $RepoPath
+    $startSha = ((& git -C $RepoPath rev-parse HEAD 2>&1) | Out-String).Trim()
+    $restoreTarget = if ([string]::IsNullOrWhiteSpace($startBranch) -or $startBranch -eq 'HEAD') { $startSha } else { $startBranch }
+    & git -C $RepoPath ls-files --error-unmatch -- $RoadmapPath 2>&1 | Out-Null
+    $wasTracked = ($LASTEXITCODE -eq 0)
+
+    $identityArgs = @()
+    $identitySource = 'git-config'
+    if ($null -ne $Identity) {
+        $identitySource = [string](_PrSubmitterField -Obj $Identity -Name 'source' -Default 'unresolved')
+        $identityEmail = [string](_PrSubmitterField -Obj $Identity -Name 'email' -Default '')
+        $identityName = [string](_PrSubmitterField -Obj $Identity -Name 'name' -Default '')
+        if ($identitySource -ne 'git-config' -and -not [string]::IsNullOrWhiteSpace($identityEmail)) {
+            $identityArgs = @('-c', ('user.name={0}' -f $identityName), '-c', ('user.email={0}' -f $identityEmail))
+        }
+    }
+
+    $branchCreated = $false
+    $committed = $false
+    try {
+        $co = (& git -C $RepoPath checkout -b $BranchName 2>&1) | Out-String
+        if ($LASTEXITCODE -ne 0) { throw ("git checkout -b '{0}' failed: {1}" -f $BranchName, $co.Trim()) }
+        $branchCreated = $true
+
+        # Preserve the file's trailing newline: only ADD one, never strip or double it.
+        $contentToWrite = if ($ProposedContent.EndsWith("`n")) { $ProposedContent } else { $ProposedContent + "`n" }
+        Set-Content -LiteralPath $RoadmapPath -Value $contentToWrite -Encoding UTF8 -NoNewline
+
+        $add = (& git -C $RepoPath add -- $RoadmapPath 2>&1) | Out-String
+        if ($LASTEXITCODE -ne 0) { throw ("git add failed: {0}" -f $add.Trim()) }
+
+        $commit = (& git -C $RepoPath @identityArgs commit -m $Message 2>&1) | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            $why = $commit.Trim()
+            if ($identitySource -eq 'unresolved' -and $null -ne $Identity) {
+                $why = ('{0} (identity: {1})' -f $why, [string](_PrSubmitterField -Obj $Identity -Name 'reason' -Default ''))
+            }
+            throw ("git commit failed: {0}" -f $why)
+        }
+        $committed = $true
+        $commitSha = ((& git -C $RepoPath rev-parse HEAD 2>&1) | Out-String).Trim()
+        $authorEmail = ((& git -C $RepoPath log -1 --format=%ae 2>&1) | Out-String).Trim()
+        return [pscustomobject]@{
+            branch         = $BranchName
+            startBranch    = $restoreTarget
+            commitSha      = $commitSha
+            authorEmail    = $authorEmail
+            identitySource = $identitySource
+        }
+    }
+    catch {
+        $failure = $_.Exception.Message
+        if ($branchCreated -and -not $committed) {
+            & git -C $RepoPath reset -q -- $RoadmapPath 2>&1 | Out-Null
+            if ($wasTracked) {
+                & git -C $RepoPath checkout -- $RoadmapPath 2>&1 | Out-Null
+            }
+            elseif (Test-Path -LiteralPath $RoadmapPath) {
+                Remove-Item -LiteralPath $RoadmapPath -Force
+            }
+        }
+        & git -C $RepoPath checkout $restoreTarget 2>&1 | Out-Null
+        if ($branchCreated -and -not $committed) {
+            & git -C $RepoPath branch -d $BranchName 2>&1 | Out-Null
+        }
+        throw ("Roadmap repair commit failed in '{0}': {1} The clone was returned to '{2}' with its roadmap unchanged." -f $RepoPath, $failure, $restoreTarget)
+    }
+    finally {
+        if ($committed) {
+            & git -C $RepoPath checkout $restoreTarget 2>&1 | Out-Null
+        }
+    }
+}
+
 function Invoke-RoadmapRepairPrSubmission {
     <#
         .SYNOPSIS
@@ -400,7 +599,11 @@ function Invoke-RoadmapRepairPrSubmission {
         # on the dispatch path. The capability is explained, not removed: an
         # operator who knows the base is stale and wants the PR anyway can say
         # so, and the acknowledgement is recorded on the result.
-        [Parameter()][switch]$AcknowledgeStaleBase
+        [Parameter()][switch]$AcknowledgeStaleBase,
+        # Who the commit is authored as. Resolved from the checkout's git config
+        # or the token owner when absent (Resolve-GitCommitIdentity).
+        [Parameter()][AllowNull()][object]$CommitIdentity = $null,
+        [Parameter()][AllowNull()][scriptblock]$GitHubUserLookup = $null
     )
 
     $isGitRepo = $false
@@ -451,60 +654,53 @@ function Invoke-RoadmapRepairPrSubmission {
         }
     }
 
-    $restoreBranch = $startBranch
+    $message = if ([string]::IsNullOrWhiteSpace($PreviewId)) {
+        ("docs(roadmap): automated roadmap repair for {0}" -f $RepoName)
+    } else {
+        ("docs(roadmap): automated roadmap repair for {0} (preview {1})" -f $RepoName, $PreviewId)
+    }
+
+    $identity = $CommitIdentity
+    if ($null -eq $identity) {
+        $identity = Resolve-GitCommitIdentity -RepoPath $RepoPath -Token $Token -GitHubUserLookup $GitHubUserLookup
+    }
+
+    # Branch, write and commit. Returns with the checkout back on its start
+    # branch whether it succeeds or throws, and with nothing staged on failure.
+    $commitResult = New-RoadmapRepairCommit -RepoPath $RepoPath -RoadmapPath $RoadmapPath `
+        -ProposedContent $ProposedContent -BranchName $branch -Message $message -Identity $identity `
+        -BaseFreshness $freshness -BaseBranch $effectiveBase -AcknowledgeStaleBase:$AcknowledgeStaleBase
+
+    # Release 3.4 milestone 3 — the push and PR-open go through the shared
+    # branch-PR path, so this caller and the agent-run approval cannot drift
+    # apart. A failure from here on leaves the committed branch in place (it
+    # holds the reviewed change) and names it, so a retry needs no re-review.
+    $prBody = ("Roadmap repair for **{0}**, proposed by GitHubRepoManagement and approved by the operator in the console before this PR was opened.{1}`n`nNothing has been merged into {2}. Review the diff before merging." -f `
+            $RepoName, $(if ($PreviewId) { " Repair preview ``$PreviewId``." } else { '' }), $effectiveBase)
     try {
-        $co = (& git -C $RepoPath checkout -b $branch 2>&1) | Out-String
-        if ($LASTEXITCODE -ne 0) { throw ("git checkout -b '{0}' failed: {1}" -f $branch, $co.Trim()) }
-
-        # Preserve the file's trailing newline. Writing the caller's content
-        # verbatim let a proposal that happened to end at the last character
-        # strip it, which git reports as "\ No newline at end of file" and
-        # markdownlint fails as MD047 — a repair tool quietly damaging the file
-        # it was asked to improve. Only ADD one; never strip or double it.
-        $contentToWrite = if ($ProposedContent.EndsWith("`n")) { $ProposedContent } else { $ProposedContent + "`n" }
-        Set-Content -LiteralPath $RoadmapPath -Value $contentToWrite -Encoding UTF8 -NoNewline
-
-        $add = (& git -C $RepoPath add -- $RoadmapPath 2>&1) | Out-String
-        if ($LASTEXITCODE -ne 0) { throw ("git add failed: {0}" -f $add.Trim()) }
-
-        $message = if ([string]::IsNullOrWhiteSpace($PreviewId)) {
-            ("docs(roadmap): automated roadmap repair for {0}" -f $RepoName)
-        } else {
-            ("docs(roadmap): automated roadmap repair for {0} (preview {1})" -f $RepoName, $PreviewId)
-        }
-        $commit = (& git -C $RepoPath commit -m $message 2>&1) | Out-String
-        if ($LASTEXITCODE -ne 0) { throw ("git commit failed: {0}" -f $commit.Trim()) }
-
-        # Release 3.4 milestone 3 — the push and PR-open now go through the
-        # shared branch-PR path, so this caller and the agent-run approval
-        # cannot drift apart. This function's own preconditions already passed,
-        # so a refusal here would be a genuine surprise and is surfaced as one.
         $prResult = Open-RepoBranchPullRequest -RepoName $RepoName -RepoPath $RepoPath -Branch $branch `
             -BaseBranch $effectiveBase -Token $Token -ApiHeaders $ApiHeaders -PushFirst `
-            -Title ("Roadmap repair: {0}" -f $RepoName) `
-            -Body ("Automated roadmap repair for **{0}**.{1}`n`nGenerated by GitHubRepoManagement (Release 2.7 Phase A). Review the diff before merging — nothing here has been applied to {2}." -f `
-                        $RepoName, $(if ($PreviewId) { " Based on repair preview ``$PreviewId``." } else { '' }), $effectiveBase)
-        if ($prResult.refused) {
-            throw ("PR could not be opened for '{0}' after the branch was committed: [{1}] {2}" -f $branch, $prResult.category, $prResult.reason)
-        }
-
-        return [pscustomobject]@{
-            created = $true; refused = $false; reason = ''; category = ''
-            branch = $branch; baseBranch = $effectiveBase; slug = $slug.slug
-            prUrl = [string]$prResult.prUrl; prNumber = [int]$prResult.prNumber
-            commitMessage = $message
-            # The reading travels on success too, so a PR opened over a known
-            # stale base is identifiable afterwards rather than only at the
-            # moment someone clicked through the warning.
-            baseFreshness = $freshness
-            staleBaseAcknowledged = [bool]($AcknowledgeStaleBase -and $null -ne $freshness -and $freshness.isStale)
-        }
+            -Title ("Roadmap repair: {0}" -f $RepoName) -Body $prBody
     }
-    finally {
-        # Always land the operator back where they started, even on failure —
-        # a half-finished submit must not leave the checkout on a stray branch.
-        if (-not [string]::IsNullOrWhiteSpace($restoreBranch) -and $restoreBranch -ne $branch) {
-            & git -C $RepoPath checkout $restoreBranch 2>&1 | Out-Null
-        }
+    catch {
+        throw ("Branch '{0}' was committed locally in '{1}' but the push or PR open failed: {2}" -f $branch, $RepoPath, $_.Exception.Message)
+    }
+    if ($prResult.refused) {
+        throw ("PR could not be opened for '{0}' after the branch was committed: [{1}] {2}" -f $branch, $prResult.category, $prResult.reason)
+    }
+
+    return [pscustomobject]@{
+        created = $true; refused = $false; reason = ''; category = ''
+        branch = $branch; baseBranch = $effectiveBase; slug = $slug.slug
+        prUrl = [string]$prResult.prUrl; prNumber = [int]$prResult.prNumber
+        commitMessage = $message
+        commitSha = [string]$commitResult.commitSha
+        commitAuthor = [string]$commitResult.authorEmail
+        identitySource = [string]$commitResult.identitySource
+        # The reading travels on success too, so a PR opened over a known
+        # stale base is identifiable afterwards rather than only at the
+        # moment someone clicked through the warning.
+        baseFreshness = $freshness
+        staleBaseAcknowledged = [bool]($AcknowledgeStaleBase -and $null -ne $freshness -and $freshness.isStale)
     }
 }

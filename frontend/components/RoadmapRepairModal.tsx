@@ -1,12 +1,26 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   type RoadmapRepairPreview,
   type RoadmapRepairAction,
   type RoadmapRepairHistoryItem,
   type RoadmapMaturityLevel,
 } from '../types';
-import { previewRoadmapRepair, applyRoadmapRepair, getRoadmapRepairHistory, submitRoadmapRepairPr, type RoadmapRepairPrResult } from '../services/apiClient';
+import {
+  previewRoadmapRepair,
+  applyRoadmapRepair,
+  getRoadmapRepairHistory,
+  submitRoadmapRepairPr,
+  recordDeliveryDecision,
+  type RoadmapRepairPrResult,
+} from '../services/apiClient';
 import { SpinnerIcon } from './icons';
+
+/** "3m 12s" — review time as the operator reads it. */
+export function formatReviewSeconds(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
+}
 
 interface RoadmapRepairModalProps {
   isOpen: boolean;
@@ -199,6 +213,48 @@ const RoadmapRepairModal: React.FC<RoadmapRepairModalProps> = ({
   const [prLoading, setPrLoading] = useState(false);
   const [prError, setPrError] = useState<string | null>(null);
 
+  // Proof of value (2026-10-16) — the live PR and the reject, each recorded in
+  // the delivery ledger with the operator's review time.
+  const [prOpenConfirm, setPrOpenConfirm] = useState(false);
+  const [prOpening, setPrOpening] = useState(false);
+  const [prOpenError, setPrOpenError] = useState<string | null>(null);
+  const [prOpened, setPrOpened] = useState<RoadmapRepairPrResult | null>(null);
+  const [ackStaleBase, setAckStaleBase] = useState(false);
+  const [rejectVisible, setRejectVisible] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejecting, setRejecting] = useState(false);
+  const [rejectError, setRejectError] = useState<string | null>(null);
+  const [rejectedSeconds, setRejectedSeconds] = useState<number | null>(null);
+  const [decidedSeconds, setDecidedSeconds] = useState<number | null>(null);
+
+  // Review time is MEASURED: milliseconds the proposal is on screen while the
+  // tab is visible. It is never inferred from timestamps, and it travels with
+  // the decision as 'measured-in-console' so the ledger can say how it knows.
+  const reviewMsRef = useRef(0);
+  const visibleSinceRef = useRef<number | null>(null);
+  const previewId = preview?.previewId ?? null;
+  useEffect(() => {
+    if (!isOpen || !previewId) return;
+    reviewMsRef.current = 0;
+    visibleSinceRef.current = document.hidden ? null : Date.now();
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (visibleSinceRef.current !== null) {
+          reviewMsRef.current += Date.now() - visibleSinceRef.current;
+          visibleSinceRef.current = null;
+        }
+      } else if (visibleSinceRef.current === null) {
+        visibleSinceRef.current = Date.now();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [isOpen, previewId]);
+  const readReviewSeconds = useCallback(() => {
+    const running = visibleSinceRef.current !== null ? Date.now() - visibleSinceRef.current : 0;
+    return Math.round((reviewMsRef.current + running) / 1000);
+  }, []);
+
   const handleSubmitPr = useCallback(async () => {
     if (!repoName) return;
     setPrLoading(true);
@@ -213,6 +269,64 @@ const RoadmapRepairModal: React.FC<RoadmapRepairModalProps> = ({
     }
   }, [repoName, preview]);
 
+  const handleOpenPr = useCallback(async () => {
+    if (!repoName || !preview) return;
+    setPrOpening(true);
+    setPrOpenError(null);
+    const seconds = readReviewSeconds();
+    try {
+      const result = await submitRoadmapRepairPr(repoName, preview.previewId, true, {
+        proposedContent: editedProposed,
+        roadmapPath: preview.roadmapPath ?? undefined,
+        edited: editedProposed !== (preview.proposedContent ?? ''),
+        acknowledgeStaleBase: ackStaleBase,
+        operatorSeconds: seconds,
+        operatorSecondsBasis: 'measured-in-console',
+        proposal: {
+          previewState: preview.previewState,
+          originalMaturityLevel: preview.originalMaturityLevel,
+          repairActionCount: preview.repairActions.length,
+        },
+      });
+      setPrOpened(result);
+      setDecidedSeconds(seconds);
+      setPrOpenConfirm(false);
+    } catch (err) {
+      setPrOpenError(err instanceof Error ? err.message : 'Failed to open the pull request.');
+    } finally {
+      setPrOpening(false);
+    }
+  }, [repoName, preview, editedProposed, ackStaleBase, readReviewSeconds]);
+
+  const handleReject = useCallback(async () => {
+    if (!repoName || !preview || !rejectReason.trim()) return;
+    setRejecting(true);
+    setRejectError(null);
+    const seconds = readReviewSeconds();
+    try {
+      await recordDeliveryDecision({
+        repoName,
+        decision: 'reject',
+        previewId: preview.previewId,
+        actionKind: 'roadmap-repair',
+        reason: rejectReason.trim(),
+        operatorSeconds: seconds,
+        operatorSecondsBasis: 'measured-in-console',
+        proposal: {
+          previewState: preview.previewState,
+          originalMaturityLevel: preview.originalMaturityLevel,
+          repairActionCount: preview.repairActions.length,
+        },
+      });
+      setRejectedSeconds(seconds);
+      setRejectVisible(false);
+    } catch (err) {
+      setRejectError(err instanceof Error ? err.message : 'Failed to record the rejection.');
+    } finally {
+      setRejecting(false);
+    }
+  }, [repoName, preview, rejectReason, readReviewSeconds]);
+
   // Load the preview when modal opens
   useEffect(() => {
     if (!isOpen || !repoName) {
@@ -226,6 +340,17 @@ const RoadmapRepairModal: React.FC<RoadmapRepairModalProps> = ({
       setActiveTab('preview');
       setPrResult(null);
       setPrError(null);
+      setPrOpenConfirm(false);
+      setPrOpening(false);
+      setPrOpenError(null);
+      setPrOpened(null);
+      setAckStaleBase(false);
+      setRejectVisible(false);
+      setRejectReason('');
+      setRejecting(false);
+      setRejectError(null);
+      setRejectedSeconds(null);
+      setDecidedSeconds(null);
       return;
     }
     let cancelled = false;
@@ -273,10 +398,17 @@ const RoadmapRepairModal: React.FC<RoadmapRepairModalProps> = ({
 
   if (!isOpen) return null;
 
+  const decided = prOpened !== null || rejectedSeconds !== null;
   const canApply =
     preview?.previewState === 'repair-preview-ready' &&
     !applySuccess &&
-    !applying;
+    !applying &&
+    !decided;
+  // A local apply leaves the clone dirty, which the live PR route refuses, so
+  // the PR and reject decisions are offered only before (and instead of) it.
+  const canDecide = preview?.previewState === 'repair-preview-ready' && !applySuccess && !decided;
+  const staleBase = prResult?.baseFreshness?.isStale === true;
+  const proposalEdited = preview !== null && editedProposed !== (preview.proposedContent ?? '');
 
   return (
     <div
@@ -415,6 +547,129 @@ const RoadmapRepairModal: React.FC<RoadmapRepairModalProps> = ({
                       </div>
                     )}
                     <div className="text-gray-500 italic">{prResult.note}</div>
+                  </div>
+                )}
+
+                {/* Proof of value (2026-10-16) — the live PR. Until today this
+                    panel could only build a dry-run plan: the modal never sent
+                    the proposal or createPr, so nothing it showed could reach
+                    GitHub. The PR carries the text in the Diff tab, edits
+                    included; opening it records the decision and review time. */}
+                {canDecide && !prOpenConfirm && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      data-testid="repair-open-pr"
+                      onClick={() => setPrOpenConfirm(true)}
+                      disabled={!prResult}
+                      title={prResult ? 'Open this repair as a pull request on GitHub. Nothing is merged.' : 'Preview the PR plan first, so you see the branch and whether the clone is current.'}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+                    >
+                      Open pull request…
+                    </button>
+                    {!rejectVisible && (
+                      <button
+                        data-testid="repair-reject"
+                        onClick={() => setRejectVisible(true)}
+                        className="inline-flex items-center rounded-md bg-gray-700 px-3 py-1.5 text-xs font-medium text-gray-200 hover:bg-gray-600"
+                      >
+                        Reject proposal…
+                      </button>
+                    )}
+                  </div>
+                )}
+                {canDecide && prOpenConfirm && prResult && (
+                  <div data-testid="repair-open-pr-confirm" className="mt-3 rounded border border-emerald-800/50 bg-emerald-950/20 p-3 text-xs text-emerald-100 space-y-2">
+                    <div>
+                      Push branch <span className="font-mono">{prResult.plan.branch}</span> and open a pull request onto{' '}
+                      <span className="font-mono">{prResult.plan.baseBranch}</span> with the {proposalEdited ? 'edited ' : ''}proposal shown in the Diff tab. Nothing is merged.
+                    </div>
+                    {staleBase && (
+                      <label className="flex items-start gap-2 text-amber-200">
+                        <input type="checkbox" checked={ackStaleBase} onChange={e => setAckStaleBase(e.target.checked)} className="mt-0.5" />
+                        <span>I know this clone is behind its base and want the PR anyway.</span>
+                      </label>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        data-testid="repair-open-pr-submit"
+                        onClick={handleOpenPr}
+                        disabled={prOpening || (staleBase && !ackStaleBase)}
+                        title={prOpening ? 'Opening the pull request…' : staleBase && !ackStaleBase ? 'The clone is behind its base: tick the acknowledgement, or pull first and re-preview.' : 'Push the branch and open the pull request.'}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+                      >
+                        {prOpening && <SpinnerIcon className="w-3.5 h-3.5 animate-spin" />}
+                        Confirm and open PR
+                      </button>
+                      <button
+                        onClick={() => setPrOpenConfirm(false)}
+                        disabled={prOpening}
+                        title={prOpening ? 'The pull request is being opened.' : 'Go back without opening a pull request.'}
+                        className="rounded-md bg-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-600 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {prOpenError && (
+                  <div data-testid="repair-open-pr-error" className="mt-2 rounded border border-red-700/40 bg-red-900/20 px-3 py-2 text-xs text-red-300">
+                    {prOpenError}
+                  </div>
+                )}
+                {prOpened && (
+                  <div data-testid="repair-pr-opened" className="mt-3 rounded border border-emerald-700/50 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200 space-y-1">
+                    <div>
+                      Pull request opened:{' '}
+                      {prOpened.prUrl ? (
+                        <a href={prOpened.prUrl} target="_blank" rel="noreferrer" className="underline">{prOpened.prUrl}</a>
+                      ) : '—'}
+                    </div>
+                    {prOpened.decisionRecordError ? (
+                      <div className="text-amber-200">The PR exists, but the delivery ledger did not record it: {prOpened.decisionRecordError}</div>
+                    ) : (
+                      <div className="text-emerald-300/80">
+                        Your decision was recorded with {decidedSeconds !== null ? formatReviewSeconds(decidedSeconds) : 'no'} of review time.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {canDecide && rejectVisible && (
+                  <div data-testid="repair-reject-form" className="mt-3 rounded border border-gray-700 bg-gray-900/60 p-3 text-xs space-y-2">
+                    <label htmlFor="repair-reject-reason" className="block text-gray-300">Why is this proposal not worth a pull request?</label>
+                    <textarea
+                      id="repair-reject-reason"
+                      value={rejectReason}
+                      onChange={e => setRejectReason(e.target.value)}
+                      rows={2}
+                      className="w-full rounded border border-gray-700 bg-gray-950 p-2 text-gray-200 focus:border-blue-600"
+                      placeholder="For example: drops the rebuild guide and every phase; replaces intent with boilerplate."
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        data-testid="repair-reject-submit"
+                        onClick={handleReject}
+                        disabled={rejecting || !rejectReason.trim()}
+                        title={rejecting ? 'Recording the rejection…' : !rejectReason.trim() ? 'A rejection needs a reason: it is what lets the product learn.' : 'Record the rejection with your review time.'}
+                        className="rounded-md bg-red-800 px-3 py-1.5 font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Record rejection
+                      </button>
+                      <button
+                        onClick={() => setRejectVisible(false)}
+                        disabled={rejecting}
+                        title={rejecting ? 'The rejection is being recorded.' : 'Go back without rejecting.'}
+                        className="rounded-md bg-gray-700 px-3 py-1.5 text-gray-200 hover:bg-gray-600 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {rejectError && <div className="text-red-300">{rejectError}</div>}
+                  </div>
+                )}
+                {rejectedSeconds !== null && (
+                  <div data-testid="repair-rejected" className="mt-3 rounded border border-gray-700 bg-gray-900/60 px-3 py-2 text-xs text-gray-300">
+                    Rejected. The reason and {formatReviewSeconds(rejectedSeconds)} of review time were recorded.
                   </div>
                 )}
               </div>
