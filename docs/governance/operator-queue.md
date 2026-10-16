@@ -8,7 +8,7 @@ session, one phone on the LAN — and take the batch when convenient.
 | ----- | ----------------------- | ------------------------------------------------------------------------------------------ | ---------------------------- |
 | OQ-1  | Browser, logged in      | Eyes on `Today` landing, outcome card, Insights leverage panel                             | Release 3.6 field proof      |
 | OQ-2  | Browser, logged in      | Eyes on 3.1 empty-room gate, 3.1 engine attribution, 3.5 before/after                      | Release 2.9 re-homed proofs  |
-| OQ-3  | Browser, ~10 min/repo   | Approve/reject staged previews in `evidence/trials/release-3.7/previews/`; record minutes  | 3.7 measured execution       |
+| OQ-3  | Browser, ~10 min/repo   | Approve/reject staged previews in `evidence/trials/release-3.7/previews/`; record minutes  | 3.7 measured execution — 3.7 deferred 2026-10-16; superseded by OQ-15 |
 | OQ-4  | Elevated (SYSTEM) shell | Watchdog + service-installer run; 2.7 freeze-prevention deploy                             | Release 2.9 privilege proofs |
 | OQ-5  | github.com              | Grant PAT `Checks: Read` (D-003)                                                           | 3.8 scheduler dependency     |
 | OQ-6  | Authenticated shell     | One real `gh agent-task` run through the runner                                            | Release 2.9 field proof      |
@@ -19,5 +19,6 @@ session, one phone on the LAN — and take the batch when convenient.
 | OQ-12 | Elevated (UAC) shell    | Restart the portal service so the M4a `kindSignals` scanner goes live; then refresh the index | 3.7 M4a field proof — the next agent session re-concludes the cohort on v2 |
 | OQ-14 | Elevated (UAC) shell, then browser | After the Release 4.0 slice 4.0-1 PR merges: restart the portal service (loads `Portfolio.Ranking.ps1`; the same restart satisfies OQ-12), then `npm run build`. Confirm Today's #1 and the Dispatch Board's #1 name the same repository, and a repository with several holds shows one card | 4.0 phase A field proof — its exit question |
 | OQ-13 | Judgement               | Confirm or correct the resolved kind for each of the nine cohort repositories once re-concluded on v2 (`kind`, `kindCandidates`, `kindHints` in `cohort.json`); a correction becomes a rule with `observedOn`, never a code change | Steering Rung 1 — kind verdicts true on the cohort, not just computed |
+| OQ-15 | Elevated (UAC) shell, then browser | Through 2026-11-15: after each Release 4.1 PR that changes the backend merges, restart the portal service so the change is live. Review every proposal the product makes in the console and accept, edit or reject it there, so the decision ledger captures the minutes. Merge approved PRs on other repositories on their verified head SHA | Release 4.1 proof of value — the operator-effort figure and the merged-PR count |
 
 Done rows move to `evidence/operator-verification-log.jsonl` and are deleted here.

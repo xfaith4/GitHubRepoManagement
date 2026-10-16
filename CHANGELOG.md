@@ -2,6 +2,54 @@
 
 All notable changes to this project are documented here.
 
+## 2026-10-16 — The roadmap reduced to one objective: a 30-day proof of value
+
+Ben's decision of 2026-10-16: until 2026-11-15 the product's single objective
+is to prove its delivery loop on repositories other than this one, and to
+measure what that costs the operator. Feature work the loop does not need is
+frozen, by name the v2 console (Release 4.0 phase E), Release 3.9 and Release
+4.0 phases B–E. Frozen work does not resume on 2026-11-15 by default; the
+delivery evidence decides.
+
+The evidence behind it, from the same day's evaluation against live data:
+about eight merged PRs on other repositories ever, almost all roadmap-document
+changes, none since 2026-09-07; no agent run outside the smoke tests since
+2026-09-01; 45 of 80 real runner runs failed; one of 62 repositories ready for
+work; operator minutes never recorded; a repair-PR button that only built a
+dry-run plan.
+
+- **`ROADMAP.md` went from 2,604 lines to 616.** One active release,
+  Release 4.1 — Proof of Value, with success criteria for 2026-11-15. The file
+  now has three tiers: **Must work now** (Current focus, 8 milestones, each
+  tied to a step of the loop), **Must improve next** (§7, 8 milestones, each
+  naming the bottleneck that justifies it) and **Deferred**.
+- **`docs/governance/deferred-work.md` (new) holds every deferred
+  requirement, moved verbatim.** That is Releases 2.9, 3.7, 3.9 and 4.0, nine
+  former Current focus items, the former execution order, and the open items
+  of 13 cross-cutting lanes. Each item carries a one-line reason and the
+  evidence that would justify reconsidering it.
+- **Contradictions fixed, archived verbatim to
+  `docs/history/completed-releases.md` under "Reconciled 2026-10-16".**
+  Release 3.8's status read `done` while its seven milestones read open and
+  `built`. Lane 0.18's four items and two Lane 0.17 items read `built`, yet
+  were recorded as delivered by Release 3.8. Lane 0.17 asked to archive eight
+  items that were already archived. Lane 0.15's six items merged in #228 and
+  stayed open only under a retired field-proof rule. Lanes 0.3–0.6 and 0.20
+  held closure prose and nothing else.
+- **Fixed in `ROADMAP.md` itself.** The §3 milestone-format example was a live
+  `- [ ]` checkbox, so every parser counted kind detection (archived
+  2026-09-14) as pending work. It is now prose. Release 2.9's freeze-prevention
+  item carried a state outside the vocabulary (`smoke-tested → …`), and its
+  trend-accrual item had no parseable state; both moved to deferred work.
+- **Operator queue.** OQ-15 covers the operator's part of Release 4.1:
+  restarting the service after backend merges, reviewing proposals in the
+  console so minutes are captured, and merging on the verified head SHA. OQ-3
+  (3.7 previews) is marked superseded.
+- **Not changed here:** `AGENTS.md` still ties supervised posture to "Release
+  3.9 G39-01 through G39-06", ids no roadmap has carried. Release 3.9 is
+  deferred, so that sentence needs an owner decision; it is recorded as a
+  known issue in Release 4.1.
+
 ## 2026-09-30 — One ranking for Today and the Dispatch Board (Release 4.0 phase A)
 
 Today ranked the portfolio in the browser (`frontend/lib/todayRanking.ts`).
