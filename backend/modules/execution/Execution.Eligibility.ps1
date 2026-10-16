@@ -52,21 +52,21 @@ function Get-DispatchEligibility {
     }
 
     if ($null -eq $PortfolioEntry) {
-        $reasons.Add((_Reason 'not-in-index' 'Not in the portfolio index' 'The index does not hold this folder, so nothing is known about it and it cannot be ranked or dispatched.'))
+        $reasons.Add((_Reason -Code 'not-in-index' -Label 'Not in the portfolio index' -Detail 'The index does not hold this folder, so nothing is known about it and it cannot be ranked or dispatched.'))
     } else {
         if ([string](_PR_GetField -Obj $PortfolioEntry -Name 'curationState' -Default 'none') -eq 'archived-ignore') {
-            $reasons.Add((_Reason 'archived' 'Archived' 'You curated this repository out as archived-ignore.'))
+            $reasons.Add((_Reason -Code 'archived' -Label 'Archived' -Detail 'You curated this repository out as archived-ignore.'))
         }
         $dirty = _PR_GetField -Obj $PortfolioEntry -Name 'localDirtyCount'
         if ((_PR_IsNumber $dirty) -and [double]$dirty -gt 0) {
             $n = [int]$dirty
-            $reasons.Add((_Reason 'uncommitted-changes' 'Uncommitted changes' ("{0} uncommitted {1} in the working tree." -f $n, $(if ($n -eq 1) { 'file' } else { 'files' }))))
+            $reasons.Add((_Reason -Code 'uncommitted-changes' -Label 'Uncommitted changes' -Detail ("{0} uncommitted {1} in the working tree." -f $n, $(if ($n -eq 1) { 'file' } else { 'files' }))))
         }
     }
 
     if ([string](_PR_GetField -Obj $LedgerEntry -Name 'executionState' -Default '') -eq 'blocked') {
         $why = [string](_PR_GetField -Obj $LedgerEntry -Name 'errorMessage' -Default '')
-        $reasons.Add((_Reason 'blocked' 'Blocked' $(if ($why) { $why } else { 'The execution ledger records this repository as blocked.' })))
+        $reasons.Add((_Reason -Code 'blocked' -Label 'Blocked' -Detail $(if ($why) { $why } else { 'The execution ledger records this repository as blocked.' })))
     }
 
     return [pscustomobject]@{ ok = ($reasons.Count -eq 0); reasons = @($reasons.ToArray()) }
