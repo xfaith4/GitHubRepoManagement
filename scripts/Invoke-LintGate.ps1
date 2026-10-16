@@ -47,8 +47,11 @@ if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
 Import-Module PSScriptAnalyzer
 
 Write-Host "[STEP] PSScriptAnalyzer sweep (settings: PSScriptAnalyzerSettings.psd1)" -ForegroundColor Cyan
+# .claude\worktrees holds agent worktrees: whole second copies of this repo. CI
+# never has one; locally one doubled every rule's count and failed the gate on
+# debt that is not in the tree under review (2026-10-16).
 $findings = @(Invoke-ScriptAnalyzer -Path $WorkspaceRoot -Recurse -Settings $settingsPath |
-    Where-Object { $_.ScriptPath -notmatch '\\node_modules\\|\\dist\\|\\output\\|\\evidence\\' })
+    Where-Object { $_.ScriptPath -notmatch '\\node_modules\\|\\dist\\|\\output\\|\\evidence\\|\\\.claude\\worktrees\\' })
 Write-Host ("  {0} finding(s) after path filters" -f @($findings).Count) -ForegroundColor DarkGray
 
 $currentCounts = @{}

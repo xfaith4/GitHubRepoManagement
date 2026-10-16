@@ -2,6 +2,52 @@
 
 All notable changes to this project are documented here.
 
+## 2026-10-16 — The repair PR reaches GitHub, and every answer is recorded (proof of value)
+
+Ben's decision of 2026-10-16 made delivery to other repositories the only
+objective until 2026-11-15. Tracing the console's one write path to GitHub
+showed it had never worked from the console.
+
+- **The service can commit.** The portal runs as LocalSystem, which has no git
+  identity, so every commit it attempted failed with "Author identity unknown".
+  PR #96, the one live repair PR on record, ran from an interactive host.
+  `Resolve-GitCommitIdentity` uses the checkout's own `user.email`, or else the
+  token owner's GitHub noreply address, or else refuses with a reason.
+- **A failed commit leaves the clone clean.** The old path checked the start
+  branch out with the rewritten roadmap still staged, so the clone read dirty and
+  every later submit refused. `New-RoadmapRepairCommit` restores the file (or
+  removes it if it was new), deletes its empty branch and returns to the start
+  branch on failure. A push or PR failure names the committed branch.
+- **The modal opens the PR.** `RoadmapRepairModal` never sent the proposal or
+  `createPr`, so its PR button could only build a dry-run plan. After the plan,
+  "Open pull request…" sends the operator-edited text from the Diff tab, with a
+  stale-base acknowledgement when the clone is behind. "Reject proposal…"
+  requires a reason.
+- **The delivery ledger.** `backend/modules/delivery/Delivery.Ledger.ps1` keeps
+  decisions (accept, edit, reject) and PR outcomes (open, merged,
+  closed-unmerged, CI conclusion) in `output\delivery\delivery-ledger.jsonl`.
+  The live PR records its decision in the same request. Review time is measured
+  while the proposal is on screen and the tab visible
+  (`measured-in-console`), never inferred from timestamps. Routes:
+  `POST /api/delivery/decision`, `GET /api/delivery/summary`,
+  `POST /api/delivery/outcomes/refresh` (reads PR state and CI from GitHub). The
+  summary's figures are contract metrics: operator seconds include rejected
+  proposals, and per merged improvement reads null with a reason until something
+  merges.
+- **Paths no longer expire.** Preview and submit found a repository only through
+  a roadmap cache younger than its TTL. Past it, a repository with a ROADMAP.md
+  previewed as "No roadmap file found. Create a ROADMAP.md first."
+  `Resolve-RepairRepoLocation` reads the cache at any age, then the portfolio
+  index; the file itself is always read fresh.
+- **Smaller fixes.** The modal's History tab requested a path without the API
+  prefix and was always empty. The PowerShell lint gate skips
+  `.claude\worktrees`, whose copies of the repo doubled every rule count
+  locally. The ESLint cap moves down to 152.
+
+Gate: `pwsh ./tests/Test-DeliveryLoop.ps1 -FailOnError` (registered in
+`Invoke-TestSuite.ps1`), plus `RoadmapRepairModal.test.tsx`. Backend changes go
+live only after the portal service restarts.
+
 ## 2026-09-30 — One ranking for Today and the Dispatch Board (Release 4.0 phase A)
 
 Today ranked the portfolio in the browser (`frontend/lib/todayRanking.ts`).
