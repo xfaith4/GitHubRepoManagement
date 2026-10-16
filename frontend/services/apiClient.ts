@@ -1223,7 +1223,9 @@ export async function applyRoadmapRepair(
 }
 
 export async function getRoadmapRepairHistory(limit = 25): Promise<RoadmapRepairHistoryItem[]> {
-  const data = await fetchJson<any>(`/roadmap/repair/history?limit=${limit}`);
+  // Missing API_BASE_URL until 2026-10-16: the request hit the SPA fallback,
+  // which answers 200 text/html, so the modal's History tab was always empty.
+  const data = await fetchJson<any>(`${API_BASE_URL}/roadmap/repair/history?limit=${limit}`);
   return Array.isArray(data?.data?.items) ? data.data.items : [];
 }
 
@@ -1253,9 +1255,24 @@ export interface RoadmapRepairPrResult {
   dryRun: boolean;
   created: boolean;
   prUrl: string | null;
+  prNumber?: number | null;
   plan: { repoName: string; previewId: string; branch: string; baseBranch: string; title: string; body: string };
   note: string;
   baseFreshness?: BaseFreshness | null;
+  /** Live PR only: the delivery-ledger decision recorded with it, or why it was not. */
+  decisionId?: string | null;
+  decisionRecordError?: string | null;
+  commitAuthor?: string;
+}
+
+/** How an operator-seconds figure was obtained. Never inferred from timestamps. */
+export type OperatorSecondsBasis = 'measured-in-console' | 'operator-entered';
+
+/** What the product proposed, recorded beside the operator's answer to it. */
+export interface DeliveryProposalFacts {
+  previewState?: string;
+  originalMaturityLevel?: string;
+  repairActionCount?: number;
 }
 
 export async function submitRoadmapRepairPr(
@@ -1271,6 +1288,18 @@ export async function submitRoadmapRepairPr(
      */
     acknowledgeStaleBase?: boolean;
     repoPath?: string;
+    /**
+     * Proof of value (2026-10-16). The live route refuses a PR with no content,
+     * and the modal never sent any, so the console could only ever build a
+     * dry-run plan. This is the operator-approved text, edits included.
+     */
+    proposedContent?: string;
+    roadmapPath?: string;
+    /** True when the operator changed the proposal before approving it. */
+    edited?: boolean;
+    operatorSeconds?: number;
+    operatorSecondsBasis?: OperatorSecondsBasis;
+    proposal?: DeliveryProposalFacts;
   },
 ): Promise<RoadmapRepairPrResult> {
   const body: Record<string, unknown> = { repoName };
@@ -1278,8 +1307,82 @@ export async function submitRoadmapRepairPr(
   if (createPr) body.createPr = true;
   if (options?.acknowledgeStaleBase) body.acknowledgeStaleBase = true;
   if (options?.repoPath) body.repoPath = options.repoPath;
+  if (options?.proposedContent) body.proposedContent = options.proposedContent;
+  if (options?.roadmapPath) body.roadmapPath = options.roadmapPath;
+  if (options?.edited) body.edited = true;
+  if (typeof options?.operatorSeconds === 'number') {
+    body.operatorSeconds = Math.round(options.operatorSeconds);
+    body.operatorSecondsBasis = options.operatorSecondsBasis ?? 'measured-in-console';
+  }
+  if (options?.proposal) body.proposal = options.proposal;
   const data = await postJson<any>('/roadmap/repair/submit-pr', body);
   return (data?.data ?? data) as RoadmapRepairPrResult;
+}
+
+// ---------------------------------------------------------------------------
+// Proof of value (2026-10-16) — the delivery ledger: decisions, PR outcomes and
+// operator time. The summary's figures are contract metrics: a null value
+// carries a reason and renders as an em dash, never as 0.
+// ---------------------------------------------------------------------------
+
+export interface DeliveryDecisionInput {
+  repoName: string;
+  decision: 'accept' | 'edit' | 'reject';
+  previewId?: string;
+  actionKind?: string;
+  reason?: string;
+  operatorSeconds?: number;
+  operatorSecondsBasis?: OperatorSecondsBasis;
+  prUrl?: string;
+  proposal?: DeliveryProposalFacts;
+}
+
+export async function recordDeliveryDecision(input: DeliveryDecisionInput): Promise<{ decisionId: string }> {
+  const body: Record<string, unknown> = { ...input };
+  if (typeof input.operatorSeconds === 'number') {
+    body.operatorSeconds = Math.round(input.operatorSeconds);
+    body.operatorSecondsBasis = input.operatorSecondsBasis ?? 'measured-in-console';
+  }
+  const data = await postJson<{ data?: { decisionId: string } }>('/delivery/decision', body);
+  return (data?.data ?? data) as { decisionId: string };
+}
+
+export interface DeliveryMetric {
+  id: string;
+  value: number | null;
+  unit: 'count' | 'percent' | 'seconds';
+  basis: { numerator: number | null; denominator: number | null } | null;
+  asOf: string;
+  source: string | null;
+  coverage: { assessed: number | null; total: number | null } | null;
+  confidence: 'full' | 'partial' | 'none';
+  definition: string;
+  reason: string | null;
+}
+
+export interface DeliverySummary {
+  asOf: string;
+  decisions: number;
+  metrics: Record<
+    'proposalsDecided' | 'accepted' | 'rejected' | 'prsOpened' | 'prsMerged' | 'operatorSeconds' | 'operatorSecondsPerMergedImprovement',
+    DeliveryMetric
+  >;
+  prs: Array<{ repoName: string; prUrl: string; decision: string; decidedAt: string; prState: string; stateKnown: boolean; mergedAt: string | null; ciConclusion: string }>;
+}
+
+interface DeliverySummaryEnvelope {
+  data?: { summary?: DeliverySummary };
+  summary?: DeliverySummary;
+}
+
+export async function getDeliverySummary(): Promise<DeliverySummary> {
+  const data = await fetchJson<DeliverySummaryEnvelope>(`${API_BASE_URL}/delivery/summary`);
+  return (data?.data?.summary ?? data?.summary) as DeliverySummary;
+}
+
+export async function refreshDeliveryOutcomes(): Promise<DeliverySummary> {
+  const data = await postJson<DeliverySummaryEnvelope>('/delivery/outcomes/refresh', {});
+  return (data?.data?.summary ?? data?.summary) as DeliverySummary;
 }
 
 // Release 1.6 — Roadmap-Driven Release Dispatch to GitHub Copilot

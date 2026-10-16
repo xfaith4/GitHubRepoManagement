@@ -42,9 +42,8 @@ flight.
       rather than the first draft. The service can commit: git has a commit
       identity when it runs under the service account. A failure at any step
       leaves the target clone clean, with no stray branch and no staged or
-      untracked files. In flight on a separate branch since 2026-10-16; that
-      branch moves this item to `built` and wires its check into the suite.
-      _(state: planned)_
+      untracked files. Built 2026-10-16 in PR #329; goes live after the portal
+      service restarts, then `npm run build`. _(state: built)_
       `check: pwsh ./tests/Test-DeliveryLoop.ps1 -FailOnError`
 - [ ] **Record every accept and reject, with the operator's time (loop steps 6
       and 8).** Each proposal the operator accepts, edits or rejects lands in
@@ -52,8 +51,8 @@ flight.
       repository, and the minutes spent on it. The workflow captures the time
       itself; nobody types it in afterwards. A rejected proposal keeps its
       minutes. This replaces the planned `Test-DecisionLedger.ps1` item (its
-      text is preserved in `docs/governance/deferred-work.md`). In flight on
-      the same branch as the item above. _(state: planned)_
+      text is preserved in `docs/governance/deferred-work.md`). Built
+      2026-10-16 in PR #329 with the item above. _(state: built)_
       `check: pwsh ./tests/Test-DeliveryLoop.ps1 -FailOnError`
 - [ ] **Lane 0.22 — one dispatch-eligibility rule, enforced everywhere (loop
       step 2).** The Dispatch Board read "Ready" for repositories Today holds
@@ -227,7 +226,7 @@ and `[x]` means the item leaves this file for the archive in the same PR.
 `scripts/Add-OperatorVerification.ps1`. A ratchet may be recorded any time after
 `verified`, may be recorded never, and never blocks a later milestone. The
 promotion boundary — merge to the protected default branch on an operator-approved
-verified head SHA — is unchanged and lives in §8; it gates *merge*, not *the next item*.
+verified head SHA — is unchanged and lives in §8; it gates _merge_, not _the next item_.
 
 **Milestone format.** One bullet, action-first, with exactly one
 `_(state: ...)_` marker kept on one line and the check on its own line; the

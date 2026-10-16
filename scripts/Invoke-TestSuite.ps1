@@ -351,6 +351,11 @@ Invoke-ScriptGate -Name 'Fixture isolation' -ScriptPath (Join-Path $WorkspaceRoo
 # of its inputs.
 Invoke-ScriptGate -Name 'One ranking' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-OneRanking.ps1') -ScriptArgs @('-FailOnError')
 
+# Proof of value, 2026-10-16 - the delivery loop's write path and its ledger.
+# The service can commit (identity), a failed commit leaves the clone clean, and
+# decisions, PR outcomes and operator time are recorded and summed honestly.
+Invoke-ScriptGate -Name 'Delivery loop' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryLoop.ps1') -ScriptArgs @('-FailOnError')
+
 # Validator R024 - a built or verified milestone's check is a step CI runs; the
 # milestone's own check line. The rule itself also runs inside the lint below.
 Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError')
