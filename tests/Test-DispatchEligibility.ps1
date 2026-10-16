@@ -56,7 +56,7 @@ Assert-That ($dirty.reasons[0].detail -match '3 uncommitted files') 'the dirty r
 $arch = Get-DispatchEligibility -LedgerEntry (New-Ledger 'a') -PortfolioEntry (New-Indexed 'a' -Curation 'archived-ignore')
 Assert-That ((-not $arch.ok) -and (Get-Codes $arch) -contains 'archived') 'archived curation holds'
 
-$blocked = Get-DispatchEligibility -LedgerEntry (New-Ledger 'a' 'blocked' 'needs a human') -PortfolioEntry (New-Indexed 'a')
+$blocked = Get-DispatchEligibility -LedgerEntry (New-Ledger -Name 'a' -State 'blocked' -Err 'needs a human') -PortfolioEntry (New-Indexed 'a')
 Assert-That ((-not $blocked.ok) -and (Get-Codes $blocked) -contains 'blocked' -and $blocked.reasons[0].detail -eq 'needs a human') 'a blocked ledger entry holds and carries its own detail'
 
 $missing = Get-DispatchEligibility -LedgerEntry (New-Ledger 'a') -PortfolioEntry $null
@@ -84,7 +84,7 @@ New-Item -ItemType Directory -Path $ws | Out-Null
 try {
     $ledger = @{ schemaVersion = 1; updatedAt = 'now'; history = @()
         entries = @((New-Ledger 'good'), (New-Ledger 'messy'), (New-Ledger 'old'), (New-Ledger 'ghost')) }
-    function Read-ExecutionLedger { param($WorkspaceRoot) $script:ledger }
+    function Read-ExecutionLedger { param($WorkspaceRoot) [void]$WorkspaceRoot; $script:ledger }
     $index = @((New-Indexed 'good'), (New-Indexed 'messy' -Dirty 4), (New-Indexed 'old' -Curation 'archived-ignore'))
     $summary = Get-ExecutionQueueSummary -WorkspaceRoot $ws -PortfolioEntries $index
     $queued = @($summary.rankedQueue | ForEach-Object { $_.repoName })
