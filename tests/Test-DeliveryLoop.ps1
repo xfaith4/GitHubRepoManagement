@@ -47,6 +47,8 @@ $WorkspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 . (Join-Path $WorkspaceRoot 'backend\modules\git\Git.BaseFreshness.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.PrSubmitter.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\delivery\Delivery.Ledger.ps1')
+. (Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.WorkPacket.ps1')
+. (Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Claude.ps1')
 
 $failures = [System.Collections.Generic.List[string]]::new()
 $passed = 0
@@ -256,6 +258,48 @@ try {
     Assert-That ($after.checked -eq 0 -and @($after.errors).Count -eq 0) 'outcome: a merged PR is terminal and is not fetched again'
     $final = Get-DeliverySummary -Record @((Get-DeliveryLedgerRecord -WorkspaceRoot $WorkspaceRoot).records) -AsOfUtc $asOf
     Assert-That ($final.metrics.prsMerged.value -eq 1) 'outcome: the summary must read the refreshed merge'
+
+    # -- 9. The approved task text reaches the agent (2026-10-17) -------------
+    # Run 20261016-031015-cc34298c: a 30-line operator-reviewed prompt reached
+    # Claude as its first line, with "(none declared)" under criteria.
+    $approved = "Make ROADMAP.md ready.`n`n1. MOVE the open items; do not copy them.`n2. Diff must be additions only.`n`nCommit and stop."
+    $permissionsAll = @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+    $withText = New-WorkPacket -TaskId 'dl-1' -Repository 'o/r' -BaseBranch 'main' -BaseSha '' -Objective 'Make ROADMAP.md ready.' `
+        -ForbiddenPaths @('.github/workflows/**') -Permissions $permissionsAll -Instructions $approved
+    $rendered = ConvertTo-ClaudePrompt -Packet $withText
+    Assert-That ($rendered.Contains($approved)) 'instructions: the approved text must reach the agent verbatim'
+    Assert-That ($rendered.IndexOf('## Instructions') -gt $rendered.IndexOf('## Objective') -and $rendered.IndexOf('## Instructions') -lt $rendered.IndexOf('## Scope')) 'instructions: rendered between Objective and Scope'
+    $oneLine = New-WorkPacket -TaskId 'dl-2' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'Fix it.' -Permissions $permissionsAll -Instructions 'Fix it.'
+    Assert-That ($null -eq $oneLine.instructions -and -not (ConvertTo-ClaudePrompt -Packet $oneLine).Contains('## Instructions')) 'instructions: text identical to the objective is not repeated'
+    $roundTrip = ConvertTo-Json -InputObject $withText -Depth 8 | ConvertFrom-Json
+    Assert-That ((ConvertTo-ClaudePrompt -Packet $roundTrip).Contains($approved)) 'instructions: survive the packet''s JSON round trip, which is how the runner reads it'
+    $dispatchRoute = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw
+    Assert-That ($dispatchRoute -match '-Instructions \(\[string\]\$prompt\)') 'instructions: the dispatch route passes the operator prompt into the packet'
+    $packaging = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RoadmapPackaging.ps1') -Raw
+    Assert-That ($packaging -match "-Instructions \(\[string\]\(_Pack_GetField -Obj \`$Packet -Name 'generatedPrompt'") 'instructions: the packaged-item road passes the approved generated prompt into the packet'
+
+    # -- 10. The permission envelope binds (2026-10-17) -----------------------
+    $setting = ConvertTo-ClaudePermissionSetting -Packet $withText
+    $allowList = @($setting.permissions.allow)
+    $denyList = @($setting.permissions.deny)
+    foreach ($readTool in 'Read', 'Glob', 'Grep') { Assert-That ($allowList -contains $readTool) "envelope: reading ($readTool) is never a prompt" }
+    Assert-That ($allowList -contains 'Bash') 'envelope: shell true allows Bash'
+    Assert-That ($denyList -contains 'Bash(git push:*)' -and $denyList -contains 'Bash(gh:*)') 'envelope: githubWrite false denies push and gh'
+    Assert-That ($denyList -contains 'WebFetch' -and $denyList -contains 'WebSearch') 'envelope: network false denies web tools'
+    Assert-That ($denyList -contains 'Edit(.github/workflows/**)') 'envelope: a forbidden path denies edits on it (D-012)'
+    Assert-That (@($denyList | Where-Object { $_ -like 'Write(*' }).Count -eq 0) 'envelope: no Write(path) rules; the CLI ignores them and Edit(path) covers every editing tool'
+    Assert-That ($denyList -contains 'Bash(git reset --hard:*)') 'envelope: destructive local git is denied'
+    $noShell = ConvertTo-ClaudePermissionSetting -Packet (New-WorkPacket -TaskId 'dl-3' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions @{ filesystemWrite = $false; shell = $false; network = $true; githubWrite = $true })
+    Assert-That (@($noShell.permissions.deny) -contains 'Bash' -and @($noShell.permissions.allow) -notcontains 'Bash') 'envelope: shell false denies Bash'
+    Assert-That (@($noShell.permissions.deny) -contains 'Edit') 'envelope: filesystemWrite false denies editing'
+    Assert-That (@($noShell.permissions.deny) -notcontains 'WebFetch' -and @($noShell.permissions.deny) -notcontains 'Bash(git push:*)') 'envelope: granted network and githubWrite are not denied'
+    $noPacket = ConvertTo-ClaudePermissionSetting -Packet $null
+    Assert-That (@($noPacket.permissions.deny) -contains 'Bash' -and @($noPacket.permissions.allow) -contains 'Read') 'envelope: no packet means reads only - an absent grant is not a grant'
+    $argvWith = New-ClaudeExecutionArgument -Prompt 'p' -PermissionMode 'acceptEdits' -SettingsPath 'C:\s.json'
+    Assert-That (($argvWith -join ' ').EndsWith('--settings C:\s.json') -and $argvWith[1] -eq 'p') 'envelope: the settings file travels as one --settings argument after the prompt flag pair'
+    Assert-That (@(New-ClaudeExecutionArgument -Prompt 'p' -PermissionMode 'acceptEdits').Count -eq 7) 'envelope: no settings path leaves the argv unchanged'
+    $runnerSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1') -Raw
+    Assert-That ($runnerSource -match '--settings \$claudeSettingsPath \$prompt') 'envelope: the interactive launch passes the settings file too'
 }
 finally {
     foreach ($key in $savedEnv.Keys) {
