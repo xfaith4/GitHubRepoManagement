@@ -13945,6 +13945,15 @@ try {
                         }
 
                         $null = Sync-LedgerFromAudit -WorkspaceRoot $WorkspaceRoot -DocAuditEntries $docEntries -RoadmapAuditEntries $roadmapAuditEntries
+                        # A lane whose run the runner already closed is released here,
+                        # from the run summary, so an abandoned run never holds a
+                        # repository at "running" (Sync-LedgerFromRunHistory).
+                        if (Get-Command -Name 'Sync-LedgerFromRunHistory' -ErrorAction SilentlyContinue) {
+                            $releasedLanes = Sync-LedgerFromRunHistory -WorkspaceRoot $WorkspaceRoot
+                            foreach ($lane in @($releasedLanes.released)) {
+                                Write-HostLog ("[TRACE] execution.sync correlationId={0} released lane repo={1} run={2} status={3} category={4} -> {5}" -f $correlationId, $lane.repoName, $lane.runId, $lane.runStatus, $lane.category, $lane.newState)
+                            }
+                        }
                         $queueSummary = Get-ExecutionQueueSummary -WorkspaceRoot $WorkspaceRoot -PortfolioEntries (Get-QueueRankingInput)
 
                         Add-MetricCounter -Name 'api_requests_total'

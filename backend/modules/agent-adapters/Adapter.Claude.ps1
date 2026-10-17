@@ -123,7 +123,9 @@ function Resume-ClaudeExecution {
     this mapping was waiting on. The rules:
 
       - Reading (Read, Glob, Grep) is never a gate, anywhere.
-      - shell: true allows Bash; shell: false denies it.
+      - shell: true allows Bash and PowerShell; shell: false denies both.
+        Windows offers both tools and the agent reaches for PowerShell first,
+        so every shell rule below is written for both.
       - filesystemWrite: false denies Edit and Write. When true, edits stay
         governed by the permission mode, which accepts them inside the
         repository only; an edit outside it still asks, on purpose.
@@ -159,13 +161,27 @@ function ConvertTo-ClaudePermissionSetting {
     $network = ((_Claude_Field -Obj $permissions -Name 'network' -Default $false) -eq $true)
     $githubWrite = ((_Claude_Field -Obj $permissions -Name 'githubWrite' -Default $false) -eq $true)
 
-    if ($shell) { $allow.Add('Bash') } else { $deny.Add('Bash') }
+    # Claude Code on Windows offers two shell tools, Bash and PowerShell, and
+    # the agent reaches for PowerShell first. The first real dispatch of the
+    # proof of value (FreshStartFamily, run 20261017-181025-83010e21) stalled
+    # on its second tool call: the envelope allowed Bash, the agent called
+    # PowerShell, and the session waited for a human who was not there. Every
+    # shell rule below is therefore written for both tools.
+    $shellTools = @('Bash', 'PowerShell')
+    if ($shell) { foreach ($tool in $shellTools) { $allow.Add($tool) } } else { foreach ($tool in $shellTools) { $deny.Add($tool) } }
     if (-not $write) { foreach ($tool in @('Edit', 'Write', 'NotebookEdit')) { $deny.Add($tool) } }
     if (-not $network) {
-        foreach ($rule in @('WebFetch', 'WebSearch', 'Bash(curl:*)', 'Bash(wget:*)', 'Bash(Invoke-WebRequest:*)', 'Bash(Invoke-RestMethod:*)', 'Bash(iwr:*)', 'Bash(irm:*)')) { $deny.Add($rule) }
+        foreach ($rule in @('WebFetch', 'WebSearch')) { $deny.Add($rule) }
+        foreach ($tool in $shellTools) {
+            foreach ($cmd in @('curl', 'wget', 'Invoke-WebRequest', 'Invoke-RestMethod', 'iwr', 'irm')) { $deny.Add(('{0}({1}:*)' -f $tool, $cmd)) }
+        }
     }
-    if (-not $githubWrite) { foreach ($rule in @('Bash(git push:*)', 'Bash(gh:*)')) { $deny.Add($rule) } }
-    foreach ($rule in @('Bash(git reset --hard:*)', 'Bash(git clean:*)', 'Bash(rm -rf:*)')) { $deny.Add($rule) }
+    if (-not $githubWrite) {
+        foreach ($tool in $shellTools) { foreach ($cmd in @('git push', 'gh')) { $deny.Add(('{0}({1}:*)' -f $tool, $cmd)) } }
+    }
+    foreach ($tool in $shellTools) {
+        foreach ($cmd in @('git reset --hard', 'git clean', 'rm -rf', 'Remove-Item -Recurse')) { $deny.Add(('{0}({1}:*)' -f $tool, $cmd)) }
+    }
 
     $scope = _Claude_Field -Obj $Packet -Name 'scope' -Default $null
     foreach ($forbidden in @(_Claude_Field -Obj $scope -Name 'forbiddenPaths' -Default @())) {

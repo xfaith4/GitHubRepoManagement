@@ -430,6 +430,112 @@ function Sync-LedgerFromAudit {
 }
 
 # ---------------------------------------------------------------------------
+# Sync-LedgerFromRunHistory
+# Releases lanes whose run the runner has already closed.
+#
+# Proof of value, 2026-10-17. The runner marks a run `failed` (orphaned on a
+# restart, refused on a stale base, cancelled) in its own summary file, but the
+# execution ledger learned of completion only through /api/execution/complete,
+# which an abandoned run never calls. FowlingScorecard read `running` for two
+# days on run 20261014-214744-795a112f, which the runner had abandoned within
+# forty minutes: the lane stayed occupied, the lifecycle read "running", and
+# the repository could not be dispatched again.
+#
+# This reads the run summary for every `running` entry and applies the same
+# transition Invoke-CancelTask applies: lane released, retry counted, `ready`
+# (or `blocked` at the retry cap), join keys cleared, one history record. Only
+# a summary that says a terminal failure releases the lane. A missing summary,
+# an unreadable one, or one still `running` changes nothing: absence of
+# evidence is not evidence that the run is over.
+#
+# Returns @{ checked; released } where released lists each lane freed, with
+# the run's own status and failure category.
+# ---------------------------------------------------------------------------
+function Sync-LedgerFromRunHistory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkspaceRoot,
+        [Parameter()]
+        [string[]]$TerminalFailureStatuses = @('failed', 'refused', 'cancelled'),
+        [Parameter()]
+        [int]$MaxRetries = 3
+    )
+
+    $ledger = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
+    $runsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs'
+    $released = [System.Collections.Generic.List[object]]::new()
+    $checked = 0
+
+    foreach ($entry in @($ledger.entries)) {
+        if ($null -eq $entry) { continue }
+        $state = [string](_Ledger_GetField -Entry $entry -Name 'executionState' -Default '')
+        if ($state -ne 'running') { continue }
+        $checked++
+        $runId = [string](_Ledger_GetField -Entry $entry -Name 'currentRunId' -Default '')
+        if ([string]::IsNullOrWhiteSpace($runId)) { continue }
+        $summaryPath = Join-Path $runsDir ("{0}.summary.json" -f $runId)
+        if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) { continue }
+        $summary = $null
+        try { $summary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $summary = $null }
+        if ($null -eq $summary) { continue }
+        $runStatus = [string](_Ledger_GetField -Entry $summary -Name 'status' -Default '')
+        if ($runStatus -notin $TerminalFailureStatuses) { continue }
+
+        $category = [string](_Ledger_GetField -Entry $summary -Name 'failureCategory' -Default '')
+        if ([string]::IsNullOrWhiteSpace($category)) { $category = [string](_Ledger_GetField -Entry $summary -Name 'refusalCategory' -Default '') }
+        if ([string]::IsNullOrWhiteSpace($category)) { $category = $runStatus }
+        $errorText = [string](_Ledger_GetField -Entry $summary -Name 'error' -Default '')
+        $reason = if ([string]::IsNullOrWhiteSpace($errorText)) { ("run {0}: {1}" -f $runStatus, $category) } else { ("run {0} ({1}): {2}" -f $runStatus, $category, $errorText) }
+        $repoName = [string](_Ledger_GetField -Entry $entry -Name 'repoName' -Default '')
+        $now = (Get-Date).ToUniversalTime().ToString('o')
+
+        $retryCount = [int](_Ledger_GetField -Entry $entry -Name 'retryCount' -Default 0) + 1
+        $newState = if ($retryCount -ge $MaxRetries) { 'blocked' } else { 'ready' }
+        _Ledger_SetField -Entry $entry -Name 'retryCount'     -Value $retryCount
+        _Ledger_SetField -Entry $entry -Name 'laneSlot'       -Value $null
+        _Ledger_SetField -Entry $entry -Name 'completedAt'    -Value $now
+        _Ledger_SetField -Entry $entry -Name 'lastOutcome'    -Value $category
+        _Ledger_SetField -Entry $entry -Name 'errorMessage'   -Value $reason
+        _Ledger_SetField -Entry $entry -Name 'updatedAt'      -Value $now
+        _Ledger_SetField -Entry $entry -Name 'dispatchRunId'  -Value $null
+        _Ledger_SetField -Entry $entry -Name 'agentRunId'     -Value $null
+        _Ledger_SetField -Entry $entry -Name 'dispatchSource' -Value $null
+        _Ledger_SetField -Entry $entry -Name 'executionState' -Value $newState
+
+        $taskText = [string](_Ledger_GetField -Entry $entry -Name 'currentTaskText' -Default '')
+        $hist = New-HistoryRecord -RepoName $repoName -Event 'released' -RunId $runId -TaskText $taskText -Outcome $category -ErrorMessage $reason
+        $ledger.history = @($ledger.history) + @($hist)
+        $released.Add([pscustomobject]@{ repoName = $repoName; runId = $runId; runStatus = $runStatus; category = $category; newState = $newState })
+    }
+
+    if ($released.Count -gt 0) {
+        Write-ExecutionLedger -WorkspaceRoot $WorkspaceRoot -Ledger $ledger
+    }
+    return @{ checked = $checked; released = @($released.ToArray()) }
+}
+
+function _Ledger_GetField {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Entry,
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter()]
+        [AllowNull()]
+        [object]$Default = $null
+    )
+
+    if ($Entry -is [System.Collections.IDictionary]) {
+        if ($Entry.Contains($Name) -and $null -ne $Entry[$Name]) { return $Entry[$Name] }
+        return $Default
+    }
+    if ($null -ne $Entry.PSObject -and ($Entry.PSObject.Properties.Name -contains $Name) -and $null -ne $Entry.$Name) {
+        return $Entry.$Name
+    }
+    return $Default
+}
+
+# ---------------------------------------------------------------------------
 # Invoke-AssignLane
 # Assigns a repo to the next available lane slot (changes state to 'running').
 # Returns @{ success; laneSlot; error } where error is set on failure.
