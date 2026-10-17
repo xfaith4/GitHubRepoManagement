@@ -208,3 +208,67 @@ restart), or close that session, restart the runner task so it loads the
 fixed envelope, and queue the same item again; then approve the push from
 the console (`POST /api/roadmap-agent/approve-push`), and change the PR's
 base to `staging`, which the product does not yet know how to choose.
+
+## 2026-10-17 evening — owner decisions applied, first run closed
+
+**Owner decisions (2026-10-17).** Headless execution is authorized for this
+controlled trial once credential isolation and workspace safety are verified;
+operator approval stays on PR publication and merge. The product must stop
+switching branches in the owner's working clones (run-owned workspaces are a
+prerequisite for broader unattended execution), must keep GitHub write
+credentials out of the agent's environment, must take the PR base from
+explicit repository policy, and may treat LICENSE/SECURITY/CONTRIBUTING as
+advisory without calling a repository ready on that alone. Operator time is
+to be recorded from here on.
+
+**The stalled run was closed, not approved.** PR #331 merged at 23:39Z. The
+Claude session for run `20261017-181025-83010e21` was closed at 23:43Z with
+its transcript preserved beside the run summary
+(`output/roadmap-task-history/runs/20261017-181025-83010e21.claude-transcript.jsonl`);
+it had changed no files. The runner recorded the run `failed` ("exit code
+-1"), the FreshStartFamily clone was returned to `staging` by hand (the old
+runner code was still loaded), and the empty run branch was kept. The
+dispatch is recorded in the delivery ledger (`output/delivery/delivery-ledger.jsonl`,
+first record) with operator seconds unmeasured and the reason why.
+
+**Fixes (branch `proof/second-delivery`, from `main` after #331).**
+
+- Run-owned workspaces: the runner creates a git worktree of the clone under
+  `output/agent-workspaces/<runId>` on the run branch and the agent works
+  there. The clone's checkout, index and uncommitted files are never touched;
+  absolute clone paths in the prompt and the completion edit are remapped
+  into the workspace; a clean workspace is removed when the run ends and a
+  dirty one is kept at a recorded path. The clone is never switched as a
+  fallback (`New-RunWorkspace`, `Remove-RunWorkspace`).
+- Credential boundary: the runner refuses to launch an agent while
+  `GITHUB_TOKEN` or `GH_TOKEN` is in its own environment, records the verdict
+  on the run and in the heartbeat (names only), and `autoPush` is off for
+  every provider, so the push and the PR happen only through the host's
+  approve-push path with the host's token (`Test-RunnerCredentialIsolation`).
+- PR base from policy: `backend/config/repo-policies.json` names
+  FreshStartFamily → `staging`; `Resolve-RepoPullRequestBase` uses that, else
+  the clone's `origin/HEAD`, validates the branch exists on origin, and
+  refuses publication otherwise. Both PR-opening paths pass it.
+- Ownership on restart: the orphan sweep leaves a run alone while its
+  recorded runner process is alive; only a dead runner's run is closed.
+- 42 new assertions in `tests/Test-DeliveryLoop.ps1` (131 total).
+
+**Credential findings.** The runner task passes `-ClearInheritedGitHubToken`,
+so the agent's shell sees no `GITHUB_TOKEN`; the heartbeat now says so. What
+the agent can still reach, running as the owner: the keyring OAuth `gh`
+credential (`repo`, `workflow`), held back only by `Bash(gh:*)` /
+`PowerShell(gh:*)` deny rules, and the owner's git credential helper for
+`git push`, held back by the same kind of rule. Full separation needs the
+agent in a different Windows account or a sandbox; that is the residual
+risk of this trial and is not closed by these changes. Minimum credentials
+per operation: agent run, none; push and PR open, Contents and Pull requests
+write on the target repository (the host's token, today an admin-scoped PAT);
+merge, the owner; Copilot dispatch, the keyring OAuth token with `repo`.
+
+**300PixelLED_2812B recovery (owner's clone, not touched by the product).**
+The clone is on `roadmap/20261016-031015-cc34298c`, which holds commit
+`7a98410` (12 files, playlist feature) on top of `main`, pushed to origin.
+Safe steps: `git switch main`, then `git merge --ff-only roadmap/20261016-031015-cc34298c`
+(it is one commit ahead, so this fast-forwards), then `git push origin main`
+and delete the run branch locally and on origin. Nothing is lost at any step;
+the run branch can stay until the merge is confirmed.

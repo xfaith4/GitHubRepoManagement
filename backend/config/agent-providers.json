@@ -10,7 +10,7 @@
       ],
       "defaultModel": "unknown",
       "modelKnown": false,
-      "autoPush": true,
+      "autoPush": false,
       "maxConcurrentExecutions": 1,
       "windows": [
         {
@@ -38,7 +38,7 @@
       ],
       "defaultModel": "unknown",
       "modelKnown": false,
-      "autoPush": true,
+      "autoPush": false,
       "maxConcurrentExecutions": 1,
       "windows": [
         {

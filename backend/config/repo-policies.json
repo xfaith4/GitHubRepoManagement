@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1",
+  "description": "Explicit per-repository publication policy. prBase names the branch a product-opened pull request must target when it is not the remote's default branch. A repository absent here uses origin/HEAD; a prBase that does not exist on origin refuses publication rather than guessing.",
+  "repositories": {
+    "FreshStartFamily": {
+      "prBase": "staging",
+      "reason": ".github/workflows/enforce-staging-flow.yml and enforce-release-flow.yml: feature branches target staging; only staging may target main.",
+      "recordedAt": "2026-10-17"
+    }
+  }
+}

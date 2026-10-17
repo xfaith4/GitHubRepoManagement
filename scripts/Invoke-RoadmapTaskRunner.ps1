@@ -307,7 +307,10 @@ function New-RunnerHeartbeat {
         [AllowEmptyString()][string]$StopFilePath = '',
         [object]$ProviderCooldowns = $null,
         [nullable[int]]$LocalSlotsInUse = $null,
-        [object]$ProviderDetection = $null
+        [object]$ProviderDetection = $null,
+        # 2026-10-17: whether this process carries a GitHub token the agent
+        # would inherit. Names only, never values; the host surfaces it.
+        [object]$TokenIsolation = $null
     )
 
     if ([string]::IsNullOrWhiteSpace($BeatAt)) { $BeatAt = (Get-Date).ToUniversalTime().ToString('o') }
@@ -336,6 +339,7 @@ function New-RunnerHeartbeat {
     # LocalSystem and cannot see the operator's User PATH, so without this it
     # reports per-user installs (claude, codex) as missing.
     if ($null -ne $ProviderDetection) { $beat['providerDetection'] = $ProviderDetection }
+    if ($null -ne $TokenIsolation) { $beat['credentialIsolation'] = $TokenIsolation }
     return $beat
 }
 
@@ -759,6 +763,137 @@ function Restore-RunnerStartBranch {
     $result.current = $StartBranch
     $result.reason = ("returned to '{0}'; work branch '{1}' kept for review" -f $StartBranch, $WorkBranch)
     return [pscustomobject]$result
+}
+
+function Get-RunWorkspaceRoot {
+    <# Where run-owned workspaces live: under the output root, never inside a clone. #>
+    param([Parameter(Mandatory)][string]$WorkspaceRoot)
+    return (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\agent-workspaces')
+}
+
+function New-RunWorkspace {
+    <#
+    .SYNOPSIS
+        A git worktree of the operator's clone, on the run's branch, for the
+        agent to work in. The clone's own checkout is not touched.
+
+    .DESCRIPTION
+        Proof of value, 2026-10-17. The runner used to `git switch` the
+        operator's clone onto the run branch; an abandoned run left it there and
+        the operator's next commit landed on a product branch. A worktree gives
+        every run its own directory, index and checkout while sharing the
+        clone's refs, so the branch it commits is visible to approve-push by
+        name and nothing in the clone moves.
+
+        The branch is created from the clone's current HEAD, exactly where the
+        old switch would have started; an existing branch (a resumed run) is
+        checked out as it is. Failure throws: the clone is never switched as a
+        fallback.
+    .OUTPUTS
+        [pscustomobject] path, created, reason
+    #>
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Creates the run workspace the runner already committed to by claiming the task; the claim is the irreversible step.')]
+    param(
+        [Parameter(Mandatory)][string]$CloneRoot,
+        [Parameter(Mandatory)][string]$Branch,
+        [Parameter(Mandatory)][string]$RunId,
+        [Parameter(Mandatory)][string]$WorkspaceRoot
+    )
+
+    $root = Get-RunWorkspaceRoot -WorkspaceRoot $WorkspaceRoot
+    if (-not (Test-Path -LiteralPath $root)) { $null = New-Item -ItemType Directory -Path $root -Force }
+    $path = Join-Path $root $RunId
+    if (Test-Path -LiteralPath $path) {
+        # A resumed run finds its own workspace; anything else in the way is a
+        # bug, not something to overwrite.
+        $existingBranch = ((& git -C $path branch --show-current 2>$null) | Out-String).Trim()
+        if ($existingBranch -eq $Branch) {
+            return [pscustomobject]@{ path = $path; created = $true; reason = ("existing worktree on '{0}' reused" -f $Branch) }
+        }
+        throw ("Run workspace '{0}' already exists on branch '{1}', not '{2}'; refusing to reuse it." -f $path, $existingBranch, $Branch)
+    }
+
+    & git -C $CloneRoot rev-parse --verify --quiet ("refs/heads/{0}" -f $Branch) 2>&1 | Out-Null
+    $branchExists = ($LASTEXITCODE -eq 0)
+    $output = if ($branchExists) {
+        (& git -C $CloneRoot worktree add --quiet $path $Branch 2>&1) | Out-String
+    }
+    else {
+        (& git -C $CloneRoot worktree add --quiet -b $Branch $path 2>&1) | Out-String
+    }
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $path)) {
+        throw ("Could not create the run workspace at '{0}' for branch '{1}': {2}" -f $path, $Branch, $output.Trim())
+    }
+    $reason = if ($branchExists) { ("worktree on existing branch '{0}'" -f $Branch) } else { ("worktree on new branch '{0}' from the clone's HEAD" -f $Branch) }
+    return [pscustomobject]@{ path = $path; created = $true; reason = $reason }
+}
+
+function Remove-RunWorkspace {
+    <#
+    .SYNOPSIS
+        Remove a run's worktree once its work is committed; keep it when
+        anything is uncommitted. The branch always survives.
+    .OUTPUTS
+        [pscustomobject] removed, reason
+    #>
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Removes only a clean worktree the runner itself created this run; the branch and its commits are untouched.')]
+    param(
+        [Parameter(Mandatory)][string]$CloneRoot,
+        [Parameter(Mandatory)][string]$WorkspacePath
+    )
+    $result = [ordered]@{ removed = $false; reason = '' }
+    if (-not (Test-Path -LiteralPath $WorkspacePath)) {
+        $result.removed = $true
+        $result.reason = 'workspace already gone'
+        return [pscustomobject]$result
+    }
+    $dirty = @(& git -C $WorkspacePath status --porcelain 2>$null)
+    if ($dirty.Count -gt 0) {
+        $result.reason = ("kept at '{0}': {1} uncommitted change(s) are recoverable there" -f $WorkspacePath, $dirty.Count)
+        return [pscustomobject]$result
+    }
+    $output = (& git -C $CloneRoot worktree remove $WorkspacePath 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $result.reason = ("kept at '{0}': git worktree remove failed: {1}" -f $WorkspacePath, $output.Trim())
+        return [pscustomobject]$result
+    }
+    $result.removed = $true
+    $result.reason = ("removed '{0}'; the branch keeps its commits" -f $WorkspacePath)
+    return [pscustomobject]$result
+}
+
+function Convert-RunPathToWorkspace {
+    <# Pure - rewrite absolute clone paths in text so they point into the run's workspace. #>
+    param(
+        [Parameter()][AllowEmptyString()][string]$Text = '',
+        [Parameter()][AllowEmptyString()][string]$CloneRoot = '',
+        [Parameter()][AllowEmptyString()][string]$WorkspacePath = ''
+    )
+    if ([string]::IsNullOrWhiteSpace($Text) -or [string]::IsNullOrWhiteSpace($CloneRoot) -or [string]::IsNullOrWhiteSpace($WorkspacePath)) { return $Text }
+    $clone = $CloneRoot.TrimEnd('\', '/')
+    $work = $WorkspacePath.TrimEnd('\', '/')
+    if ($clone -eq $work) { return $Text }
+    $pattern = '(?i)' + [regex]::Escape($clone) + '(?=[\\/]|$)'
+    # A literal replacement: '$' in a path would otherwise read as a group reference.
+    return [regex]::Replace($Text, $pattern, $work.Replace('$', '$$'))
+}
+
+function Test-RunnerCredentialIsolation {
+    <#
+    .SYNOPSIS
+        Is this process free of GitHub write credentials the agent would inherit?
+    .OUTPUTS
+        [pscustomobject] isolated, present (names only), summary
+    #>
+    param([Parameter()][string[]]$TokenVariableNames = @('GITHUB_TOKEN', 'GH_TOKEN'))
+    $present = @($TokenVariableNames | Where-Object { -not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable($_, 'Process')) })
+    $isolated = ($present.Count -eq 0)
+    $summary = if ($isolated) { ("no GitHub token in the runner's environment ({0} checked)" -f ($TokenVariableNames -join ', ')) } else { ("{0} present in the runner's environment" -f ($present -join ', ')) }
+    return [pscustomobject]@{ isolated = $isolated; present = $present; summary = $summary }
 }
 
 function Test-RunnerReconcileDue {
@@ -1601,20 +1736,44 @@ function Invoke-QueuedTask {
     # The branch the operator left the clone on, recorded before the runner
     # moves it, so the finally below can put it back (Restore-RunnerStartBranch).
     $startBranch = ''
+    $cloneRoot = $repo
+    $workspace = $null
     try {
         if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) { throw "Not a git repo: $repo" }
+
+        # Credential boundary (2026-10-17). The agent inherits this process's
+        # environment, so a GitHub token here would be a GitHub token in the
+        # agent's shell. The product's write credential belongs to the host's
+        # approve-push path, never to the coding agent; a runner started
+        # without -ClearInheritedGitHubToken refuses to launch rather than leak.
+        $isolation = Test-RunnerCredentialIsolation
+        Update-TaskSummary -SummaryPath $summaryPath -Set @{ credentialIsolation = $isolation.summary }
+        if (-not $isolation.isolated) {
+            throw ("Refusing to launch the agent: {0} present in the runner's environment would be inherited by the agent. Start the runner with -ClearInheritedGitHubToken (the installed task does)." -f ($isolation.present -join ', '))
+        }
 
         $startBranch = ((& git -C $repo branch --show-current 2>$null) | Out-String).Trim()
         if (-not [string]::IsNullOrWhiteSpace($startBranch)) {
             Update-TaskSummary -SummaryPath $summaryPath -Set @{ startBranch = $startBranch }
         }
 
-        # Working branch (create, or switch if it already exists).
-        & git -C $repo switch -c $branch 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            & git -C $repo switch $branch 2>$null
-            if ($LASTEXITCODE -ne 0) { throw "Failed to switch to branch '$branch' in repo '$repo'." }
-        }
+        # Run-owned workspace (2026-10-17). The agent works in a git worktree of
+        # the operator's clone, never in the clone itself: the clone's checkout,
+        # index and uncommitted files are not touched, an abandoned run cannot
+        # strand it on another branch, and a destructive command inside the
+        # workspace reaches only the run's own copy. The work branch is shared
+        # with the clone (worktrees share refs), so approve-push still pushes it
+        # by name from localRepoPath. The clone is never switched as a fallback:
+        # if the workspace cannot be made, the run is refused.
+        $cloneRoot = $repo
+        $workspace = New-RunWorkspace -CloneRoot $cloneRoot -Branch $branch -RunId $runId -WorkspaceRoot $WorkspaceRoot
+        Update-TaskSummary -SummaryPath $summaryPath -Set @{ workspacePath = $workspace.path; workspaceKind = 'git-worktree' }
+        Write-Host ("  workspace: {0} ({1})" -f $workspace.path, $workspace.reason) -ForegroundColor DarkGray
+        # Everything below runs against the workspace. Absolute clone paths the
+        # prompt or the entry carry are remapped so the agent reads and edits
+        # the run's copy, not the operator's.
+        $repo = $workspace.path
+        $prompt = Convert-RunPathToWorkspace -Text $prompt -CloneRoot $cloneRoot -WorkspacePath $workspace.path
 
         # Launch the provider CLI in the repo.
         if (-not (Get-Command $localCommand -ErrorAction SilentlyContinue)) {
@@ -1880,6 +2039,8 @@ function Invoke-QueuedTask {
         $completionDetail = ''
         if ((Get-Command -Name 'Add-RoadmapCompletionCommit' -ErrorAction SilentlyContinue) -and -not [string]::IsNullOrWhiteSpace([string]$Entry.selectedTask)) {
             $entryRoadmapPath = if ($Entry.PSObject.Properties.Name -contains 'roadmapPath' -and $Entry.roadmapPath) { [string]$Entry.roadmapPath } else { '' }
+            # The entry names the clone's roadmap; the completion edit belongs in the run's workspace copy.
+            $entryRoadmapPath = Convert-RunPathToWorkspace -Text $entryRoadmapPath -CloneRoot $cloneRoot -WorkspacePath $repo
             $completion = Add-RoadmapCompletionCommit -RepoPath $repo -RoadmapPath $entryRoadmapPath `
                 -ItemText ([string]$Entry.selectedTask) -RunId $runId
             $completionDetail = [string]$completion.reason
@@ -1961,11 +2122,20 @@ function Invoke-QueuedTask {
         Write-Host ("  [failed] {0}" -f $_.Exception.Message) -ForegroundColor Red
     }
     finally {
-        # Whatever the outcome, the clone goes back to where the operator left
-        # it. The work branch keeps its commits; only the checkout moves, and
-        # only when the tree is clean. A dry run never switched, so it is skipped.
+        # Whatever the outcome, the run's workspace is removed once its work is
+        # committed on the branch, and kept (path recorded) when anything is
+        # still uncommitted, so a failed run's edits are recoverable.
+        if ($null -ne $workspace -and $workspace.created) {
+            $cleanup = Remove-RunWorkspace -CloneRoot $cloneRoot -WorkspacePath $workspace.path
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{ workspaceRemoved = [bool]$cleanup.removed; workspaceDetail = [string]$cleanup.reason }
+            Write-Host ("  [workspace] {0}" -f $cleanup.reason) -ForegroundColor $(if ($cleanup.removed) { 'DarkGray' } else { 'DarkYellow' })
+        }
+        # The clone itself is never switched any more; this remains as the
+        # safety net for a clone an older runner left on a run branch. The work
+        # branch keeps its commits; only the checkout moves, and only when the
+        # tree is clean. A dry run never switched, so it is skipped.
         if (-not $DryRun -and -not [string]::IsNullOrWhiteSpace($startBranch)) {
-            $restore = Restore-RunnerStartBranch -RepoPath $repo -StartBranch $startBranch -WorkBranch $branch
+            $restore = Restore-RunnerStartBranch -RepoPath $cloneRoot -StartBranch $startBranch -WorkBranch $branch
             Update-TaskSummary -SummaryPath $summaryPath -Set @{ checkoutRestored = [bool]$restore.restored; checkoutRestoreDetail = [string]$restore.reason }
             $restoreColor = if ($restore.restored) { 'DarkGray' } else { 'DarkYellow' }
             Write-Host ("  [checkout] {0}" -f $restore.reason) -ForegroundColor $restoreColor
@@ -2075,9 +2245,11 @@ do {
             $beatLocalSlots += Get-ProviderActiveExecutionCount -RunsDir $runsDir -Provider $beatProvider -HeartbeatPath $heartbeatPath
         }
     }
+    $beatIsolation = Test-RunnerCredentialIsolation
     Write-RunnerHeartbeat -Path $heartbeatPath -Heartbeat (New-RunnerHeartbeat `
             -QueuePath $QueuePath -PollSeconds $PollSeconds -ClaimedCount $claimable.Count -Mode $runnerMode -StopFilePath $StopFilePath `
-            -ProviderCooldowns $beatCooldowns -LocalSlotsInUse $beatLocalSlots -ProviderDetection $runnerProviderDetection)
+            -ProviderCooldowns $beatCooldowns -LocalSlotsInUse $beatLocalSlots -ProviderDetection $runnerProviderDetection `
+            -TokenIsolation ([ordered]@{ isolated = [bool]$beatIsolation.isolated; present = @($beatIsolation.present); summary = [string]$beatIsolation.summary }))
 
     if ($claimable.Count -eq 0) {
         if ($Once) { Write-Host 'No queued tasks.' -ForegroundColor DarkGray; break }
