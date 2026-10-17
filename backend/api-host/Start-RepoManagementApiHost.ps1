@@ -12995,7 +12995,8 @@ try {
                         -AcceptanceCriteria @(Get-ObjectPropertyValue -InputObject $planningContext -PropertyName 'acceptanceCriteria' -Default @()) `
                         -VerificationCommands @() `
                         -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false } `
-                        -PreferredProvider 'auto'
+                        -PreferredProvider 'auto' `
+                        -Instructions ([string]$prompt)
                     $dispatchWorkPacketPath = Save-WorkPacket -WorkspaceRoot $WorkspaceRoot -Packet $dispatchWorkPacket
 
                     $queueEntry = New-RoadmapQueueEntry `
