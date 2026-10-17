@@ -1359,7 +1359,8 @@ function Submit-PackagedItemToRunner {
         -AcceptanceCriteria @(_Pack_GetField -Obj $Packet -Name 'acceptanceCriteria' -Default @()) `
         -VerificationCommands @() `
         -Permissions @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false } `
-        -PreferredProvider 'auto'
+        -PreferredProvider 'auto' `
+        -Instructions ([string](_Pack_GetField -Obj $Packet -Name 'generatedPrompt' -Default ''))
     $approvalWorkPacketPath = Save-WorkPacket -WorkspaceRoot $WorkspaceRoot -Packet $approvalWorkPacket
 
     $entry = New-PackagedItemQueueEntry -RunId $RunId -Packet $Packet -WorkPacketPath $approvalWorkPacketPath

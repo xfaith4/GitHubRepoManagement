@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented here.
 
+## 2026-10-17 — The agent gets the task that was approved, under the envelope it declares
+
+The first controlled run of the proof of value (300PixelLED_2812B, run
+`20261016-031015-cc34298c`) exposed two defects between the operator's approval
+and the agent.
+
+- **The approved prompt reached the agent as one line.** Both roads to the
+  queue (the dispatch route and packaged-item approval) built the WorkPacket's
+  objective from the first line of the prompt and kept nothing else, and the
+  runner renders the packet, not the queue entry. A 30-line prompt, reviewed in
+  the guided-improvement wizard, arrived as one sentence with "(none declared)"
+  under criteria. `New-WorkPacket -Instructions` now carries the approved text
+  verbatim and `ConvertTo-WorkPacketPrompt` renders it under `## Instructions`.
+  Optional and additive: schema-1 packets without it render as before.
+- **The permission envelope binds.** It was only rendered into the prompt, so
+  Claude Code asked the operator before reading this product's roadmap
+  template from a run in another repository. `ConvertTo-ClaudePermissionSetting`
+  maps the packet onto Claude Code permission rules, which the runner writes
+  beside the packet and passes with `--settings` in both interactive and
+  headless modes. Reading is never a prompt. Shell follows the packet.
+  Network tools, `git push`, `gh`, destructive local git and edits to the
+  D-012 forbidden paths are denied. Verified against Claude Code 2.1.300: a
+  read outside the working directory ran without a prompt and `git push` was
+  denied. Shell-level denials are a first layer, not the only one.
+
+Takes effect for the runner after it restarts; the host change after the
+portal service restarts.
+
 ## 2026-10-16 — The repair PR reaches GitHub, and every answer is recorded (proof of value)
 
 Ben's decision of 2026-10-16 made delivery to other repositories the only
