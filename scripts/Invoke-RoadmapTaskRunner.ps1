@@ -1557,6 +1557,20 @@ function Invoke-QueuedTask {
         # unconditionally: Tee-Object -Variable writes into this scope, and an
         # interactive run never sets it at all.
         $claudeLines = @()
+        # 2026-10-17 - the packet's permission envelope binds. Written as a
+        # settings file beside the run's other evidence and passed to Claude
+        # with --settings, so reading is never a prompt, shell follows the
+        # packet, and push / network / forbidden paths are denied. Without it
+        # an interactive session asked the operator before reading a template.
+        $claudeSettingsPath = ''
+        if ($localProvider -eq 'claude' -and (Get-Command -Name 'ConvertTo-ClaudePermissionSetting' -ErrorAction SilentlyContinue)) {
+            $claudeSettingsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\work-packets'
+            if (-not (Test-Path -LiteralPath $claudeSettingsDir)) { $null = New-Item -ItemType Directory -Path $claudeSettingsDir -Force }
+            $claudeSettingsPath = Join-Path $claudeSettingsDir ('{0}.claude-settings.json' -f $runId)
+            $claudeSettingsJson = ConvertTo-Json -InputObject (ConvertTo-ClaudePermissionSetting -Packet $runWorkPacket) -Depth 6
+            Set-Content -LiteralPath $claudeSettingsPath -Value $claudeSettingsJson -Encoding UTF8
+            Write-Host ("  permission envelope: {0}" -f $claudeSettingsPath) -ForegroundColor DarkGray
+        }
         Push-Location $repo
         try {
             if ($localProvider -eq 'codex') {
@@ -1578,12 +1592,15 @@ function Invoke-QueuedTask {
                 # supportsResume = false, so Resolve-RemediationRoute never
                 # routes a resume to it.
                 $claudeArgv = if ([string]::IsNullOrWhiteSpace($remediationResumeSession)) {
-                    New-ClaudeExecutionArgument -Prompt $prompt -PermissionMode $PermissionMode
+                    New-ClaudeExecutionArgument -Prompt $prompt -PermissionMode $PermissionMode -SettingsPath $claudeSettingsPath
                 }
                 else {
-                    Resume-ClaudeExecution -SessionId $remediationResumeSession -Prompt $prompt -PermissionMode $PermissionMode
+                    Resume-ClaudeExecution -SessionId $remediationResumeSession -Prompt $prompt -PermissionMode $PermissionMode -SettingsPath $claudeSettingsPath
                 }
                 & $localCommand @claudeArgv 2>&1 | Tee-Object -Variable claudeLines | Out-Null
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($claudeSettingsPath)) {
+                & $localCommand --permission-mode $PermissionMode --settings $claudeSettingsPath $prompt
             }
             else { & $localCommand --permission-mode $PermissionMode $prompt }
             if ($LASTEXITCODE -ne 0) { throw ("{0} execution failed with exit code {1}." -f $localProvider, $LASTEXITCODE) }

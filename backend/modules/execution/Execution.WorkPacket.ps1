@@ -123,12 +123,24 @@ function New-WorkPacket {
         [Parameter(Mandatory)][hashtable]$Permissions,
         [int]$Attempt = 1,
         [string]$PreferredProvider = 'auto',
-        [AllowEmptyString()][string]$PreviousSessionId = ''
+        [AllowEmptyString()][string]$PreviousSessionId = '',
+        # 2026-10-16. The task text the operator reviewed and approved, carried
+        # VERBATIM. Both roads to the queue used to keep only its first line as
+        # the objective, and the runner renders the packet, not the queue
+        # entry's prompt - so the agent never saw the rest of what was approved
+        # (seen on run 20261016-031015-cc34298c: a 30-line prompt reached Claude
+        # as one sentence with "(none declared)" under criteria). Optional and
+        # additive: a schema-1 packet without it renders exactly as before.
+        [AllowEmptyString()][string]$Instructions = ''
     )
 
     $sessionId = $null
     if (-not [string]::IsNullOrWhiteSpace($PreviousSessionId)) {
         $sessionId = [string]$PreviousSessionId
+    }
+    $instructionText = $null
+    if (-not [string]::IsNullOrWhiteSpace($Instructions) -and $Instructions.Trim() -ne $Objective.Trim()) {
+        $instructionText = [string]$Instructions
     }
 
     return [ordered]@{
@@ -138,6 +150,7 @@ function New-WorkPacket {
         baseBranch         = [string]$BaseBranch
         baseSha            = [string]$BaseSha
         objective          = [string]$Objective
+        instructions       = $instructionText
         scope              = [ordered]@{
             allowedPaths   = @($AllowedPaths)
             forbiddenPaths = @($ForbiddenPaths)
@@ -435,6 +448,17 @@ function ConvertTo-WorkPacketPrompt {
     $lines += ''
     $lines += [string](_WP_Field -Obj $Packet -Name 'objective' -Default '')
     $lines += ''
+
+    # The operator-approved task text, verbatim, when it says more than the
+    # objective line. Omitted entirely when absent, so older packets render
+    # unchanged.
+    $instructions = [string](_WP_Field -Obj $Packet -Name 'instructions' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($instructions)) {
+        $lines += '## Instructions'
+        $lines += ''
+        $lines += $instructions
+        $lines += ''
+    }
 
     $scope = _WP_Field -Obj $Packet -Name 'scope' -Default $null
     $lines += '## Scope'

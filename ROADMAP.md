@@ -79,7 +79,7 @@ the operator queue is a separate file. Take the first `[ ]` and open a PR.
 - [ ] **3.8 / D-001 — dependency notion.** Optional, single-repo, acyclic,
       keyed on stable item ids, gating dispatch eligibility. Schema + parser +
       cycle check. Does not wait on the trial: it changes what the contract
-      *can express*, not what runs. _(state: planned)_
+      _can express_, not what runs. _(state: planned)_
       `check: pwsh ./tests/Test-RoadmapDependencies.ps1 -FailOnError`
 - [ ] **4.0 A — counts reconcile on every scan.** Per snapshot, status counts
       sum to the total and scanned, in-scope, assessed and ledger counts each
@@ -185,11 +185,11 @@ Every milestone carries exactly one state and exactly one `check:` — the comma
 that decides it. A milestone with no runnable check is not a milestone; it is a
 question, and it goes to `docs/governance/open-decisions.md` instead.
 
-| State      | Meaning                                                                   | Closed by |
-| ---------- | ------------------------------------------------------------------------- | --------- |
-| `planned`  | Contract written (goal, boundary, `check:`); no code on any branch        | agent     |
-| `built`    | Code on a branch; `check:` not yet green in CI                            | agent     |
-| `verified` | `check:` exits 0 in CI on the PR head; evidence linked from the PR        | agent     |
+| State      | Meaning                                                            | Closed by |
+| ---------- | ------------------------------------------------------------------ | --------- |
+| `planned`  | Contract written (goal, boundary, `check:`); no code on any branch | agent     |
+| `built`    | Code on a branch; `check:` not yet green in CI                     | agent     |
+| `verified` | `check:` exits 0 in CI on the PR head; evidence linked from the PR | agent     |
 
 A `built` or `verified` milestone's `check:` must be a step CI runs, with every
 argument the line passes (validator R024). A check CI does not run can never go
@@ -204,7 +204,7 @@ and `[x]` means the item leaves this file for the archive in the same PR.
 `scripts/Add-OperatorVerification.ps1`. A ratchet may be recorded any time after
 `verified`, may be recorded never, and never blocks a later milestone. The
 promotion boundary — merge to the protected default branch on an operator-approved
-verified head SHA — is unchanged and lives in §8; it gates *merge*, not *the next item*.
+verified head SHA — is unchanged and lives in §8; it gates _merge_, not _the next item_.
 
 **Milestone format.** One bullet, action-first, with the check on its own line:
 
@@ -231,32 +231,32 @@ its own `check:` and the human half is appended to the operator queue. The valid
 
 ## 4. Release Index
 
-| Version   | Title                                                                    | Status                                                                                     |
-| --------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| 0.4 - 1.1 | Foundation through Standardization and Guardrails                        | `done` — see [archive](docs/history/completed-releases.md)                                 |
-| 1.2       | Enhanced Portfolio Intelligence                                          | `done` — closed 2026-07-05; see archive                                                    |
-| 1.3 - 1.7 | Frontend build, repo evaluation, README generation, dispatch, git status | `done` — see archive                                                                       |
-| 1.7.5     | Portfolio Mission Alignment, Indexed Scanning, Value-Ranked Planning     | `done` — shipped 2026-05-28; see archive                                                   |
-| 1.8 - 2.0 | Operations workspace, AI doc cycles, agent-run monitoring                | `done` — see archive                                                                       |
-| 2.1       | Persistent Data Layer                                                    | `done` (engineering) — closed 2026-08-07; operator sign-off tracked in 2.9                 |
-| 2.2       | API Auth, Network Security, Onboarding, GitHub App                       | `done` (engineering) — 2026-07-05; optional live App-token exchange tracked in 2.9         |
-| 2.3       | Portfolio Analytics, Trend Visualization, Distribution                   | `done` (engineering) — 2026-07-06; 7/90-day accrual is calendar-gated, tracked in 2.9      |
-| 2.4       | Agent Integration Protocol and AI Repair Loop                            | `done` — 2026-07-05; live submit-PR proof landed 2026-08-09 (2.7 Phase A, PR #96)          |
-| 2.5       | Mobile-Friendly Operator Experience                                      | `done` (engineering) — 2026-07-05; two surfaces + device proof tracked in 2.9              |
-| 2.6       | Interface Clarity and Operator Orientation                               | `done` — 2026-07-06; device sign-off tracked in 2.9                                        |
-| 2.7       | Guarded Scheduled Automation (Curated-Subset, Preview-First)             | `done` — closed 2026-08-11; see archive. Live service install re-homed to 2.9              |
-| 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                        |
-| **2.9**   | **Operator Field Proof + Mobile Completion**                             | **active** — promoted 2026-08-19; mobile UN-DEFERRED (its resume condition was met)        |
-| 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                  |
-| 3.1       | Closed-Loop Delivery                                                     | `done` 2026-08-15 — manual loop proof recorded; portal + scheduled proofs re-homed to 2.9  |
-| 3.2       | Portfolio Scale and Responsiveness                                       | `done` 2026-08-19 — budget + bounded sweep + observable/cancellable scan + render bound    |
-| 3.3       | Steady-State Operation                                                   | `done` 2026-08-19 — retention, rehearsed restore, honest transport, decision-grade exports |
-| **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified |
-| 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9 |
+| Version   | Title                                                                    | Status                                                                                                                                               |
+| --------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.4 - 1.1 | Foundation through Standardization and Guardrails                        | `done` — see [archive](docs/history/completed-releases.md)                                                                                           |
+| 1.2       | Enhanced Portfolio Intelligence                                          | `done` — closed 2026-07-05; see archive                                                                                                              |
+| 1.3 - 1.7 | Frontend build, repo evaluation, README generation, dispatch, git status | `done` — see archive                                                                                                                                 |
+| 1.7.5     | Portfolio Mission Alignment, Indexed Scanning, Value-Ranked Planning     | `done` — shipped 2026-05-28; see archive                                                                                                             |
+| 1.8 - 2.0 | Operations workspace, AI doc cycles, agent-run monitoring                | `done` — see archive                                                                                                                                 |
+| 2.1       | Persistent Data Layer                                                    | `done` (engineering) — closed 2026-08-07; operator sign-off tracked in 2.9                                                                           |
+| 2.2       | API Auth, Network Security, Onboarding, GitHub App                       | `done` (engineering) — 2026-07-05; optional live App-token exchange tracked in 2.9                                                                   |
+| 2.3       | Portfolio Analytics, Trend Visualization, Distribution                   | `done` (engineering) — 2026-07-06; 7/90-day accrual is calendar-gated, tracked in 2.9                                                                |
+| 2.4       | Agent Integration Protocol and AI Repair Loop                            | `done` — 2026-07-05; live submit-PR proof landed 2026-08-09 (2.7 Phase A, PR #96)                                                                    |
+| 2.5       | Mobile-Friendly Operator Experience                                      | `done` (engineering) — 2026-07-05; two surfaces + device proof tracked in 2.9                                                                        |
+| 2.6       | Interface Clarity and Operator Orientation                               | `done` — 2026-07-06; device sign-off tracked in 2.9                                                                                                  |
+| 2.7       | Guarded Scheduled Automation (Curated-Subset, Preview-First)             | `done` — closed 2026-08-11; see archive. Live service install re-homed to 2.9                                                                        |
+| 2.8       | Local Claude Code Execution (queue + operator runner)                    | `done` (engineering) — 2026-07-15; real `claude` run tracked in 2.9                                                                                  |
+| **2.9**   | **Operator Field Proof + Mobile Completion**                             | **active** — promoted 2026-08-19; mobile UN-DEFERRED (its resume condition was met)                                                                  |
+| 3.0       | Operator-Context Execution                                               | `done` (engineering) — 2026-08-09; see archive. Live proof tracked in 2.9                                                                            |
+| 3.1       | Closed-Loop Delivery                                                     | `done` 2026-08-15 — manual loop proof recorded; portal + scheduled proofs re-homed to 2.9                                                            |
+| 3.2       | Portfolio Scale and Responsiveness                                       | `done` 2026-08-19 — budget + bounded sweep + observable/cancellable scan + render bound                                                              |
+| 3.3       | Steady-State Operation                                                   | `done` 2026-08-19 — retention, rehearsed restore, honest transport, decision-grade exports                                                           |
+| **3.4**   | **The Delivery Loop Closes**                                             | `done` 2026-08-15 — six milestones + the full-loop proof, driven live and operator-verified                                                          |
+| 3.5       | Trustworthy Surfaces (UI Quality)                                        | `done` 2026-08-17 — all seven milestones; trust-report per finding; operator sign-off in 2.9                                                         |
 | 3.6       | Every Repository Gets an Outcome                                         | `done` — closed 2026-09-14 (D-018 PR 2); see archive. Field proof: OQ-1. Its two non-blockers live on as Current focus M4a and the 2.9 trend accrual |
-| **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout       |
-| **3.8**   | **Provider-Aware Execution**                                             | **`planned`** 2026-09-06 — Codex/Claude/Copilot behind one provider-neutral task contract  |
-| **4.0**   | **Rule-Driven Lane Assignment**                                          | **`planned`** 2026-09-24 — engine outward: a pure assigner, then the v2 console (D-024)    |
+| **3.7**   | **Portfolio Value Proof**                                                | **`planned`** 2026-08-23 — follows 3.6; ten real repositories decide the 80+ rollout                                                                 |
+| **3.8**   | **Provider-Aware Execution**                                             | **`planned`** 2026-09-06 — Codex/Claude/Copilot behind one provider-neutral task contract                                                            |
+| **4.0**   | **Rule-Driven Lane Assignment**                                          | **`planned`** 2026-09-24 — engine outward: a pure assigner, then the v2 console (D-024)                                                              |
 
 > **Note on `.5` numbering.** Reserve it for course corrections like 1.7.5;
 > default new work to integer minor releases.
@@ -318,21 +318,21 @@ already satisfiable in parallel — D-001's dependency notion and D-003's
 **Dependency map (agent-closable work only; operator rows live in
 [`operator-queue.md`](docs/governance/operator-queue.md)):**
 
-| Open item                                 | Depends on                                             | Type               |
-| ----------------------------------------- | ------------------------------------------------------ | ------------------ |
-| 3.7 accept/reject ledger                  | nothing                                                | none               |
-| 3.7 M5 previews staged                    | the ledger; OQ-12 (live index carries kind signals)    | soft — sequencing  |
-| 3.7 portfolio brief                       | nothing — two conclusion payloads already exist        | none               |
-| 3.7 measured execution + rollout decision | operator approvals (queue item OQ-3)                   | **operator queue** |
-| One manifest walk                         | nothing                                                | none               |
-| 3.8 D-001 dependency notion               | nothing                                                | none               |
-| 3.8 provider-aware scheduler              | 3.7 rollout decision; D-003 grant (OQ-5)               | soft — sequencing  |
-| Lane 0.19 verify tab                      | nothing                                                | none               |
-| 4.0 A — counts reconcile                  | Lane 0.22 one-snapshot item (slice 4.0-2)              | soft — sequencing  |
-| 4.0 B/C — data model and assigner         | 4.0 A; 3.8 WorkPacket and adapters (built)             | soft — sequencing  |
-| 4.0 E — the v2 console                    | D-024 (decided 2026-09-24); phases A–D                 | soft — sequencing  |
-| Lane 0.5 tab disclosure                   | product decision — `open-decisions.md`                 | hard — design      |
-| 2.9 trend accrual                         | calendar time                                          | time-gated         |
+| Open item                                 | Depends on                                          | Type               |
+| ----------------------------------------- | --------------------------------------------------- | ------------------ |
+| 3.7 accept/reject ledger                  | nothing                                             | none               |
+| 3.7 M5 previews staged                    | the ledger; OQ-12 (live index carries kind signals) | soft — sequencing  |
+| 3.7 portfolio brief                       | nothing — two conclusion payloads already exist     | none               |
+| 3.7 measured execution + rollout decision | operator approvals (queue item OQ-3)                | **operator queue** |
+| One manifest walk                         | nothing                                             | none               |
+| 3.8 D-001 dependency notion               | nothing                                             | none               |
+| 3.8 provider-aware scheduler              | 3.7 rollout decision; D-003 grant (OQ-5)            | soft — sequencing  |
+| Lane 0.19 verify tab                      | nothing                                             | none               |
+| 4.0 A — counts reconcile                  | Lane 0.22 one-snapshot item (slice 4.0-2)           | soft — sequencing  |
+| 4.0 B/C — data model and assigner         | 4.0 A; 3.8 WorkPacket and adapters (built)          | soft — sequencing  |
+| 4.0 E — the v2 console                    | D-024 (decided 2026-09-24); phases A–D              | soft — sequencing  |
+| Lane 0.5 tab disclosure                   | product decision — `open-decisions.md`              | hard — design      |
+| 2.9 trend accrual                         | calendar time                                       | time-gated         |
 
 ---
 
@@ -1170,7 +1170,7 @@ What is new and still open:
       work carries the rule id, and the row says so. _(state: planned)_
       `check: pwsh ./tests/Test-LanePolicy.ps1 -FailOnError`
 - [ ] **A pure assignment function.** `Get-LaneAssignment -Queue -Agents
-      -Locks -Budget -Policy` returns what goes in each lane and the rule ids
+    -Locks -Budget -Policy` returns what goes in each lane and the rule ids
       behind each choice, including why a lane is left empty. It uses no
       randomness, no model call and no clock, so the same inputs always give
       the same result — the canonical-verdict requirement applied to dispatch.
@@ -1335,18 +1335,18 @@ every slice:
 4. **Its own check in CI verifies a slice**, never the field check. The field
    check is an operator-queue ratchet and holds no later slice.
 
-| Slice | Milestones | What the operator sees | Deploy | Rollback |
-| --- | --- | --- | --- | --- |
-| 4.0-1 | A: one ranking; one hold card | Today's #n is the board's #n; one card per repository | restart + build (OQ-14) | revert; nothing stored |
-| 4.0-2 | Lane 0.22 one snapshot; A: counts reconcile | a header badge naming a count mismatch, and none when counts agree | restart + build | revert |
-| 4.0-3 | B: step types, agent registry, lane declarations | Settings lists each agent beside its provider | restart | no reader yet; revert |
-| 4.0-4 | B: run-close fields; locks and attempts | Runs show completed time, verdict, vendor, usage | restart + runner restart | additive; absent reads "unmeasured" |
-| 4.0-5 | B: units and budget ledger; per-lane metrics | lane metrics over 7 and 30 days, "unmeasured" until closes accrue | restart + build | revert |
-| 4.0-6 | B: vendor balance feed; launch path | a balance card per vendor, "unconfirmed" without a feed | restart; each read grant is an operator-queue row | no feed reads "unconfirmed" |
-| 4.0-7 | C: rules as data, pure assigner, fixture per rule, dry run | `GET /api/lanes/dry-run` says what would go where, and why | restart | the route writes nothing |
-| 4.0-8 | D: shadow mode; smoke deadline | a disagreement report over any window | restart | shadow writes events only |
-| 4.0-9 | D: automation toggle | a Settings toggle, disabled with its reason until a report exists | restart + build | off is the default |
-| 4.0-10+ | E: the v2 console, one milestone per PR | Dashboard (Now + Lanes) beside v1 until parity | build | v1 stays reachable until parity |
+| Slice   | Milestones                                                 | What the operator sees                                             | Deploy                                            | Rollback                            |
+| ------- | ---------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------- | ----------------------------------- |
+| 4.0-1   | A: one ranking; one hold card                              | Today's #n is the board's #n; one card per repository              | restart + build (OQ-14)                           | revert; nothing stored              |
+| 4.0-2   | Lane 0.22 one snapshot; A: counts reconcile                | a header badge naming a count mismatch, and none when counts agree | restart + build                                   | revert                              |
+| 4.0-3   | B: step types, agent registry, lane declarations           | Settings lists each agent beside its provider                      | restart                                           | no reader yet; revert               |
+| 4.0-4   | B: run-close fields; locks and attempts                    | Runs show completed time, verdict, vendor, usage                   | restart + runner restart                          | additive; absent reads "unmeasured" |
+| 4.0-5   | B: units and budget ledger; per-lane metrics               | lane metrics over 7 and 30 days, "unmeasured" until closes accrue  | restart + build                                   | revert                              |
+| 4.0-6   | B: vendor balance feed; launch path                        | a balance card per vendor, "unconfirmed" without a feed            | restart; each read grant is an operator-queue row | no feed reads "unconfirmed"         |
+| 4.0-7   | C: rules as data, pure assigner, fixture per rule, dry run | `GET /api/lanes/dry-run` says what would go where, and why         | restart                                           | the route writes nothing            |
+| 4.0-8   | D: shadow mode; smoke deadline                             | a disagreement report over any window                              | restart                                           | shadow writes events only           |
+| 4.0-9   | D: automation toggle                                       | a Settings toggle, disabled with its reason until a report exists  | restart + build                                   | off is the default                  |
+| 4.0-10+ | E: the v2 console, one milestone per PR                    | Dashboard (Now + Lanes) beside v1 until parity                     | build                                             | v1 stays reachable until parity     |
 
 **Phase exits.** A phase closes when its milestones are verified and the
 product itself answers its exit question:
@@ -1549,7 +1549,7 @@ batches, each ending with `-UpdateBaseline` / a lowered `--max-warnings`:
       `Test-RoadmapCapabilityRecord.ps1` fires only when a commit subject reads
       `feat(release-N.M):` or `(phaseN)` and its diff touches `backend/` or
       `scripts/`. The Lane 0.21 poll-loop commit (`fix(portfolio): … (Lane
-      0.21)`, 2026-09-17) shipped 16 files under that bar and was checked by
+    0.21)`, 2026-09-17) shipped 16 files under that bar and was checked by
       nobody; `frontend/` never counts. AGENTS.md rule 3 ("the roadmap is the
       last file you write") therefore binds by contract, not by gate. Widen
       the predicate: a PR range whose diff touches `backend/`, `scripts/` or
@@ -2169,7 +2169,7 @@ reaches into a user session at all.
 **The remaining three shipped 2026-09-13; recorded as prose, because a `[x]` in
 this file is a mistake, not a record.**
 
-*The action, not the command.* `POST /api/roadmap/runner/start` and
+_The action, not the command._ `POST /api/roadmap/runner/start` and
 `POST /api/roadmap/runner/stop`
 ([`Automation.RunnerControl.ps1`](backend/modules/automation/Automation.RunnerControl.ps1))
 replace the pasted remedy everywhere it was offered: the header popover, the
@@ -2188,7 +2188,7 @@ cannot run while the operator is logged out, so only the heartbeat may say a
 runner exists, and the console watches for it and says plainly when it never
 arrives.
 
-*The kill switch.* `roadmap-task-runner.hold.json` is the durable half the stop
+_The kill switch._ `roadmap-task-runner.hold.json` is the durable half the stop
 marker could never be — the marker is consumed by the runner honoring it, so on
 its own "stop" would have lasted one repeat interval. The runner reads the hold
 before anything else and leaves, making each five-minute repeat a two-second
@@ -2205,7 +2205,7 @@ stopped. Same shape as the gate that twice emptied the portfolio index, with a
 worse recovery, and asserted rather than assumed: the gate fails if a hold ever
 appears in the operator's own output directory.
 
-*One pane.* [`RunnerControlPanel.tsx`](frontend/components/RunnerControlPanel.tsx)
+_One pane._ [`RunnerControlPanel.tsx`](frontend/components/RunnerControlPanel.tsx)
 leads the Insights tab with runner state, queued total, claimable now, stranded
 count, oldest-queued age, the per-provider backlog and the live runner's
 identity — the two facts that arrive on one route and had never been rendered
@@ -2367,7 +2367,7 @@ fixtures never reaching live state was verified on #320's head and archived
 
 - [ ] **Only actionable roadmap lines become work.** Before ranking, each
       candidate is classified `actionable | done-statement | deferred | guidance |
-      fragment`. Only `actionable` is ranked, queued or offered for dispatch, and
+    fragment`. Only `actionable` is ranked, queued or offered for dispatch, and
       each repository shows "Excluded (n)" with the reason for each line. A run
       that completes writes its item back as done, and the same item hash cannot
       be dispatched again inside a cooldown unless the operator overrides.
@@ -2423,7 +2423,7 @@ fixtures never reaching live state was verified on #320's head and archived
       the lane ledger (`Invoke-CancelTask`): the lane frees, the agent keeps
       working, and its pull request arrives later as an orphan the board can
       no longer attribute. The runner accepts a `cancelled` structured result
-      *from the agent* but nothing carries an operator's cancel *to* it. Ben,
+      _from the agent_ but nothing carries an operator's cancel _to_ it. Ben,
       2026-09-18: "that needs to be a trustworthy button." A cancel writes a
       flag under the runner control root (`REPO_MGMT_RUNNER_CONTROL_ROOT`)
       keyed by `dispatchRunId`; `Invoke-RoadmapTaskRunner.ps1` reads it at
@@ -2442,7 +2442,7 @@ fixtures never reaching live state was verified on #320's head and archived
       lane tiles read "Running" and nothing else. Agents report no percentage
       and the product invents no figure (steering contract 2), but the
       execution event stream already names the phases — QUEUED, DISPATCHED,
-      WORKING, LOCAL_VERIFYING, PUSHING, PR_OPEN, CI_PENDING,
+      WORKING, LOCAL*VERIFYING, PUSHING, PR_OPEN, CI_PENDING,
       CI_PASSED/CI_FAILED, READY_FOR_OPERATOR, MERGING, MERGED,
       POST_MERGE_VERIFYING, COMPLETE (`Execution.Events.ps1`). Each tile shows
       the current phase as "phase n of N — <name>", the time it entered that
@@ -2457,7 +2457,7 @@ fixtures never reaching live state was verified on #320's head and archived
       contract 8). Done when: a fixture lane at `ci-pending` renders phase,
       entered-at, elapsed and the trace link; a lane with no events renders
       "no phase observed" and no ring; the string `%` appears nowhere in the
-      tile. _(state: planned)_
+      tile. *(state: planned)\_
       `check: npx vitest run frontend/components/ExecutionLaneTile.test.tsx`
 - [ ] **Labels match what they count.** "N need you" counts repositories, not
       holds × codes (it read 63 for 59 repositories); that clause shipped with
