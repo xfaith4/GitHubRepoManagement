@@ -47,6 +47,9 @@ $WorkspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 . (Join-Path $WorkspaceRoot 'backend\modules\git\Git.BaseFreshness.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\roadmap\Roadmap.PrSubmitter.ps1')
 . (Join-Path $WorkspaceRoot 'backend\modules\delivery\Delivery.Ledger.ps1')
+. (Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.WorkPacket.ps1')
+. (Join-Path $WorkspaceRoot 'backend\modules\agent-adapters\Adapter.Claude.ps1')
+. (Join-Path $WorkspaceRoot 'backend\modules\execution\Execution.Ledger.ps1')
 
 $failures = [System.Collections.Generic.List[string]]::new()
 $passed = 0
@@ -256,6 +259,125 @@ try {
     Assert-That ($after.checked -eq 0 -and @($after.errors).Count -eq 0) 'outcome: a merged PR is terminal and is not fetched again'
     $final = Get-DeliverySummary -Record @((Get-DeliveryLedgerRecord -WorkspaceRoot $WorkspaceRoot).records) -AsOfUtc $asOf
     Assert-That ($final.metrics.prsMerged.value -eq 1) 'outcome: the summary must read the refreshed merge'
+
+    # -- 9. The approved task text reaches the agent (2026-10-17) -------------
+    # Run 20261016-031015-cc34298c: a 30-line operator-reviewed prompt reached
+    # Claude as its first line, with "(none declared)" under criteria.
+    $approved = "Make ROADMAP.md ready.`n`n1. MOVE the open items; do not copy them.`n2. Diff must be additions only.`n`nCommit and stop."
+    $permissionsAll = @{ filesystemWrite = $true; shell = $true; network = $false; githubWrite = $false }
+    $withText = New-WorkPacket -TaskId 'dl-1' -Repository 'o/r' -BaseBranch 'main' -BaseSha '' -Objective 'Make ROADMAP.md ready.' `
+        -ForbiddenPaths @('.github/workflows/**') -Permissions $permissionsAll -Instructions $approved
+    $rendered = ConvertTo-ClaudePrompt -Packet $withText
+    Assert-That ($rendered.Contains($approved)) 'instructions: the approved text must reach the agent verbatim'
+    Assert-That ($rendered.IndexOf('## Instructions') -gt $rendered.IndexOf('## Objective') -and $rendered.IndexOf('## Instructions') -lt $rendered.IndexOf('## Scope')) 'instructions: rendered between Objective and Scope'
+    $oneLine = New-WorkPacket -TaskId 'dl-2' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'Fix it.' -Permissions $permissionsAll -Instructions 'Fix it.'
+    Assert-That ($null -eq $oneLine.instructions -and -not (ConvertTo-ClaudePrompt -Packet $oneLine).Contains('## Instructions')) 'instructions: text identical to the objective is not repeated'
+    $roundTrip = ConvertTo-Json -InputObject $withText -Depth 8 | ConvertFrom-Json
+    Assert-That ((ConvertTo-ClaudePrompt -Packet $roundTrip).Contains($approved)) 'instructions: survive the packet''s JSON round trip, which is how the runner reads it'
+    $dispatchRoute = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw
+    Assert-That ($dispatchRoute -match '-Instructions \(\[string\]\$prompt\)') 'instructions: the dispatch route passes the operator prompt into the packet'
+    $packaging = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\modules\automation\Automation.RoadmapPackaging.ps1') -Raw
+    Assert-That ($packaging -match "-Instructions \(\[string\]\(_Pack_GetField -Obj \`$Packet -Name 'generatedPrompt'") 'instructions: the packaged-item road passes the approved generated prompt into the packet'
+
+    # -- 10. The permission envelope binds (2026-10-17) -----------------------
+    $setting = ConvertTo-ClaudePermissionSetting -Packet $withText
+    $allowList = @($setting.permissions.allow)
+    $denyList = @($setting.permissions.deny)
+    foreach ($readTool in 'Read', 'Glob', 'Grep') { Assert-That ($allowList -contains $readTool) "envelope: reading ($readTool) is never a prompt" }
+    Assert-That ($allowList -contains 'Bash') 'envelope: shell true allows Bash'
+    # The first real dispatch (FreshStartFamily, 2026-10-17) stalled on a
+    # PowerShell call the Bash-only envelope did not cover.
+    Assert-That ($allowList -contains 'PowerShell') 'envelope: shell true allows PowerShell too - Windows agents reach for it first'
+    Assert-That ($denyList -contains 'Bash(git push:*)' -and $denyList -contains 'Bash(gh:*)') 'envelope: githubWrite false denies push and gh'
+    Assert-That ($denyList -contains 'PowerShell(git push:*)' -and $denyList -contains 'PowerShell(gh:*)') 'envelope: githubWrite false denies push and gh from PowerShell as well'
+    Assert-That ($denyList -contains 'PowerShell(Invoke-WebRequest:*)' -and $denyList -contains 'PowerShell(git reset --hard:*)') 'envelope: network and destructive denials cover PowerShell'
+    Assert-That ($denyList -contains 'WebFetch' -and $denyList -contains 'WebSearch') 'envelope: network false denies web tools'
+    Assert-That ($denyList -contains 'Edit(.github/workflows/**)') 'envelope: a forbidden path denies edits on it (D-012)'
+    Assert-That (@($denyList | Where-Object { $_ -like 'Write(*' }).Count -eq 0) 'envelope: no Write(path) rules; the CLI ignores them and Edit(path) covers every editing tool'
+    Assert-That ($denyList -contains 'Bash(git reset --hard:*)') 'envelope: destructive local git is denied'
+    $noShell = ConvertTo-ClaudePermissionSetting -Packet (New-WorkPacket -TaskId 'dl-3' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions @{ filesystemWrite = $false; shell = $false; network = $true; githubWrite = $true })
+    Assert-That (@($noShell.permissions.deny) -contains 'Bash' -and @($noShell.permissions.allow) -notcontains 'Bash') 'envelope: shell false denies Bash'
+    Assert-That (@($noShell.permissions.deny) -contains 'PowerShell' -and @($noShell.permissions.allow) -notcontains 'PowerShell') 'envelope: shell false denies PowerShell'
+    Assert-That (@($noShell.permissions.deny) -contains 'Edit') 'envelope: filesystemWrite false denies editing'
+    Assert-That (@($noShell.permissions.deny) -notcontains 'WebFetch' -and @($noShell.permissions.deny) -notcontains 'Bash(git push:*)') 'envelope: granted network and githubWrite are not denied'
+    $noPacket = ConvertTo-ClaudePermissionSetting -Packet $null
+    Assert-That (@($noPacket.permissions.deny) -contains 'Bash' -and @($noPacket.permissions.allow) -contains 'Read') 'envelope: no packet means reads only - an absent grant is not a grant'
+    $argvWith = New-ClaudeExecutionArgument -Prompt 'p' -PermissionMode 'acceptEdits' -SettingsPath 'C:\s.json'
+    Assert-That (($argvWith -join ' ').EndsWith('--settings C:\s.json') -and $argvWith[1] -eq 'p') 'envelope: the settings file travels as one --settings argument after the prompt flag pair'
+    Assert-That (@(New-ClaudeExecutionArgument -Prompt 'p' -PermissionMode 'acceptEdits').Count -eq 7) 'envelope: no settings path leaves the argv unchanged'
+    $runnerSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1') -Raw
+    Assert-That ($runnerSource -match '--settings \$claudeSettingsPath \$prompt') 'envelope: the interactive launch passes the settings file too'
+
+    # -- 8. A closed run releases its lane (2026-10-17) -------------------------
+    # The runner closes a run in its own summary; the ledger only ever heard
+    # about completion through /api/execution/complete. FowlingScorecard read
+    # "running" for two days on a run abandoned in forty minutes.
+    $ledgerOutput = Join-Path $scratch 'ledger-output'
+    $null = New-Item -ItemType Directory -Path (Join-Path $ledgerOutput 'execution') -Force
+    $ledgerRuns = Join-Path $ledgerOutput 'roadmap-task-history\runs'
+    $null = New-Item -ItemType Directory -Path $ledgerRuns -Force
+    $env:REPO_MGMT_OUTPUT_ROOT = $ledgerOutput
+    $ledgerFixture = @{
+        schemaVersion = '1'
+        updatedAt     = '2026-10-15T01:47:44Z'
+        history       = @()
+        entries       = @(
+            @{ repoName = 'orphaned-repo';   executionState = 'running'; currentRunId = 'run-orphaned';  laneSlot = 1; retryCount = 0; currentTaskText = 'do the thing'; dispatchRunId = 'run-orphaned'; agentRunId = 'agent-1'; dispatchSource = 'console'; lastOutcome = $null; errorMessage = $null; completedAt = $null; updatedAt = '2026-10-15T01:47:44Z' }
+            @{ repoName = 'live-repo';       executionState = 'running'; currentRunId = 'run-live';      laneSlot = 2; retryCount = 0; currentTaskText = 'still going'; dispatchRunId = 'run-live'; agentRunId = 'agent-2'; dispatchSource = 'console'; lastOutcome = $null; errorMessage = $null; completedAt = $null; updatedAt = '2026-10-15T01:47:44Z' }
+            @{ repoName = 'no-summary-repo'; executionState = 'running'; currentRunId = 'run-missing';   laneSlot = $null; retryCount = 0; currentTaskText = 'unknown'; dispatchRunId = 'run-missing'; agentRunId = $null; dispatchSource = 'console'; lastOutcome = $null; errorMessage = $null; completedAt = $null; updatedAt = '2026-10-15T01:47:44Z' }
+            @{ repoName = 'capped-repo';     executionState = 'running'; currentRunId = 'run-capped';    laneSlot = $null; retryCount = 2; currentTaskText = 'third strike'; dispatchRunId = 'run-capped'; agentRunId = $null; dispatchSource = 'console'; lastOutcome = $null; errorMessage = $null; completedAt = $null; updatedAt = '2026-10-15T01:47:44Z' }
+            @{ repoName = 'idle-repo';       executionState = 'ready';   currentRunId = $null;           laneSlot = $null; retryCount = 0; currentTaskText = 'waiting'; dispatchRunId = $null; agentRunId = $null; dispatchSource = $null; lastOutcome = $null; errorMessage = $null; completedAt = $null; updatedAt = '2026-10-15T01:47:44Z' }
+        )
+    }
+    ($ledgerFixture | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath (Join-Path $ledgerOutput 'execution\execution-ledger.json') -Encoding UTF8
+    (@{ runId = 'run-orphaned'; status = 'failed'; failureCategory = 'orphaned'; error = 'runner pid 1 is not this runner (2); run abandoned' } | ConvertTo-Json) | Set-Content -LiteralPath (Join-Path $ledgerRuns 'run-orphaned.summary.json') -Encoding UTF8
+    (@{ runId = 'run-live'; status = 'running' } | ConvertTo-Json) | Set-Content -LiteralPath (Join-Path $ledgerRuns 'run-live.summary.json') -Encoding UTF8
+    (@{ runId = 'run-capped'; status = 'refused'; refusalCategory = 'stale-base'; error = 'Refusing to branch from a stale base.' } | ConvertTo-Json) | Set-Content -LiteralPath (Join-Path $ledgerRuns 'run-capped.summary.json') -Encoding UTF8
+
+    $sync = Sync-LedgerFromRunHistory -WorkspaceRoot $WorkspaceRoot
+    Assert-That ($sync.checked -eq 4) "ledger release: all four running entries are checked, got $($sync.checked)"
+    Assert-That (@($sync.released).Count -eq 2) "ledger release: exactly the two closed runs release their lanes, got $(@($sync.released).Count)"
+    $after = Read-ExecutionLedger -WorkspaceRoot $WorkspaceRoot
+    $orphaned = @($after.entries) | Where-Object { $_.repoName -eq 'orphaned-repo' } | Select-Object -First 1
+    Assert-That ($orphaned.executionState -eq 'ready' -and $null -eq $orphaned.laneSlot -and [int]$orphaned.retryCount -eq 1) 'ledger release: an orphaned run frees its lane, counts a retry and returns to ready'
+    Assert-That ($orphaned.lastOutcome -eq 'orphaned' -and $orphaned.errorMessage -match 'abandoned') 'ledger release: the entry carries the run''s own failure category and error'
+    Assert-That ($null -eq $orphaned.dispatchRunId -and $null -eq $orphaned.agentRunId) 'ledger release: the join keys are cleared so the next run does not inherit this one''s PR'
+    $live = @($after.entries) | Where-Object { $_.repoName -eq 'live-repo' } | Select-Object -First 1
+    Assert-That ($live.executionState -eq 'running' -and [int]$live.laneSlot -eq 2) 'ledger release: a run the runner still reports running keeps its lane'
+    $missing = @($after.entries) | Where-Object { $_.repoName -eq 'no-summary-repo' } | Select-Object -First 1
+    Assert-That ($missing.executionState -eq 'running') 'ledger release: a run with no summary is left alone - absence is not evidence'
+    $capped = @($after.entries) | Where-Object { $_.repoName -eq 'capped-repo' } | Select-Object -First 1
+    Assert-That ($capped.executionState -eq 'blocked' -and $capped.lastOutcome -eq 'stale-base') 'ledger release: the third failure blocks the repo, the same cap cancel applies'
+    $releasedHistory = @($after.history) | Where-Object { $_.event -eq 'released' }
+    Assert-That (@($releasedHistory).Count -eq 2 -and (@($releasedHistory | ForEach-Object { $_.runId }) -contains 'run-orphaned')) 'ledger release: each freed lane leaves one history record naming its run'
+    $again = Sync-LedgerFromRunHistory -WorkspaceRoot $WorkspaceRoot
+    Assert-That (@($again.released).Count -eq 0 -and $again.checked -eq 2) 'ledger release: a second pass changes nothing'
+    $hostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw
+    Assert-That ($hostSource -match 'Sync-LedgerFromRunHistory -WorkspaceRoot \$WorkspaceRoot') 'ledger release: the execution sync route runs the release pass'
+
+    # -- 9. The clone goes back to the branch the operator left it on ----------
+    # The runner switched clones onto roadmap/<runId> and never back; the
+    # operator's next commit in 300PixelLED_2812B landed on a product branch.
+    . (Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1') -LoadFunctionsOnly
+    $repoR = Initialize-FixtureRepo -Name 'restore'
+    & git -C $repoR switch -q -c 'roadmap/fixture-run' 2>&1 | Out-Null
+    Set-Content -LiteralPath (Join-Path $repoR 'work.txt') -Value 'agent output' -Encoding UTF8
+    & git -C $repoR add work.txt 2>&1 | Out-Null
+    & git -C $repoR -c user.name=fixture -c user.email=fixture@example.invalid commit -q -m 'agent work' 2>&1 | Out-Null
+    $restored = Restore-RunnerStartBranch -RepoPath $repoR -StartBranch 'main' -WorkBranch 'roadmap/fixture-run'
+    Assert-That ([bool]$restored.restored -and ((& git -C $repoR branch --show-current) | Out-String).Trim() -eq 'main') "restore: a clean clone returns to its start branch, got '$($restored.reason)'"
+    $workCommits = ((& git -C $repoR rev-list --count 'roadmap/fixture-run') | Out-String).Trim()
+    Assert-That ($workCommits -eq '2' -and -not (Test-Path -LiteralPath (Join-Path $repoR 'work.txt'))) 'restore: the work branch keeps its commit and the start branch does not carry it'
+    $second = Restore-RunnerStartBranch -RepoPath $repoR -StartBranch 'main' -WorkBranch 'roadmap/fixture-run'
+    Assert-That ([bool]$second.restored -and $second.reason -match 'already') 'restore: already on the start branch is a no-op that still reads restored'
+    & git -C $repoR switch -q 'roadmap/fixture-run' 2>&1 | Out-Null
+    Set-Content -LiteralPath (Join-Path $repoR 'leftover.txt') -Value 'uncommitted' -Encoding UTF8
+    $dirtyRestore = Restore-RunnerStartBranch -RepoPath $repoR -StartBranch 'main' -WorkBranch 'roadmap/fixture-run'
+    Assert-That (-not [bool]$dirtyRestore.restored -and $dirtyRestore.reason -match 'uncommitted' -and ((& git -C $repoR branch --show-current) | Out-String).Trim() -eq 'roadmap/fixture-run') 'restore: a dirty tree is never switched, and the refusal says why'
+    $unknownRestore = Restore-RunnerStartBranch -RepoPath $repoR -StartBranch '' -WorkBranch 'roadmap/fixture-run'
+    Assert-That (-not [bool]$unknownRestore.restored -and $unknownRestore.reason -match 'unknown') 'restore: an unrecorded start branch leaves the checkout alone with a reason'
+    Assert-That ($runnerSource -match 'finally \{[\s\S]*Restore-RunnerStartBranch -RepoPath \$repo -StartBranch \$startBranch') 'restore: Invoke-QueuedTask restores the start branch in a finally, whatever the outcome'
+    Assert-That ($runnerSource -match 'Update-TaskSummary -SummaryPath \$summaryPath -Set @\{ startBranch = \$startBranch \}') 'restore: the start branch is recorded in the run summary before the switch'
 }
 finally {
     foreach ($key in $savedEnv.Keys) {

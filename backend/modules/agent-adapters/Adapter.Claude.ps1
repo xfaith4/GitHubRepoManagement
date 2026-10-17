@@ -25,11 +25,9 @@
     run, can be dropped in beside the synthetic one; the smoke then asserts
     against both and any difference is a finding.
 
-    Permission-envelope ENFORCEMENT is deliberately not here. Mapping the
-    packet's envelope onto `--allowedTools` / `--disallowedTools` waits on
-    D-012, which is the operator's ruling on what an agent may touch and
-    whether it may edit workflow files. The envelope travels on every packet
-    today; it does not yet bind.
+    The permission envelope binds through ConvertTo-ClaudePermissionSetting
+    (2026-10-17, after D-012 was ruled): the runner writes it as a settings
+    file and passes `--settings`. The adapter still launches nothing.
 
 .NOTES
     PowerShell 5.1 compatible. Param-less library: dot-source it, do not run it.
@@ -80,9 +78,16 @@ function New-ClaudeExecutionArgument {
         Justification = 'Pure: builds an argument array in memory and launches nothing. The runner is the only process that invokes.')]
     param(
         [Parameter(Mandatory)][AllowEmptyString()][string]$Prompt,
-        [Parameter(Mandatory)][string]$PermissionMode
+        [Parameter(Mandatory)][string]$PermissionMode,
+        # The packet's permission envelope as a Claude Code settings file
+        # (ConvertTo-ClaudePermissionSetting). A path, not inline JSON, so no
+        # shell quoting can split it.
+        [Parameter()][AllowEmptyString()][string]$SettingsPath = ''
     )
-    return [string[]]@('-p', $Prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', $PermissionMode)
+    $argv = [System.Collections.Generic.List[string]]::new()
+    foreach ($a in @('-p', $Prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', $PermissionMode)) { $argv.Add($a) }
+    if (-not [string]::IsNullOrWhiteSpace($SettingsPath)) { $argv.Add('--settings'); $argv.Add($SettingsPath) }
+    return [string[]]$argv.ToArray()
 }
 
 <#
@@ -93,9 +98,106 @@ function Resume-ClaudeExecution {
     param(
         [Parameter(Mandatory)][string]$SessionId,
         [Parameter(Mandatory)][AllowEmptyString()][string]$Prompt,
-        [Parameter(Mandatory)][string]$PermissionMode
+        [Parameter(Mandatory)][string]$PermissionMode,
+        [Parameter()][AllowEmptyString()][string]$SettingsPath = ''
     )
-    return [string[]]@('-p', $Prompt, '--resume', $SessionId, '--output-format', 'stream-json', '--verbose', '--permission-mode', $PermissionMode)
+    $argv = [System.Collections.Generic.List[string]]::new()
+    foreach ($a in @('-p', $Prompt, '--resume', $SessionId, '--output-format', 'stream-json', '--verbose', '--permission-mode', $PermissionMode)) { $argv.Add($a) }
+    if (-not [string]::IsNullOrWhiteSpace($SettingsPath)) { $argv.Add('--settings'); $argv.Add($SettingsPath) }
+    return [string[]]$argv.ToArray()
+}
+
+<#
+.SYNOPSIS
+    The packet's permission envelope as Claude Code permission rules.
+
+.DESCRIPTION
+    2026-10-17. Until now the envelope was only rendered into the prompt, so
+    Claude Code fell back to its own defaults and asked the operator about
+    everything outside an edit - including reading this product's own roadmap
+    template from a run in another repository ("Do you want to proceed?").
+    Ben: "This is not the kind of gate that I ever need to be asked about." An
+    unattended agent cannot answer a prompt, so every question is a stall.
+
+    D-012 (ruled 2026-09-15) settled what an agent may touch, which is what
+    this mapping was waiting on. The rules:
+
+      - Reading (Read, Glob, Grep) is never a gate, anywhere.
+      - shell: true allows Bash and PowerShell; shell: false denies both.
+        Windows offers both tools and the agent reaches for PowerShell first,
+        so every shell rule below is written for both.
+      - filesystemWrite: false denies Edit and Write. When true, edits stay
+        governed by the permission mode, which accepts them inside the
+        repository only; an edit outside it still asks, on purpose.
+      - network: false denies WebFetch, WebSearch and the common shell
+        fetchers.
+      - githubWrite: false denies `git push` and `gh`.
+      - Destructive local git (`reset --hard`, `clean`) and `rm -rf` are
+        denied outright: the runner owns the branch, and nothing the task
+        needs requires them.
+      - Every forbidden path (D-012: .github/workflows/**) denies Edit on it,
+        which covers every file-editing tool.
+
+    Deny wins over allow in Claude Code, so a forbidden path stays forbidden
+    even with edits accepted. Shell-level denials are best effort - a command
+    can be spelled many ways - so they are a first layer, never the only one:
+    the runner, not the agent, pushes, and only after verification.
+
+    Pure: returns the settings object; the runner writes it.
+#>
+function ConvertTo-ClaudePermissionSetting {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param([Parameter()][AllowNull()][object]$Packet = $null)
+
+    $allow = [System.Collections.Generic.List[string]]::new()
+    $deny = [System.Collections.Generic.List[string]]::new()
+    foreach ($tool in @('Read', 'Glob', 'Grep')) { $allow.Add($tool) }
+
+    $permissions = _Claude_Field -Obj $Packet -Name 'permissions' -Default $null
+    # Absent means not granted. A packet that does not say shell: true gets no shell.
+    $shell = ((_Claude_Field -Obj $permissions -Name 'shell' -Default $false) -eq $true)
+    $write = ((_Claude_Field -Obj $permissions -Name 'filesystemWrite' -Default $false) -eq $true)
+    $network = ((_Claude_Field -Obj $permissions -Name 'network' -Default $false) -eq $true)
+    $githubWrite = ((_Claude_Field -Obj $permissions -Name 'githubWrite' -Default $false) -eq $true)
+
+    # Claude Code on Windows offers two shell tools, Bash and PowerShell, and
+    # the agent reaches for PowerShell first. The first real dispatch of the
+    # proof of value (FreshStartFamily, run 20261017-181025-83010e21) stalled
+    # on its second tool call: the envelope allowed Bash, the agent called
+    # PowerShell, and the session waited for a human who was not there. Every
+    # shell rule below is therefore written for both tools.
+    $shellTools = @('Bash', 'PowerShell')
+    if ($shell) { foreach ($tool in $shellTools) { $allow.Add($tool) } } else { foreach ($tool in $shellTools) { $deny.Add($tool) } }
+    if (-not $write) { foreach ($tool in @('Edit', 'Write', 'NotebookEdit')) { $deny.Add($tool) } }
+    if (-not $network) {
+        foreach ($rule in @('WebFetch', 'WebSearch')) { $deny.Add($rule) }
+        foreach ($tool in $shellTools) {
+            foreach ($cmd in @('curl', 'wget', 'Invoke-WebRequest', 'Invoke-RestMethod', 'iwr', 'irm')) { $deny.Add(('{0}({1}:*)' -f $tool, $cmd)) }
+        }
+    }
+    if (-not $githubWrite) {
+        foreach ($tool in $shellTools) { foreach ($cmd in @('git push', 'gh')) { $deny.Add(('{0}({1}:*)' -f $tool, $cmd)) } }
+    }
+    foreach ($tool in $shellTools) {
+        foreach ($cmd in @('git reset --hard', 'git clean', 'rm -rf', 'Remove-Item -Recurse')) { $deny.Add(('{0}({1}:*)' -f $tool, $cmd)) }
+    }
+
+    $scope = _Claude_Field -Obj $Packet -Name 'scope' -Default $null
+    foreach ($forbidden in @(_Claude_Field -Obj $scope -Name 'forbiddenPaths' -Default @())) {
+        $path = [string]$forbidden
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        # Edit(path) covers every file-editing tool; the CLI ignores Write(path)
+        # rules and says so (verified against Claude Code 2.1.300, 2026-10-17).
+        $deny.Add(('Edit({0})' -f $path))
+    }
+
+    return [ordered]@{
+        permissions = [ordered]@{
+            allow = $allow.ToArray()
+            deny  = $deny.ToArray()
+        }
+    }
 }
 
 <#
@@ -253,11 +355,9 @@ function ConvertTo-ClaudeExecutionResult {
     for its provider but MUST NOT change the objective, scope, acceptance
     criteria or permission envelope — so it adds a heading and nothing else.
 
-    Note what this does not do: it does not map the packet's permission
-    envelope onto --allowedTools / --disallowedTools. That enforcement waits on
-    D-012, the operator's ruling on what an agent may touch and whether it may
-    edit workflow files. The envelope is rendered into the prompt, so the agent
-    is told; it is not yet enforced by the CLI.
+    The envelope is rendered into the prompt so the agent is told, and it is
+    enforced separately by ConvertTo-ClaudePermissionSetting, which the runner
+    passes as `--settings`.
 #>
 function ConvertTo-ClaudePrompt {
     param([Parameter(Mandatory)][object]$Packet)

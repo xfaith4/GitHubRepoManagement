@@ -702,6 +702,65 @@ function Invoke-RunnerBranchPush {
     return [pscustomobject]$result
 }
 
+function Restore-RunnerStartBranch {
+    <#
+    .SYNOPSIS
+        Return the clone to the branch the operator left it on. The work
+        branch stays for review; only the checkout moves.
+
+    .DESCRIPTION
+        Proof of value, 2026-10-17. The runner switched the clone onto
+        `roadmap/<runId>` and never switched back, so every clone it had
+        touched sat on a product branch afterwards. The operator's next commit
+        in 300PixelLED_2812B (a 12-file feature, 2026-10-17 01:23) landed on
+        the orphaned run's branch and was pushed there. FowlingScorecard,
+        CryptoAdvisor and INcendiary were found in the same state.
+
+        Nothing below reads the checked-out branch: approve-push pushes the
+        branch by name, the PR opens from the pushed ref, and the completion
+        edit already rode the work branch as its own commit. So the checkout
+        is returned, and the work branch is kept exactly as committed.
+
+        A dirty tree is never switched: uncommitted changes would travel to
+        the start branch, which is the very contamination this prevents. The
+        refusal is recorded and the clone is left where it is.
+    .OUTPUTS
+        [pscustomobject] restored, reason, current
+    #>
+    param(
+        [Parameter(Mandatory)][string]$RepoPath,
+        [Parameter()][AllowEmptyString()][string]$StartBranch = '',
+        [Parameter()][AllowEmptyString()][string]$WorkBranch = ''
+    )
+
+    $result = [ordered]@{ restored = $false; reason = ''; current = '' }
+    if ([string]::IsNullOrWhiteSpace($StartBranch)) {
+        $result.reason = 'start branch unknown (detached or unrecorded); checkout left as is'
+        return [pscustomobject]$result
+    }
+    $current = ((& git -C $RepoPath branch --show-current 2>$null) | Out-String).Trim()
+    $result.current = $current
+    if ($current -eq $StartBranch) {
+        $result.restored = $true
+        $result.reason = ("already on '{0}'" -f $StartBranch)
+        return [pscustomobject]$result
+    }
+    $dirty = @(& git -C $RepoPath status --porcelain 2>$null)
+    if ($dirty.Count -gt 0) {
+        $result.reason = ("left on '{0}': {1} uncommitted change(s) would travel with the switch" -f $current, $dirty.Count)
+        return [pscustomobject]$result
+    }
+    $switchOutput = (& git -C $RepoPath switch $StartBranch 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $result.reason = ("git switch '{0}' failed: {1}" -f $StartBranch, $switchOutput.Trim())
+        return [pscustomobject]$result
+    }
+    $result.restored = $true
+    $result.current = $StartBranch
+    $result.reason = ("returned to '{0}'; work branch '{1}' kept for review" -f $StartBranch, $WorkBranch)
+    return [pscustomobject]$result
+}
+
 function Test-RunnerReconcileDue {
     <#
     .SYNOPSIS
@@ -1539,8 +1598,16 @@ function Invoke-QueuedTask {
         attempt          = $claimAttempt
         remediationCount = $claimRemediations
     }
+    # The branch the operator left the clone on, recorded before the runner
+    # moves it, so the finally below can put it back (Restore-RunnerStartBranch).
+    $startBranch = ''
     try {
         if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) { throw "Not a git repo: $repo" }
+
+        $startBranch = ((& git -C $repo branch --show-current 2>$null) | Out-String).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($startBranch)) {
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{ startBranch = $startBranch }
+        }
 
         # Working branch (create, or switch if it already exists).
         & git -C $repo switch -c $branch 2>$null
@@ -1557,6 +1624,20 @@ function Invoke-QueuedTask {
         # unconditionally: Tee-Object -Variable writes into this scope, and an
         # interactive run never sets it at all.
         $claudeLines = @()
+        # 2026-10-17 - the packet's permission envelope binds. Written as a
+        # settings file beside the run's other evidence and passed to Claude
+        # with --settings, so reading is never a prompt, shell follows the
+        # packet, and push / network / forbidden paths are denied. Without it
+        # an interactive session asked the operator before reading a template.
+        $claudeSettingsPath = ''
+        if ($localProvider -eq 'claude' -and (Get-Command -Name 'ConvertTo-ClaudePermissionSetting' -ErrorAction SilentlyContinue)) {
+            $claudeSettingsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\work-packets'
+            if (-not (Test-Path -LiteralPath $claudeSettingsDir)) { $null = New-Item -ItemType Directory -Path $claudeSettingsDir -Force }
+            $claudeSettingsPath = Join-Path $claudeSettingsDir ('{0}.claude-settings.json' -f $runId)
+            $claudeSettingsJson = ConvertTo-Json -InputObject (ConvertTo-ClaudePermissionSetting -Packet $runWorkPacket) -Depth 6
+            Set-Content -LiteralPath $claudeSettingsPath -Value $claudeSettingsJson -Encoding UTF8
+            Write-Host ("  permission envelope: {0}" -f $claudeSettingsPath) -ForegroundColor DarkGray
+        }
         Push-Location $repo
         try {
             if ($localProvider -eq 'codex') {
@@ -1578,12 +1659,15 @@ function Invoke-QueuedTask {
                 # supportsResume = false, so Resolve-RemediationRoute never
                 # routes a resume to it.
                 $claudeArgv = if ([string]::IsNullOrWhiteSpace($remediationResumeSession)) {
-                    New-ClaudeExecutionArgument -Prompt $prompt -PermissionMode $PermissionMode
+                    New-ClaudeExecutionArgument -Prompt $prompt -PermissionMode $PermissionMode -SettingsPath $claudeSettingsPath
                 }
                 else {
-                    Resume-ClaudeExecution -SessionId $remediationResumeSession -Prompt $prompt -PermissionMode $PermissionMode
+                    Resume-ClaudeExecution -SessionId $remediationResumeSession -Prompt $prompt -PermissionMode $PermissionMode -SettingsPath $claudeSettingsPath
                 }
                 & $localCommand @claudeArgv 2>&1 | Tee-Object -Variable claudeLines | Out-Null
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($claudeSettingsPath)) {
+                & $localCommand --permission-mode $PermissionMode --settings $claudeSettingsPath $prompt
             }
             else { & $localCommand --permission-mode $PermissionMode $prompt }
             if ($LASTEXITCODE -ne 0) { throw ("{0} execution failed with exit code {1}." -f $localProvider, $LASTEXITCODE) }
@@ -1875,6 +1959,17 @@ function Invoke-QueuedTask {
     catch {
         Update-TaskSummary -SummaryPath $summaryPath -Set @{ status = 'failed'; error = $_.Exception.Message; runnerCompletedAt = (Get-Date).ToString('o') }
         Write-Host ("  [failed] {0}" -f $_.Exception.Message) -ForegroundColor Red
+    }
+    finally {
+        # Whatever the outcome, the clone goes back to where the operator left
+        # it. The work branch keeps its commits; only the checkout moves, and
+        # only when the tree is clean. A dry run never switched, so it is skipped.
+        if (-not $DryRun -and -not [string]::IsNullOrWhiteSpace($startBranch)) {
+            $restore = Restore-RunnerStartBranch -RepoPath $repo -StartBranch $startBranch -WorkBranch $branch
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{ checkoutRestored = [bool]$restore.restored; checkoutRestoreDetail = [string]$restore.reason }
+            $restoreColor = if ($restore.restored) { 'DarkGray' } else { 'DarkYellow' }
+            Write-Host ("  [checkout] {0}" -f $restore.reason) -ForegroundColor $restoreColor
+        }
     }
 }
 

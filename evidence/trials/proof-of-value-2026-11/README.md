@@ -114,3 +114,97 @@ carries no operator time.
   index.
 - The modal's History tab requested a path without the API prefix and was
   always empty.
+
+## 2026-10-17 — second day: what the loop actually did
+
+**The 300PixelLED_2812B dispatch did not deliver.** Run
+`20261016-031015-cc34298c` was closed as `orphaned` at 2026-10-17T05:17Z when
+the runner was restarted; the interactive Claude session it had opened was
+never attended. The runner had left the clone checked out on
+`roadmap/20261016-031015-cc34298c`, so the owner's next commit there (a
+12-file playlist feature, 2026-10-17 01:23) landed on the product's branch
+and was pushed to it. FowlingScorecard, CryptoAdvisor and INcendiary were
+found on stale `roadmap/<runId>` branches for the same reason. Remedy for
+the owner: `git -C F:\Development\20_Staging\300PixelLED_2812B switch main`
+and merge or cherry-pick `7a98410` there; the runner now returns every clone
+to its start branch (see fixes below).
+
+**The working tree is the live product.** PR #330 (owner commit `82370d1`)
+moved `standards/` to `spec/` and deleted the release-3.7 fixtures. With that
+branch checked out, the live service read PhotoToolboxv2 as `L0-Absent`,
+score 0 (`POST /api/roadmap/dispatch/check`, 18:03), and the CI run for
+PR #330 failed six gates on the missing paths. A branch from `origin/main`
+checked out at 18:04 restored the verdict to `L3-Contract-Ready`, score 84.
+Six files reference the old path; the restructure needs them updated or
+dropped before PR #330 can merge.
+
+**GitHub access (least privilege check, no token shown).** The product and
+`gh` both use the Machine-scope `GITHUB_TOKEN`, a fine-grained PAT expiring
+2026-12-06. It resolves to `xfaith4` with `push: true` and `admin: true` on
+every repository probed (PhotoToolboxv2, FreshStartFamily, 300PixelLED_2812B,
+GenesysAudits, SystemDashboard, this one). Deficiency: it is an admin token
+where push plus pull-request would do; the keyring OAuth token (`repo`,
+`workflow`) is the one `gh agent-task` needs and is shadowed by the
+environment variable.
+
+**Readiness, investigated (index of 2026-10-15, 62 repositories).**
+
+| Lifecycle state | Repositories | What holds them |
+| --- | --- | --- |
+| needs-roadmap-repair | 28 | 25: no release block (goal, pending milestone, out of scope); 2: no runnable check named; 1: no sized phase |
+| needs-roadmap | 16 | no ROADMAP.md at all |
+| no-checklist | 8 | prose roadmap, no `- [ ]` items |
+| needs-structure | 6 | contract fine; held by LICENSE / CI / tests warnings (3 are L4, 2 of those not on GitHub) |
+| ready-for-work | 1 | PhotoToolboxv2 |
+| running | 1 | FowlingScorecard, on a run the runner abandoned 2026-10-15 |
+| curated-out / needs-readme | 2 | by owner curation; no README |
+
+Two findings change what "ten ready" means. First, the one ready repository
+is not safely workable: its roadmap items are truncated mid-sentence in the
+file itself (owner commits of 2026-10-14) and it has no `tests/` directory,
+so the product's own verification (`pytest`) collects nothing. Second, the
+structure gate holds repositories on `LICENSE:warning`, which says nothing
+about whether an agent can work safely there; dropping LICENSE, SECURITY and
+CONTRIBUTING to advisory would move the six `needs-structure` repositories
+without loosening anything that protects the work. That rule change is the
+owner's call (steering §6) and is proposed, not made. The honest road to ten
+remains a real release block in GitHub-backed repositories that already have
+CI and tests: CupHandleDetectionv2, SystemDashboard, UnifiedAIToolbox,
+MusicLibrary_v2, FreshStartFamily, Genesys.Core, Genesys.Core_AuditLogsApp,
+GenesysAudits, GenesysCloud-API-Explorer_v3, incendiary-web.
+
+**First dispatch through the product: FreshStartFamily, run
+`20261017-181025-83010e21`.** Chosen because its clone was clean, its CI
+and tests are real, and its top-value item is a precise bug with a named
+check: inferred birth citations borrow another person's birthplace
+(`buildFallbackFactInferences`, ROADMAP §5.4). The clone was moved to
+`staging` (the repository's integration branch; feature work may not target
+`main`) and the item was queued with `POST /api/roadmap/dispatch/execute` at
+18:10:25; the runner claimed it ten seconds later and opened a Claude session
+on `roadmap/20261017-181025-83010e21`. The session worked for ninety seconds
+(36 turns) and then stalled on a `PowerShell` tool call: the permission
+envelope allowed `Bash` only, and on Windows the agent reaches for PowerShell
+first. At the time of writing the session is still waiting in the runner's
+terminal. Operator time so far: 0 minutes (every step was the agent's, under
+the owner's written instruction of 2026-10-16).
+
+**Fixes (branch `proof/first-delivery`, from `origin/main` plus `b4b923d`).**
+
+- The permission envelope writes every shell rule for Bash and PowerShell
+  (`ConvertTo-ClaudePermissionSetting`); a packet without shell denies both.
+- The runner records the branch the clone was on and returns to it when the
+  run ends, success or failure, leaving the work branch intact; a dirty tree
+  is never switched (`Restore-RunnerStartBranch`).
+- `POST /api/execution/sync` releases a lane whose run summary says
+  `failed`, `refused` or `cancelled` (`Sync-LedgerFromRunHistory`): retry
+  counted, join keys cleared, one `released` history record; a missing or
+  still-running summary changes nothing.
+- All three are asserted in `tests/Test-DeliveryLoop.ps1` (100 assertions).
+  The running runner and the service pick them up only after a restart.
+
+**What the owner must do to reach the first PR.** Either answer the pending
+PowerShell prompt in the `claude` window (once per shell call until the
+restart), or close that session, restart the runner task so it loads the
+fixed envelope, and queue the same item again; then approve the push from
+the console (`POST /api/roadmap-agent/approve-push`), and change the PR's
+base to `staging`, which the product does not yet know how to choose.
