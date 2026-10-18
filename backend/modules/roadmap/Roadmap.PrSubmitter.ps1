@@ -423,6 +423,20 @@ function Resolve-RepoPullRequestBase {
             $result.base = ($originHead -replace '^origin/', '')
             $result.source = 'remote default branch (origin/HEAD)'
         }
+        else {
+            # A clone made from an empty remote, or wired up with `git remote
+            # add`, records no origin/HEAD. The same reading the runner's push
+            # refusal uses: main, then master, but only one that exists on
+            # origin. Still no guess: a remote with neither refuses below.
+            foreach ($candidate in @('main', 'master')) {
+                & git -C $RepoPath rev-parse --verify --quiet ("refs/remotes/origin/{0}" -f $candidate) 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $result.base = $candidate
+                    $result.source = ("origin/{0} exists (origin/HEAD unset)" -f $candidate)
+                    break
+                }
+            }
+        }
     }
 
     if ([string]::IsNullOrWhiteSpace($result.base)) {

@@ -454,6 +454,10 @@ try {
     Assert-That ([bool]$overRequest.ok -and $overRequest.base -eq 'staging' -and $overRequest.reason -match 'policy wins') 'base: a dispatch that asked for main is overruled by policy, and the reason says so'
     $fromRemote = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'unlisted' -RepoPath $repoP -PolicyPath $policyPath
     Assert-That ([bool]$fromRemote.ok -and $fromRemote.base -eq 'main' -and $fromRemote.source -match 'origin/HEAD') "base: without policy the remote's default branch is used, got '$($fromRemote.reason)'"
+    & git -C $repoP remote set-head origin --delete 2>&1 | Out-Null
+    $noHead = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'unlisted' -RepoPath $repoP -PolicyPath $policyPath
+    Assert-That ([bool]$noHead.ok -and $noHead.base -eq 'main' -and $noHead.source -match 'origin/HEAD unset') "base: a clone with no origin/HEAD uses origin/main only because it exists on origin, got '$($noHead.reason)'"
+    & git -C $repoP remote set-head origin main 2>&1 | Out-Null
     $ghost = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'ghost' -RepoPath $repoP -PolicyPath $policyPath
     Assert-That (-not [bool]$ghost.ok -and $ghost.reason -match 'does not exist on origin') 'base: a policy branch missing from origin refuses publication by name'
     $repoN = Initialize-FixtureRepo -Name 'no-remote'
