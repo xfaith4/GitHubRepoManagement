@@ -64,7 +64,8 @@ flight.
       eligible items and collapses the rest into "N held (why)". Every Dispatch
       control is disabled with its reason when `ok` is false. Slice 1, the
       server rule, is on its review branch (rebased from PR #327, stacked on
-      this roadmap change); the board and controls are slice 2. _(state: built)_
+      this roadmap change), which wires its check into the suite and moves
+      this item to `built`; the board and controls are slice 2. _(state: planned)_
       `check: pwsh ./tests/Test-DispatchEligibility.ps1 -FailOnError`
 - [ ] **Record the outcome of every decision (loop step 7).** Each decision in
       the ledger gains its outcome as it happens: PR opened (URL and head SHA),
