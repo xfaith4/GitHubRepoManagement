@@ -275,6 +275,8 @@ function Convert-ToShellLiteral {
 }
 
 function Start-DetachedProcess {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Internal launcher helper used by Start-App; it is not an interactive cmdlet surface.')]
     param(
         [Parameter(Mandatory = $true)]
         [string]$FilePath,
@@ -442,6 +444,10 @@ function Get-ListeningProcessIds {
 }
 
 function Stop-PortListeners {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Internal launcher cleanup helper used non-interactively by Start-App.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = 'The plural noun reflects that this helper stops all listeners on a port.')]
     param(
         [Parameter(Mandatory = $true)]
         [int]$LocalPort,

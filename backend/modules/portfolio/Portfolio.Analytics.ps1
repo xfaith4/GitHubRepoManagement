@@ -345,6 +345,7 @@ function Get-PortfolioTrendPayload {
 
     if ($RequestedDays -lt 7) { $RequestedDays = 7 }
     if ($RequestedDays -gt 180) { $RequestedDays = 180 }
+    [void]$WorkspaceRoot
 
     $entryList = @($Assessments)
     $nowUtc = (Get-Date).ToUniversalTime()
