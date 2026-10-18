@@ -42,9 +42,9 @@ flight.
       rather than the first draft. The service can commit: git has a commit
       identity when it runs under the service account. A failure at any step
       leaves the target clone clean, with no stray branch and no staged or
-      untracked files. In flight on a separate branch since 2026-10-16; that
-      branch moves this item to `built` and wires its check into the suite.
-      _(state: planned)_
+      untracked files. Merged to main 2026-10-16 in PR #329 with its check
+      green there; the service runs it after the next restart. Leaves this
+      file for the archive in the PR that records that restart. _(state: built)_
       `check: pwsh ./tests/Test-DeliveryLoop.ps1 -FailOnError`
 - [ ] **Record every accept and reject, with the operator's time (loop steps 6
       and 8).** Each proposal the operator accepts, edits or rejects lands in
@@ -52,8 +52,9 @@ flight.
       repository, and the minutes spent on it. The workflow captures the time
       itself; nobody types it in afterwards. A rejected proposal keeps its
       minutes. This replaces the planned `Test-DecisionLedger.ps1` item (its
-      text is preserved in `docs/governance/deferred-work.md`). In flight on
-      the same branch as the item above. _(state: planned)_
+      text is preserved in `docs/governance/deferred-work.md`). Merged to main
+      2026-10-16 in PR #329 with the item above; first record written
+      2026-10-17 for the FreshStartFamily dispatch. _(state: built)_
       `check: pwsh ./tests/Test-DeliveryLoop.ps1 -FailOnError`
 - [ ] **Lane 0.22 — one dispatch-eligibility rule, enforced everywhere (loop
       step 2).** The Dispatch Board read "Ready" for repositories Today holds
@@ -62,7 +63,8 @@ flight.
       server-side rule answers `{ ok, reasons[] }`. The board lists only
       eligible items and collapses the rest into "N held (why)". Every Dispatch
       control is disabled with its reason when `ok` is false. Slice 1, the
-      server rule, is open as PR #327. _(state: planned)_
+      server rule, is on its review branch (rebased from PR #327, stacked on
+      this roadmap change); the board and controls are slice 2. _(state: built)_
       `check: pwsh ./tests/Test-DispatchEligibility.ps1 -FailOnError`
 - [ ] **Record the outcome of every decision (loop step 7).** Each decision in
       the ledger gains its outcome as it happens: PR opened (URL and head SHA),
