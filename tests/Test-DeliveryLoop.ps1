@@ -376,8 +376,114 @@ try {
     Assert-That (-not [bool]$dirtyRestore.restored -and $dirtyRestore.reason -match 'uncommitted' -and ((& git -C $repoR branch --show-current) | Out-String).Trim() -eq 'roadmap/fixture-run') 'restore: a dirty tree is never switched, and the refusal says why'
     $unknownRestore = Restore-RunnerStartBranch -RepoPath $repoR -StartBranch '' -WorkBranch 'roadmap/fixture-run'
     Assert-That (-not [bool]$unknownRestore.restored -and $unknownRestore.reason -match 'unknown') 'restore: an unrecorded start branch leaves the checkout alone with a reason'
-    Assert-That ($runnerSource -match 'finally \{[\s\S]*Restore-RunnerStartBranch -RepoPath \$repo -StartBranch \$startBranch') 'restore: Invoke-QueuedTask restores the start branch in a finally, whatever the outcome'
+    Assert-That ($runnerSource -match 'finally \{[\s\S]*Restore-RunnerStartBranch -RepoPath \$cloneRoot -StartBranch \$startBranch') 'restore: Invoke-QueuedTask restores the clone''s start branch in a finally, whatever the outcome'
     Assert-That ($runnerSource -match 'Update-TaskSummary -SummaryPath \$summaryPath -Set @\{ startBranch = \$startBranch \}') 'restore: the start branch is recorded in the run summary before the switch'
+
+    # -- 10. The agent works in a run-owned worktree, never in the clone ------
+    # Decision of 2026-10-17: the product must not switch branches in working
+    # directories the owner also develops in. Workspaces live under the output
+    # root (REPO_MGMT_OUTPUT_ROOT is still the scratch ledger root here).
+    $runnerSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1') -Raw
+    $repoW = Initialize-FixtureRepo -Name 'workspace-clone'
+    $ws = New-RunWorkspace -CloneRoot $repoW -Branch 'roadmap/ws-run' -RunId 'ws-run' -WorkspaceRoot $WorkspaceRoot
+    Assert-That ([bool]$ws.created -and (Test-Path -LiteralPath $ws.path)) "workspace: a worktree is created for the run, got '$($ws.reason)'"
+    Assert-That ($ws.path.StartsWith((Join-Path $ledgerOutput 'agent-workspaces'), [System.StringComparison]::OrdinalIgnoreCase)) "workspace: it lives under the output root, not in the clone, got '$($ws.path)'"
+    Assert-That (((& git -C $ws.path branch --show-current) | Out-String).Trim() -eq 'roadmap/ws-run') 'workspace: the worktree is on the run branch'
+    Assert-That (((& git -C $repoW branch --show-current) | Out-String).Trim() -eq 'main') 'workspace: the clone stays on the branch the owner left it on'
+    Set-Content -LiteralPath (Join-Path $ws.path 'agent.txt') -Value 'agent output' -Encoding UTF8
+    & git -C $ws.path add agent.txt 2>&1 | Out-Null
+    & git -C $ws.path -c user.name=fixture -c user.email=fixture@example.invalid commit -q -m 'agent work' 2>&1 | Out-Null
+    Assert-That (-not (Test-Path -LiteralPath (Join-Path $repoW 'agent.txt'))) 'workspace: the agent''s edits never appear in the clone''s working tree'
+    & git -C $repoW rev-parse --verify --quiet 'refs/heads/roadmap/ws-run' 2>&1 | Out-Null
+    Assert-That ($LASTEXITCODE -eq 0) 'workspace: the run branch is visible from the clone, so approve-push can push it by name'
+    $removed = Remove-RunWorkspace -CloneRoot $repoW -WorkspacePath $ws.path
+    Assert-That ([bool]$removed.removed -and -not (Test-Path -LiteralPath $ws.path)) "workspace: a clean worktree is removed when the run ends, got '$($removed.reason)'"
+    Assert-That (((& git -C $repoW rev-list --count 'roadmap/ws-run') | Out-String).Trim() -eq '2') 'workspace: removing the worktree keeps the branch and its commit'
+    $wsDirty = New-RunWorkspace -CloneRoot $repoW -Branch 'roadmap/ws-dirty' -RunId 'ws-dirty' -WorkspaceRoot $WorkspaceRoot
+    Set-Content -LiteralPath (Join-Path $wsDirty.path 'half-done.txt') -Value 'uncommitted' -Encoding UTF8
+    $kept = Remove-RunWorkspace -CloneRoot $repoW -WorkspacePath $wsDirty.path
+    Assert-That (-not [bool]$kept.removed -and $kept.reason -match 'uncommitted' -and (Test-Path -LiteralPath (Join-Path $wsDirty.path 'half-done.txt'))) 'workspace: uncommitted work is kept, recoverable at the recorded path'
+    $reused = New-RunWorkspace -CloneRoot $repoW -Branch 'roadmap/ws-dirty' -RunId 'ws-dirty' -WorkspaceRoot $WorkspaceRoot
+    Assert-That ([bool]$reused.created -and $reused.reason -match 'reused') 'workspace: a resumed run finds its own worktree again'
+    $collided = $null
+    try { New-RunWorkspace -CloneRoot $repoW -Branch 'roadmap/other' -RunId 'ws-dirty' -WorkspaceRoot $WorkspaceRoot | Out-Null } catch { $collided = $_.Exception.Message }
+    Assert-That ($collided -match 'refusing to reuse') 'workspace: a path already holding another branch is refused, never overwritten'
+    & git -C $repoW worktree remove --force $wsDirty.path 2>&1 | Out-Null
+    $remapped = Convert-RunPathToWorkspace -Text ("Roadmap: {0}\ROADMAP.md and {0}x\other" -f $repoW) -CloneRoot $repoW -WorkspacePath 'Q:\ws\run'
+    Assert-That ($remapped -eq ("Roadmap: Q:\ws\run\ROADMAP.md and {0}x\other" -f $repoW)) "remap: clone paths point into the workspace, and a longer sibling name is left alone, got '$remapped'"
+    Assert-That ((Convert-RunPathToWorkspace -Text 'no paths here' -CloneRoot $repoW -WorkspacePath 'Q:\ws') -eq 'no paths here' -and (Convert-RunPathToWorkspace -Text '' -CloneRoot $repoW -WorkspacePath 'Q:\ws') -eq '') 'remap: text without the clone path, or empty text, is unchanged'
+    Assert-That ($runnerSource -match 'New-RunWorkspace -CloneRoot \$cloneRoot -Branch \$branch' -and $runnerSource -notmatch 'git -C \$repo switch -c \$branch') 'workspace: Invoke-QueuedTask creates a worktree and no longer switches the clone'
+    Assert-That ($runnerSource -match 'finally \{[\s\S]*Remove-RunWorkspace -CloneRoot \$cloneRoot') 'workspace: the worktree is cleaned up in the finally, whatever the outcome'
+
+    # -- 11. The agent never inherits a GitHub write credential ------------------
+    $savedGh = $env:GH_TOKEN
+    $savedGithub = $env:GITHUB_TOKEN
+    try {
+        Remove-Item -LiteralPath 'Env:GH_TOKEN' -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath 'Env:GITHUB_TOKEN' -ErrorAction SilentlyContinue
+        $clean = Test-RunnerCredentialIsolation
+        Assert-That ([bool]$clean.isolated -and @($clean.present).Count -eq 0) 'isolation: no token in the process reads isolated'
+        $env:GH_TOKEN = 'fixture-secret-value'
+        $leaky = Test-RunnerCredentialIsolation
+        Assert-That (-not [bool]$leaky.isolated -and @($leaky.present) -contains 'GH_TOKEN') 'isolation: a token in the process is named'
+        Assert-That ($leaky.summary -notmatch 'fixture-secret-value') 'isolation: the summary names the variable, never its value'
+    }
+    finally {
+        if ($null -eq $savedGh) { Remove-Item -LiteralPath 'Env:GH_TOKEN' -ErrorAction SilentlyContinue } else { $env:GH_TOKEN = $savedGh }
+        if ($null -eq $savedGithub) { Remove-Item -LiteralPath 'Env:GITHUB_TOKEN' -ErrorAction SilentlyContinue } else { $env:GITHUB_TOKEN = $savedGithub }
+    }
+    Assert-That ($runnerSource -match 'Test-RunnerCredentialIsolation[\s\S]*Refusing to launch the agent') 'isolation: the runner refuses to launch an agent while a token is in its environment'
+    Assert-That ($runnerSource -match '-TokenIsolation \(') 'isolation: the heartbeat carries the isolation verdict for the host to show'
+    $providerConfig = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\config\agent-providers.json') -Raw | ConvertFrom-Json
+    Assert-That (-not [bool]$providerConfig.providers.claude.autoPush -and -not [bool]$providerConfig.providers.codex.autoPush) 'publication: no local provider pushes on its own; the push and the PR stay behind approve-push'
+
+    # -- 12. The PR base comes from repository policy, validated, or is refused --
+    $repoP = Initialize-FixtureRepo -Name 'base-policy'
+    $bareP = Join-Path $scratch 'base-policy-remote.git'
+    & git init --bare -q -b main $bareP 2>&1 | Out-Null
+    & git -C $repoP remote add origin $bareP 2>&1 | Out-Null
+    & git -C $repoP push -q origin main 2>&1 | Out-Null
+    & git -C $repoP branch staging 2>&1 | Out-Null
+    & git -C $repoP push -q origin staging 2>&1 | Out-Null
+    & git -C $repoP remote set-head origin main 2>&1 | Out-Null
+    $policyPath = Join-Path $scratch 'repo-policies.json'
+    (@{ schemaVersion = '1'; repositories = @{ 'base-policy' = @{ prBase = 'staging'; reason = 'fixture flow' }; ghost = @{ prBase = 'nope' } } } | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $policyPath -Encoding UTF8
+    $fromPolicy = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'base-policy' -RepoPath $repoP -PolicyPath $policyPath
+    Assert-That ([bool]$fromPolicy.ok -and $fromPolicy.base -eq 'staging' -and $fromPolicy.source -match 'policy') "base: explicit policy names the base, got '$($fromPolicy.reason)'"
+    $overRequest = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'base-policy' -RepoPath $repoP -RequestedBase 'main' -PolicyPath $policyPath
+    Assert-That ([bool]$overRequest.ok -and $overRequest.base -eq 'staging' -and $overRequest.reason -match 'policy wins') 'base: a dispatch that asked for main is overruled by policy, and the reason says so'
+    $fromRemote = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'unlisted' -RepoPath $repoP -PolicyPath $policyPath
+    Assert-That ([bool]$fromRemote.ok -and $fromRemote.base -eq 'main' -and $fromRemote.source -match 'origin/HEAD') "base: without policy the remote's default branch is used, got '$($fromRemote.reason)'"
+    & git -C $repoP remote set-head origin --delete 2>&1 | Out-Null
+    $noHead = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'unlisted' -RepoPath $repoP -PolicyPath $policyPath
+    Assert-That ([bool]$noHead.ok -and $noHead.base -eq 'main' -and $noHead.source -match 'origin/HEAD unset') "base: a clone with no origin/HEAD uses origin/main only because it exists on origin, got '$($noHead.reason)'"
+    & git -C $repoP remote set-head origin main 2>&1 | Out-Null
+    $ghost = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'ghost' -RepoPath $repoP -PolicyPath $policyPath
+    Assert-That (-not [bool]$ghost.ok -and $ghost.reason -match 'does not exist on origin') 'base: a policy branch missing from origin refuses publication by name'
+    $repoN = Initialize-FixtureRepo -Name 'no-remote'
+    $unresolved = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'no-remote' -RepoPath $repoN -PolicyPath $policyPath
+    Assert-That (-not [bool]$unresolved.ok -and $unresolved.reason -match 'No pull-request base resolved') 'base: no policy and no origin/HEAD refuses rather than guessing main'
+    $shipped = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'FreshStartFamily' -RepoPath ''
+    Assert-That ([bool]$shipped.ok -and $shipped.base -eq 'staging') 'base: the shipped policy sends FreshStartFamily pull requests to staging'
+    $hostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw
+    Assert-That (([regex]::Matches($hostSource, 'Resolve-RepoPullRequestBase -WorkspaceRoot')).Count -ge 2 -and ([regex]::Matches($hostSource, '-BaseBranch \(\[string\]\$\w+Base\.base\)')).Count -ge 2) 'base: both PR-opening paths (approve-push and the reconcile tick) resolve the base and pass it'
+
+    # -- 13. A live runner keeps its run; only a dead runner's run is orphaned --
+    $runsO = Join-Path $scratch 'orphan-runs'
+    $null = New-Item -ItemType Directory -Path $runsO -Force
+    foreach ($pair in @(@('run-alive', 4242), @('run-dead', 4243), @('run-self', $PID))) {
+        (@{ runId = $pair[0]; status = 'running'; runnerPid = $pair[1]; dispatchTarget = 'claude'; branch = ('roadmap/{0}' -f $pair[0]) } | ConvertTo-Json) | Set-Content -LiteralPath (Join-Path $runsO ("{0}.summary.json" -f $pair[0])) -Encoding UTF8
+    }
+    $pcFixture = [pscustomobject]@{ providers = [pscustomobject]@{ claude = [pscustomobject]@{ executionMode = 'local' } } }
+    $orphaned = @(Repair-OrphanedRunSummary -RunsDir $runsO -CurrentPid 1 -Config $pcFixture -IsProcessAlive { param([int]$ProcessId) $ProcessId -eq 4242 })
+    Assert-That ($orphaned -contains 'run-dead' -and $orphaned -notcontains 'run-alive') "orphan: a run whose runner process is alive is owned, not abandoned, got: $($orphaned -join ', ')"
+    $aliveSummary = Get-Content -LiteralPath (Join-Path $runsO 'run-alive.summary.json') -Raw | ConvertFrom-Json
+    Assert-That ($aliveSummary.status -eq 'running') 'orphan: the live runner''s summary is untouched'
+    $runsSelf = Join-Path $scratch 'orphan-runs-self'
+    $null = New-Item -ItemType Directory -Path $runsSelf -Force
+    (@{ runId = 'run-self'; status = 'running'; runnerPid = $PID; dispatchTarget = 'claude'; branch = 'roadmap/run-self' } | ConvertTo-Json) | Set-Content -LiteralPath (Join-Path $runsSelf 'run-self.summary.json') -Encoding UTF8
+    $selfSweep = @(Repair-OrphanedRunSummary -RunsDir $runsSelf -CurrentPid 1 -Config $pcFixture)
+    Assert-That ($selfSweep -notcontains 'run-self' -and (Get-Content -LiteralPath (Join-Path $runsSelf 'run-self.summary.json') -Raw | ConvertFrom-Json).status -eq 'running') 'orphan: the default liveness check finds this very process alive and leaves its run running'
 }
 finally {
     foreach ($key in $savedEnv.Keys) {

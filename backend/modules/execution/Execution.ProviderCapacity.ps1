@@ -855,7 +855,10 @@ function Repair-OrphanedRunSummary {
         [Parameter(Mandatory)][string]$RunsDir,
         [Parameter(Mandatory)][int]$CurrentPid,
         [datetime]$NowUtc = [datetime]::UtcNow,
-        [Parameter(Mandatory)][object]$Config
+        [Parameter(Mandatory)][object]$Config,
+        # Liveness of a recorded runner pid. Injected so a gate can decide it;
+        # the default asks the OS.
+        [Parameter()][scriptblock]$IsProcessAlive = { param([int]$ProcessId) $null -ne (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) }
     )
 
     $repaired = @()
@@ -875,6 +878,14 @@ function Repair-OrphanedRunSummary {
 
         $summaryPid = _PCR_Field -Obj $summary -Name 'runnerPid' -Default $null
         if ($null -ne $summaryPid -and [string]$summaryPid -eq [string]$CurrentPid) { continue }
+        # 2026-10-17: a run whose runner is still alive is owned, not orphaned.
+        # Two runners (a repeat trigger racing a manual start, or a second
+        # instance) must not declare each other's work abandoned; only a run
+        # whose runner process is gone is released.
+        $ownerPid = 0
+        if ($null -ne $summaryPid -and [int]::TryParse([string]$summaryPid, [ref]$ownerPid) -and $ownerPid -gt 0) {
+            if ([bool](& $IsProcessAlive $ownerPid)) { continue }
+        }
 
         $runId = [string](_PCR_Field -Obj $summary -Name 'runId' -Default ([System.IO.Path]::GetFileNameWithoutExtension($file.Name) -replace '\.summary$', ''))
         if (-not $PSCmdlet.ShouldProcess($runId, 'mark orphaned run failed')) { continue }

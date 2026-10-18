@@ -347,6 +347,120 @@ function Open-RepoBranchPullRequest {
     }
 }
 
+function Get-RepoPolicyPath {
+    <# Where explicit per-repository publication policy lives. #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$WorkspaceRoot)
+    return (Join-Path $WorkspaceRoot 'backend\config\repo-policies.json')
+}
+
+function Resolve-RepoPullRequestBase {
+    <#
+        .SYNOPSIS
+            The branch a product-opened pull request must target, from
+            explicit policy or the remote's default branch; refused when
+            neither resolves or the branch is not on origin.
+        .DESCRIPTION
+            2026-10-17. FreshStartFamily accepts feature pull requests into
+            `staging` only; the product opened everything against `main`. The
+            base is now decided before publication, in this order:
+
+              1. backend/config/repo-policies.json: repositories.<name>.prBase
+                 (explicit owner policy, with its reason).
+              2. The remote's default branch, `refs/remotes/origin/HEAD`, as
+                 the clone records it.
+              3. Nothing else. No 'main' guess.
+
+            Whatever resolves is validated against the clone's remote-tracking
+            refs: a base that does not exist on origin refuses publication by
+            name. A requested base (what the dispatcher typed) that disagrees
+            with policy is reported, and policy wins.
+        .OUTPUTS
+            [pscustomobject] ok, base, source, reason, requestedBase
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter(Mandatory)][string]$RepoName,
+        [Parameter()][AllowEmptyString()][string]$RepoPath = '',
+        [Parameter()][AllowEmptyString()][string]$RequestedBase = '',
+        [Parameter()][AllowEmptyString()][string]$PolicyPath = ''
+    )
+
+    $result = [ordered]@{ ok = $false; base = ''; source = ''; reason = ''; requestedBase = $RequestedBase }
+    $path = if ([string]::IsNullOrWhiteSpace($PolicyPath)) { Get-RepoPolicyPath -WorkspaceRoot $WorkspaceRoot } else { $PolicyPath }
+
+    $policyBase = ''
+    $policyReason = ''
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        try {
+            $policy = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+            $repos = if ($null -ne $policy -and $policy.PSObject.Properties.Name -contains 'repositories') { $policy.repositories } else { $null }
+            if ($null -ne $repos -and $repos.PSObject.Properties.Name -contains $RepoName) {
+                $entry = $repos.$RepoName
+                if ($null -ne $entry -and $entry.PSObject.Properties.Name -contains 'prBase') { $policyBase = [string]$entry.prBase }
+                if ($null -ne $entry -and $entry.PSObject.Properties.Name -contains 'reason') { $policyReason = [string]$entry.reason }
+            }
+        }
+        catch {
+            $result.reason = ("Repository policy at '{0}' could not be read: {1}. Publication is refused rather than guessed." -f $path, $_.Exception.Message)
+            return [pscustomobject]$result
+        }
+    }
+
+    $isGitRepo = (-not [string]::IsNullOrWhiteSpace($RepoPath)) -and (Test-Path -LiteralPath (Join-Path $RepoPath '.git'))
+
+    if (-not [string]::IsNullOrWhiteSpace($policyBase)) {
+        $result.base = $policyBase.Trim()
+        $result.source = 'repository policy'
+        if ($policyReason) { $result.source += (' ({0})' -f $policyReason) }
+    }
+    elseif ($isGitRepo) {
+        $originHead = ((& git -C $RepoPath symbolic-ref --quiet --short 'refs/remotes/origin/HEAD' 2>$null) | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($originHead)) {
+            $result.base = ($originHead -replace '^origin/', '')
+            $result.source = 'remote default branch (origin/HEAD)'
+        }
+        else {
+            # A clone made from an empty remote, or wired up with `git remote
+            # add`, records no origin/HEAD. The same reading the runner's push
+            # refusal uses: main, then master, but only one that exists on
+            # origin. Still no guess: a remote with neither refuses below.
+            foreach ($candidate in @('main', 'master')) {
+                & git -C $RepoPath rev-parse --verify --quiet ("refs/remotes/origin/{0}" -f $candidate) 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $result.base = $candidate
+                    $result.source = ("origin/{0} exists (origin/HEAD unset)" -f $candidate)
+                    break
+                }
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($result.base)) {
+        $result.reason = ("No pull-request base resolved for '{0}': no entry in {1} and the clone records no origin/HEAD. Add a prBase policy or set the remote's default branch." -f $RepoName, $path)
+        return [pscustomobject]$result
+    }
+
+    if ($isGitRepo) {
+        & git -C $RepoPath rev-parse --verify --quiet ("refs/remotes/origin/{0}" -f $result.base) 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            $result.reason = ("Pull-request base '{0}' ({1}) does not exist on origin in '{2}'. Publication is refused rather than opened against a branch GitHub would reject." -f $result.base, $result.source, $RepoPath)
+            $result.base = ''
+            return [pscustomobject]$result
+        }
+    }
+
+    $result.ok = $true
+    $result.reason = ("base '{0}' from {1}" -f $result.base, $result.source)
+    if (-not [string]::IsNullOrWhiteSpace($RequestedBase) -and $RequestedBase.Trim() -ne $result.base) {
+        $result.reason += ("; the dispatch asked for '{0}', policy wins" -f $RequestedBase.Trim())
+    }
+    return [pscustomobject]$result
+}
+
 function Get-GitTokenPushArgs {
     <#
         .SYNOPSIS

@@ -3928,7 +3928,9 @@ Write-Step 'Runner claim gate — smoke: cooldown, one local slot, and liveness 
     # Orphan repair names the abandoned run instead of leaving it "in progress".
     $null = Write-ClSummary -RunId 'run-mine' -Fields @{ runnerPid = 4243; dispatchTarget = 'claude' }
     $null = Write-ClSummary -RunId 'run-copilot' -Fields @{ runnerPid = 9999; dispatchTarget = 'copilot' }
-    $clRepaired = @(Repair-OrphanedRunSummary -RunsDir $clRuns -CurrentPid 4243 -NowUtc $clNow -Config $pcConfig)
+    # The fixture pids are not real processes; say so rather than let a
+    # coincidental live pid 4242 keep the run "owned" (liveness is injected).
+    $clRepaired = @(Repair-OrphanedRunSummary -RunsDir $clRuns -CurrentPid 4243 -NowUtc $clNow -Config $pcConfig -IsProcessAlive { $false })
     if ($clRepaired -notcontains 'run-live') { throw "Orphan repair must report the run it repaired, got: $($clRepaired -join ', ')" }
     if ($clRepaired -notcontains 'run-legacy') { throw 'A running summary with no pid at all is an orphan too' }
     $clRepairedSummary = ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $clRuns 'run-live.summary.json') -Raw -Encoding UTF8)
