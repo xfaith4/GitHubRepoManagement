@@ -223,8 +223,17 @@ function Get-QueueEntries {
 }
 
 function New-TaskCommitMessage {
-    param([Parameter(Mandatory)][string]$SelectedTask, [Parameter(Mandatory)][string]$RunId)
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$SelectedTask,
+        [Parameter(Mandatory)][string]$RunId,
+        [AllowEmptyString()][string]$Objective = ''
+    )
+    # Readiness repairs select no checkbox. Use their packet objective only for
+    # display; never write it back as a selected roadmap item.
     $t = $SelectedTask.Trim()
+    if ([string]::IsNullOrWhiteSpace($t)) { $t = $Objective.Trim() }
+    if ([string]::IsNullOrWhiteSpace($t)) { $t = "Queued task $RunId" }
+    $t = ($t -replace '[\r\n]+', ' ').Trim()
     if ($t.Length -gt 68) { $t = $t.Substring(0, 68) }
     return "roadmap: $t`n`nRun: $RunId (queued via portal, executed by the local runner)."
 }
@@ -2024,8 +2033,13 @@ function Invoke-QueuedTask {
         $dirty = @(& git -C $repo status --porcelain)
         $filesChanged = $dirty.Count
         if ($filesChanged -gt 0) {
+            $commitObjective = ''
+            if ($null -ne $runWorkPacket -and $runWorkPacket.PSObject.Properties.Name -contains 'objective') {
+                $commitObjective = [string]$runWorkPacket.objective
+            }
+            $commitMessage = New-TaskCommitMessage -SelectedTask ([string]$Entry.selectedTask) -RunId $runId -Objective $commitObjective
             & git -C $repo add -A
-            & git -C $repo commit -m (New-TaskCommitMessage -SelectedTask ([string]$Entry.selectedTask) -RunId $runId) | Out-Null
+            & git -C $repo commit -m $commitMessage | Out-Null
         }
 
         # Release 3.4 milestone 4 — the completion edit rides the feature

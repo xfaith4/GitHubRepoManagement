@@ -105,7 +105,11 @@ flight.
       runner pid no longer matches the heartbeat is closed as abandoned, with
       its reason, and is never left `running`. Done when a fixture run (stubbed
       `gh`, local bare remote) reaches a recorded PR URL, and a fixture run
-      with a dead runner pid closes as abandoned. _(state: planned)_
+      with a dead runner pid closes as abandoned. The 2026-10-18 runner repair
+      in `scripts/Invoke-RoadmapTaskRunner.ps1` handles readiness tasks with no
+      selected checkbox when committing; `tests/Test-DeliveryLoop.ps1` covers
+      objective and run-ID commit labels. This bounded repair does not establish
+      dispatch-to-PR or live recovery proof. _(state: planned)_
       `check: pwsh ./tests/Test-DispatchToPr.ps1 -FailOnError`
 - [ ] **At least ten repositories legitimately ready for automated work.** One
       of 62 is ready today, and an investigation into why is under way. The

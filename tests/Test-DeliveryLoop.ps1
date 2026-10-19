@@ -359,6 +359,29 @@ try {
     # The runner switched clones onto roadmap/<runId> and never back; the
     # operator's next commit in 300PixelLED_2812B landed on a product branch.
     . (Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1') -LoadFunctionsOnly
+    # Readiness repairs have an objective but deliberately select no roadmap checkbox.
+    $repairEntry = [pscustomobject]@{ selectedTask = ''; runId = 'repair-fixture' }
+    $repairObjective = 'Improve README and ROADMAP readiness.'
+    $repairMessage = New-TaskCommitMessage -SelectedTask $repairEntry.selectedTask -RunId $repairEntry.runId -Objective $repairObjective
+    Assert-That (($repairMessage -split "`n")[0] -eq "roadmap: $repairObjective") 'commit: an empty selected task uses the packet objective'
+    Assert-That ($repairEntry.selectedTask -eq '') 'commit: a repair must not fabricate a selected roadmap checkbox'
+    foreach ($emptyTask in @('', '  ', $null)) {
+        $fallbackMessage = New-TaskCommitMessage -SelectedTask $emptyTask -RunId 'legacy-fixture'
+        Assert-That (($fallbackMessage -split "`n")[0] -eq 'roadmap: Queued task legacy-fixture') 'commit: empty legacy labels have a nonempty run-linked fallback'
+    }
+    $selectedMessage = New-TaskCommitMessage -SelectedTask '  Selected checkbox  ' -RunId 'selected-fixture' -Objective 'Other objective'
+    Assert-That (($selectedMessage -split "`n")[0] -eq 'roadmap: Selected checkbox') 'commit: the selected task retains precedence'
+    $longMessage = New-TaskCommitMessage -SelectedTask '' -RunId 'long-fixture' -Objective ('x' * 120)
+    Assert-That (($longMessage -split "`n")[0].Length -eq ('roadmap: '.Length + 68)) 'commit: fallback objectives use the existing subject length limit'
+    Assert-That ($repairMessage.Contains('Run: repair-fixture')) 'commit: repair commit retains run provenance'
+    $repairRepo = Initialize-FixtureRepo -Name 'repair-commit'
+    & git -C $repairRepo switch -q -c 'roadmap/repair-fixture'
+    Set-Content -LiteralPath (Join-Path $repairRepo 'README.md') -Value 'Repaired documentation' -Encoding UTF8
+    & git -C $repairRepo add README.md
+    & git -C $repairRepo -c user.name=fixture -c user.email=fixture@example.invalid commit -q -m $repairMessage
+    Assert-That ($LASTEXITCODE -eq 0 -and (Get-Porcelain -Path $repairRepo) -eq '') 'commit: a readiness repair with no selected checkbox commits successfully'
+    Assert-That ((& git -C $repairRepo log -1 --format=%s) -eq "roadmap: $repairObjective") 'commit: the actual repair commit uses the objective'
+
     $repoR = Initialize-FixtureRepo -Name 'restore'
     & git -C $repoR switch -q -c 'roadmap/fixture-run' 2>&1 | Out-Null
     Set-Content -LiteralPath (Join-Path $repoR 'work.txt') -Value 'agent output' -Encoding UTF8
