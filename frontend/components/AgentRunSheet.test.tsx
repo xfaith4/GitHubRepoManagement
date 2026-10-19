@@ -83,6 +83,44 @@ describe('AgentRunSheet', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(2);
   });
+
+  // Issue #338: mounted inside the blurred sticky header, a fixed overlay was
+  // header-sized and the close button sat above the viewport. The overlay must
+  // live directly under <body>, whatever renders the sheet.
+  it('renders its overlay under <body>, outside the element that mounts it', async () => {
+    mockedGetAgentRuns.mockResolvedValue({ items: [run()] } as never);
+    const header = document.createElement('header');
+    header.className = 'sticky top-0 backdrop-blur-md';
+    document.body.appendChild(header);
+    render(<AgentRunSheet onClose={vi.fn()} />, { container: header });
+
+    const overlay = screen.getByTestId('agent-run-sheet-overlay');
+    expect(overlay.parentElement).toBe(document.body);
+    expect(header.contains(overlay)).toBe(false);
+    header.remove();
+  });
+
+  it('closes on a backdrop click and not on a click inside the dialog', async () => {
+    mockedGetAgentRuns.mockResolvedValue({ items: [run()] } as never);
+    const onClose = vi.fn();
+    render(<AgentRunSheet onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole('dialog'));
+    fireEvent.click(await screen.findByText('INcendiary'));
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('agent-run-sheet-overlay'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // Issue #339: a run the local runner closed says why.
+  it('shows why a failed run ended', async () => {
+    mockedGetAgentRuns.mockResolvedValue({
+      items: [run({ status: 'failed', prUrl: null, prNumber: null, outcome: 'runner-failed', outcomeDetail: 'verification failed: 2 tests' })],
+    } as never);
+    render(<AgentRunSheet onClose={vi.fn()} />);
+    expect(await screen.findByTestId('agent-run-sheet-outcome')).toHaveTextContent('verification failed: 2 tests');
+  });
 });
 
 describe('AgentActivityIndicator tap-through', () => {

@@ -152,7 +152,7 @@ const InsightsView: React.FC<InsightsViewProps> = ({
           <div>
             <h2 className="text-lg font-semibold text-white">Execution Throughput</h2>
             <p className="text-sm text-gray-400 mt-1">
-              Live rollup from the execution ledger: completions, queue pressure, and in-flight duration.
+              Lane completions, queue pressure and in-flight duration from the execution ledger, and how the local runner&apos;s own runs ended.
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -208,17 +208,46 @@ const InsightsView: React.FC<InsightsViewProps> = ({
                 <div className="text-xs uppercase tracking-wide text-yellow-200/80">Claimable Lanes</div>
                 <div className="mt-1 text-2xl font-semibold text-yellow-200">{metrics.stateCounts.ready}</div>
               </div>
-              <div className="rounded-lg border border-red-700/30 bg-red-900/10 px-3 py-3">
-                <div className="text-xs uppercase tracking-wide text-red-200/80">Error Rate</div>
-                <div className={`mt-1 text-2xl font-semibold ${metrics.errorRatePct > 20 ? 'text-red-200' : 'text-gray-100'}`}>
-                  {metrics.errorRatePct.toFixed(0)}%
+              {/* Issue #340: the old "Error Rate" read the lane ledger alone,
+                  which runner runs never touch, and showed 0% while 4 of 5
+                  runs failed. This tile counts the runner's own runs. */}
+              <div
+                className="rounded-lg border border-red-700/30 bg-red-900/10 px-3 py-3"
+                data-testid="runner-failures-tile"
+                title={metrics.runnerRuns?.basis || 'Local runner run summaries.'}
+              >
+                <div className="text-xs uppercase tracking-wide text-red-200/80">
+                  Runner Failures{metrics.runnerRuns ? ` (${metrics.runnerRuns.windowDays}d)` : ''}
                 </div>
+                {metrics.runnerRuns && metrics.runnerRuns.errorRatePct !== null ? (
+                  <>
+                    <div className={`mt-1 text-2xl font-semibold ${metrics.runnerRuns.errorRatePct > 20 ? 'text-red-200' : 'text-gray-100'}`}>
+                      {metrics.runnerRuns.errorRatePct.toFixed(0)}%
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {metrics.runnerRuns.failed} of {metrics.runnerRuns.finished} finished runs failed
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-1 text-2xl font-semibold text-gray-400">—</div>
+                    <div className="text-xs text-gray-400">
+                      {metrics.runnerRuns ? 'no runner run finished in this window' : 'runner outcomes not reported'}
+                    </div>
+                  </>
+                )}
               </div>
-              <div className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3">
+              {/* Issue #341: no running lane is no sample, not "0m". */}
+              <div className="rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-3" data-testid="avg-active-run-tile">
                 <div className="text-xs uppercase tracking-wide text-gray-400">Avg Active Run</div>
-                <div className="mt-1 text-2xl font-semibold text-gray-100">
-                  {metrics.avgCurrentRunMins > 0 ? `${metrics.avgCurrentRunMins.toFixed(0)}m` : '0m'}
-                </div>
+                {metrics.avgCurrentRunMins !== null ? (
+                  <div className="mt-1 text-2xl font-semibold text-gray-100">{metrics.avgCurrentRunMins.toFixed(0)}m</div>
+                ) : (
+                  <>
+                    <div className="mt-1 text-2xl font-semibold text-gray-400">—</div>
+                    <div className="text-xs text-gray-400">no lane running</div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -228,7 +257,7 @@ const InsightsView: React.FC<InsightsViewProps> = ({
                 <div className="mt-1 text-lg font-semibold text-gray-100">{metrics.totalCompleted}</div>
               </div>
               <div className="rounded-lg border border-gray-700/60 bg-gray-900/40 px-3 py-2">
-                <div className="text-xs text-gray-500">Cancelled / Failed</div>
+                <div className="text-xs text-gray-500">Lanes cancelled / failed</div>
                 <div className="mt-1 text-lg font-semibold text-gray-100">{metrics.totalCancelled}</div>
               </div>
               <div className="rounded-lg border border-gray-700/60 bg-gray-900/40 px-3 py-2">
@@ -697,7 +726,7 @@ const InsightsView: React.FC<InsightsViewProps> = ({
         </div>
       )}
 
-      <ChangeHistoryPanel repos={repos} />
+      <ChangeHistoryPanel repos={repos} runnerRuns={executionMetrics?.runnerRuns ?? null} />
     </div>
   );
 };

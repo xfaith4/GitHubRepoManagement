@@ -514,6 +514,101 @@ function Sync-LedgerFromRunHistory {
     return @{ checked = $checked; released = @($released.ToArray()) }
 }
 
+# ---------------------------------------------------------------------------
+# Get-RunnerRunOutcomeSummary
+# How the local runner's runs ended, over a window.
+#
+# Issue #340. GET /api/execution/metrics read only the lane ledger, and runner
+# runs never assign or release a lane through /api/execution/complete. On
+# 2026-10-19 the Insights tile showed 0 failed and a 0% error rate while 4 of
+# the runner's 5 runs in 14 days had failed.
+#
+# Counts every run summary whose startedAt falls in the window, by status.
+# `failed` and `refused` are failures; `cancelled` is neither failure nor
+# success; `queued`/`running`/`dispatched` are still in flight. The error rate
+# is failures over finished, non-cancelled runs, and is $null when nothing has
+# finished: no sample is not 0%. An unreadable summary is counted as such,
+# never dropped.
+# ---------------------------------------------------------------------------
+function Get-RunnerRunOutcomeSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkspaceRoot,
+        [Parameter()]
+        [ValidateRange(1, 365)]
+        [int]$Days = 14,
+        [Parameter()]
+        [datetime]$Now = (Get-Date)
+    )
+
+    $runsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs'
+    $since = $Now.ToUniversalTime().AddDays(-1 * $Days)
+    $byStatus = [ordered]@{}
+    $total = 0
+    $committed = 0
+    $unreadable = 0
+
+    $files = @()
+    if (Test-Path -LiteralPath $runsDir -PathType Container) {
+        $files = @(Get-ChildItem -LiteralPath $runsDir -Filter '*.summary.json' -File)
+    }
+    foreach ($file in $files) {
+        $summary = $null
+        try { $summary = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $summary = $null }
+        if ($null -eq $summary) { $unreadable++; continue }
+
+        $started = $null
+        $startedRaw = _Ledger_GetField -Entry $summary -Name 'startedAt' -Default $null
+        if ($startedRaw -is [datetime]) {
+            $started = $startedRaw.ToUniversalTime()
+        } else {
+            $parsed = [datetime]::MinValue
+            if ([datetime]::TryParse([string]$startedRaw, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$parsed)) {
+                $started = $parsed
+            } else {
+                $started = $file.LastWriteTimeUtc
+            }
+        }
+        if ($started -lt $since) { continue }
+
+        $status = ([string](_Ledger_GetField -Entry $summary -Name 'status' -Default '')).ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($status)) { $status = 'unknown' }
+        if (-not $byStatus.Contains($status)) { $byStatus[$status] = 0 }
+        $byStatus[$status] = [int]$byStatus[$status] + 1
+        $total++
+        # Issue #343: a run that recorded a commit is work the product made,
+        # whoever the git author is. The index's commit counts cannot tell.
+        if (-not [string]::IsNullOrWhiteSpace([string](_Ledger_GetField -Entry $summary -Name 'commitSha' -Default ''))) { $committed++ }
+    }
+
+    $failed = 0
+    $inFlight = 0
+    $cancelled = 0
+    foreach ($key in @($byStatus.Keys)) {
+        $n = [int]$byStatus[$key]
+        if ($key -in @('failed', 'refused')) { $failed += $n }
+        elseif ($key -in @('queued', 'running', 'dispatched')) { $inFlight += $n }
+        elseif ($key -eq 'cancelled') { $cancelled += $n }
+    }
+    $finished = $total - $inFlight - $cancelled
+    $errorRatePct = if ($finished -gt 0) { [math]::Round($failed / $finished * 100, 1) } else { $null }
+
+    return [pscustomobject]@{
+        windowDays   = $Days
+        since        = $since.ToString('o')
+        total        = $total
+        finished     = $finished
+        failed       = $failed
+        inFlight     = $inFlight
+        cancelled    = $cancelled
+        committed    = $committed
+        errorRatePct = $errorRatePct
+        byStatus     = [pscustomobject]$byStatus
+        unreadable   = $unreadable
+        basis        = 'local runner run summaries (output/roadmap-task-history/runs), by startedAt'
+    }
+}
+
 function _Ledger_GetField {
     param(
         [Parameter(Mandatory = $true)]

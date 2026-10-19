@@ -882,3 +882,137 @@ function Invoke-AgentRunRefresh {
         refreshedAt     = $nowIso
     }
 }
+
+# ---------------------------------------------------------------------------
+# Runner outcomes (issue #339)
+# ---------------------------------------------------------------------------
+
+# Runner summary status -> the agent-run state it implies. Only outcomes the
+# runner has finished with appear here; 'queued', 'running' and 'pushed' leave
+# the record alone ('pushed' is the pull-request sweep's to close).
+$script:AgentRunRunnerOutcomeMap = @{
+    'failed'          = @{ status = 'failed';  outcome = 'runner-failed' }
+    'refused'         = @{ status = 'failed';  outcome = 'runner-refused' }
+    'blocked'         = @{ status = 'blocked'; outcome = 'runner-blocked' }
+    'awaiting-review' = @{ status = 'blocked'; outcome = 'awaiting-review-unpushed' }
+}
+
+<#
+.SYNOPSIS
+    The patch a finished local-runner run implies for its agent-run record, or
+    $null when the record should be left alone.
+
+.DESCRIPTION
+    Issue #339. The runner writes its outcome only to its own run summary, and
+    Invoke-AgentRunAutoClose closed a record only when a GitHub pull request
+    landed. A run that failed locally, or finished without pushing, therefore
+    stayed `dispatched` forever and the header counted it as live work: on
+    2026-10-19 all three records were `dispatched` while their runner runs had
+    failed twice and stopped for review once.
+
+    A failed or refused runner run closes the record as `failed`. A run waiting
+    for operator review, or blocked, becomes `blocked`: not live, and still in
+    the pull-request sweep, so a later push and merge can complete it. A record
+    that already names a pull request belongs to that sweep and is never
+    patched here.
+#>
+function Get-AgentRunRunnerPatch {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory = $true)][object]$Run,
+        [Parameter()][object]$RunnerSummary = $null
+    )
+
+    if ($null -eq $RunnerSummary) { return $null }
+
+    $current = ([string](_AgentRunsField -Obj $Run -Name 'status' -Default '')).ToLowerInvariant()
+    if ($current -notin @('dispatched', 'active', 'blocked')) { return $null }
+    if (-not [string]::IsNullOrWhiteSpace([string](_AgentRunsField -Obj $Run -Name 'prUrl' -Default ''))) { return $null }
+
+    $runnerStatus = ([string](_AgentRunsField -Obj $RunnerSummary -Name 'status' -Default '')).ToLowerInvariant()
+    if (-not $script:AgentRunRunnerOutcomeMap.ContainsKey($runnerStatus)) { return $null }
+    $target = $script:AgentRunRunnerOutcomeMap[$runnerStatus]
+
+    $currentOutcome = [string](_AgentRunsField -Obj $Run -Name 'outcome' -Default '')
+    if ($current -eq $target.status -and $currentOutcome -eq $target.outcome) { return $null }
+
+    $detail = [string](_AgentRunsField -Obj $RunnerSummary -Name 'error' -Default '')
+    if ($runnerStatus -eq 'awaiting-review') {
+        $sha = [string](_AgentRunsField -Obj $RunnerSummary -Name 'commitSha' -Default '')
+        $detail = if ([string]::IsNullOrWhiteSpace($sha)) {
+            'The runner finished and is waiting for operator review; the branch has not been pushed.'
+        } else {
+            "The runner committed $sha and is waiting for operator review; the branch has not been pushed."
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($detail)) { $detail = "The runner run ended '$runnerStatus' without recording a reason." }
+    if ($detail.Length -gt 500) { $detail = $detail.Substring(0, 500) }
+
+    $patch = @{
+        status        = $target.status
+        outcome       = $target.outcome
+        outcomeDetail = $detail
+    }
+    $completedAt = _AgentRunsIsoString -Value (_AgentRunsField -Obj $RunnerSummary -Name 'runnerCompletedAt' -Default $null)
+    if (-not [string]::IsNullOrWhiteSpace($completedAt)) { $patch['agentCompletedAt'] = $completedAt }
+    $branch = [string](_AgentRunsField -Obj $RunnerSummary -Name 'branch' -Default '')
+    if ([string]::IsNullOrWhiteSpace([string](_AgentRunsField -Obj $Run -Name 'branch' -Default '')) -and -not [string]::IsNullOrWhiteSpace($branch)) {
+        $patch['branch'] = $branch
+    }
+    return $patch
+}
+
+<#
+.SYNOPSIS
+    Close open agent-run records from their linked runner run's outcome.
+
+.DESCRIPTION
+    Reads only local files, so it needs no token and makes no network call.
+    Every record with a `dispatchRunId` whose runner summary implies a change
+    (Get-AgentRunRunnerPatch) is patched through Update-AgentRunRecord, which
+    validates the status and emits the lifecycle event. A missing or unreadable
+    summary leaves its record untouched. Returns counts.
+#>
+function Sync-AgentRunFromRunnerOutcome {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter()][object[]]$Runs = $null,
+        [Parameter()][string]$Actor = 'system'
+    )
+
+    $summary = [ordered]@{ considered = 0; advanced = 0; failed = 0; errors = [System.Collections.Generic.List[string]]::new() }
+    $runsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs'
+    if ($null -eq $Runs) { $Runs = @(Get-AgentRuns -WorkspaceRoot $WorkspaceRoot -Limit 200) }
+
+    foreach ($run in @($Runs)) {
+        $dispatchRunId = [string](_AgentRunsField -Obj $run -Name 'dispatchRunId' -Default '')
+        if ([string]::IsNullOrWhiteSpace($dispatchRunId)) { continue }
+        $status = ([string](_AgentRunsField -Obj $run -Name 'status' -Default '')).ToLowerInvariant()
+        if ($status -notin @('dispatched', 'active', 'blocked')) { continue }
+
+        $summaryPath = Join-Path $runsDir ("{0}.summary.json" -f ($dispatchRunId -replace '[\\/:*?"<>|]', '_'))
+        if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) { continue }
+        $summary['considered'] = [int]$summary['considered'] + 1
+
+        try {
+            $runnerSummary = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8)
+            $patch = Get-AgentRunRunnerPatch -Run $run -RunnerSummary $runnerSummary
+            if ($null -eq $patch) { continue }
+            $runId = [string](_AgentRunsField -Obj $run -Name 'runId' -Default '')
+            $null = Update-AgentRunRecord -WorkspaceRoot $WorkspaceRoot -RunId $runId -Patch $patch -Actor $Actor `
+                -Summary ("Runner run {0} ended '{1}': {2}" -f $dispatchRunId, [string]$runnerSummary.status, $patch['outcomeDetail'])
+            $summary['advanced'] = [int]$summary['advanced'] + 1
+        } catch {
+            # Per-record: one unreadable summary must not stop the rest. The
+            # reason is returned for the caller to log, never dropped.
+            $summary['failed'] = [int]$summary['failed'] + 1
+            $summary['errors'].Add(("{0}: {1}" -f $dispatchRunId, $_.Exception.Message))
+        }
+    }
+
+    $summary['errors'] = $summary['errors'].ToArray()
+    return [pscustomobject]$summary
+}
