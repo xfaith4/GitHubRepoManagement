@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## 2026-10-19 — Confirmed defects live in GitHub Issues, not in `output/`
+
+The 2026-10-19 Insights investigation confirmed seven defects and saved them
+only to `output/insights-defects-20261019/findings.md`. `output/` is
+gitignored, the repository had no GitHub issues, and none of the seven was in
+the roadmap or deferred work, so the findings would not have survived a new
+session, a different worktree or a fresh clone.
+
+- **The seven are issues #338–#344**, labelled `bug` plus a triage label. Two
+  bear on Release 4.1 (`triage:active-release`): #339, agent runs stay
+  `dispatched` when the runner run fails or never pushes, and #340, Execution
+  Throughput ignores runner runs and shows 0% errors while 4 of 5 recent runs
+  failed. The other five are `triage:deferred`. Triage adds no roadmap scope.
+- **`AGENTS.md` gains a Defects section.** GitHub Issues is the defect
+  registry; an agent lists open defects for the area it touches at task start,
+  files each confirmed defect with observed, expected, impact, evidence,
+  suspected cause and verification criteria, deduplicates against issues and
+  deferred work, and closes an issue only through a `Fixes #N` PR with
+  verification or a disposition comment. The handoff checklist names filed
+  defects. The Copilot mirror is regenerated.
+- **The bug-report and PR templates carry the same fields**, and new bug
+  reports start as `needs-triage`.
+- **Two deferred items link their defect evidence**: the lane-tile item (#344)
+  and "Insights reports a gap as a gap" (#341, #343). Their scope and order are
+  unchanged.
+
 ## 2026-10-17 — The agent gets the task that was approved, under the envelope it declares
 
 The first controlled run of the proof of value (300PixelLED_2812B, run

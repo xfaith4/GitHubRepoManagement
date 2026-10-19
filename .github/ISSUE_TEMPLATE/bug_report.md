@@ -1,26 +1,40 @@
 ---
 name: Bug report
-about: Report a defect in scripts, API, or docs
+about: Report a defect in scripts, API, UI, or docs
 title: "[Bug] "
-labels: bug
+labels: bug, needs-triage
 assignees: ""
 ---
 
-## Description
+<!--
+GitHub Issues is the defect registry (AGENTS.md, "Defects"). Before filing,
+search open and closed issues and docs/governance/deferred-work.md; when a
+roadmap or deferred item already owns the defect, link it instead of restating
+its scope.
+-->
 
-## Steps to Reproduce
+## Observed
 
-## Expected Behavior
+## Expected
 
-## Actual Behavior
+## Impact
 
-## Environment
+## Evidence / reproduction
 
-- OS:
-- PowerShell version:
-- Command executed:
+- Commit or live host version:
+- Steps, command, or route:
+- Logs, payloads, or artifact paths (an `output/` path is evidence, not the
+  record; quote what matters here):
 
-## Evidence
+## Suspected cause
 
-- Logs/artifact paths:
-- Screenshots/output:
+## Verification criteria
+
+## Triage
+
+<!--
+Replace `needs-triage` with `triage:active-release` (name the Current focus
+item it bears on) or `triage:deferred`. A label never adds roadmap scope.
+-->
+
+## Related records
