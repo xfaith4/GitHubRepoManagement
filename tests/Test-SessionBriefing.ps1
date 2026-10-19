@@ -96,6 +96,12 @@ if ($ps51) {
     Assert-That ("$count".Trim() -eq '2') "Windows PowerShell 5.1 also yields two items (got '$count')"
 }
 
+# 4c. timestamps render as local ISO with an offset, from a string or a DateTime
+$iso = '2026-10-19T11:36:54Z'
+$expected = ([datetime]::Parse($iso, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToLocalTime().ToString('yyyy-MM-dd HH:mm zzz')
+Assert-That ((ConvertTo-LocalTimestamp -Value $iso) -eq $expected) 'an ISO string renders as local time with its offset'
+Assert-That ((ConvertTo-LocalTimestamp -Value ('[{"t":"' + $iso + '"}]' | ConvertFrom-Json)[0].t) -eq $expected) 'a DateTime parsed by ConvertFrom-Json renders the same'
+
 # 5. exactly one handoff issue
 Assert-That ((Resolve-SessionHandoffIssue -Issues @()).status -eq 'missing') 'no handoff issue is reported missing'
 $one = Resolve-SessionHandoffIssue -Issues @([pscustomobject]@{ number = 7; updatedAt = '2026-10-19T10:00:00Z'; body = 'x' })

@@ -60,6 +60,26 @@ function ConvertFrom-JsonArray {
     $items.ToArray()
 }
 
+function ConvertTo-LocalTimestamp {
+    <#
+    .SYNOPSIS
+        Renders a gh timestamp as local time with its offset on both editions.
+    .DESCRIPTION
+        pwsh 7 parses an ISO `updatedAt` into a UTC DateTime that prints in the
+        culture's format with no zone; 5.1 leaves the string. Either way the
+        result is `yyyy-MM-dd HH:mm zzz`, never a bare culture date.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][object]$Value)
+
+    $when = $Value
+    if ($when -isnot [datetime]) {
+        $when = [datetime]::Parse([string]$when, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+    }
+    $when.ToLocalTime().ToString('yyyy-MM-dd HH:mm zzz')
+}
+
 function Get-RoadmapFocus {
     <#
     .SYNOPSIS

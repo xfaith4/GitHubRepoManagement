@@ -87,7 +87,7 @@ try {
             $issue = $resolved.issue
             if ($PSCmdlet.ShouldProcess("#$($issue.number)", 'Replace the handoff body, keeping the old one as a comment')) {
                 $previous = Join-Path ([System.IO.Path]::GetTempPath()) ("handoff-previous-{0}.md" -f $issue.number)
-                $note = "Superseded handoff (body as of $($issue.updatedAt)):`n`n" + [string]$issue.body
+                $note = "Superseded handoff (body as of $(ConvertTo-LocalTimestamp -Value $issue.updatedAt)):`n`n" + [string]$issue.body
                 Set-Content -LiteralPath $previous -Value $note -Encoding UTF8
                 try {
                     $null = Invoke-Gh @('issue', 'comment', [string]$issue.number, '--body-file', $previous)
