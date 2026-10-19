@@ -228,7 +228,11 @@ function Format-SessionBriefing {
     } elseif ($gh.handoff.status -eq 'ok' -or $gh.handoff.status -eq 'duplicate') {
         if ($gh.handoff.status -eq 'duplicate') { $out.Add("WARNING: $($gh.handoff.detail)") }
         $i = $gh.handoff.issue
-        $out.Add("#$($i.number), updated $($i.updatedAt) - $($i.url)")
+        # pwsh 7 parses updatedAt into a UTC DateTime, 5.1 leaves the ISO string;
+        # both render as local time with its offset, never a bare culture date.
+        $updated = $i.updatedAt
+        if ($updated -isnot [datetime]) { $updated = [datetime]::Parse([string]$updated, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind) }
+        $out.Add("#$($i.number), updated $($updated.ToLocalTime().ToString('yyyy-MM-dd HH:mm zzz')) - $($i.url)")
         $out.Add('')
         $body = ([string]$i.body -replace '(?s)<!--.*?-->', '').Trim()
         foreach ($line in ($body -split '\r?\n')) { $out.Add($line) }
