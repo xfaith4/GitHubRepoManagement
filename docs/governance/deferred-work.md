@@ -1622,7 +1622,8 @@ fixtures never reaching live state was verified on #320's head and archived
       contract 8). Done when: a fixture lane at `ci-pending` renders phase,
       entered-at, elapsed and the trace link; a lane with no events renders
       "no phase observed" and no ring; the string `%` appears nowhere in the
-      tile. _(state: planned)_
+      tile. Defect evidence: issue #344 (runner runs never occupy a lane, so a
+      lane-event-only tile cannot show them). _(state: planned)_
       `check: npx vitest run frontend/components/ExecutionLaneTile.test.tsx`
 - [ ] **Labels match what they count.** "N need you" counts repositories, not
       holds × codes (it read 63 for 59 repositories); that clause shipped with
@@ -1639,7 +1640,9 @@ fixtures never reaching live state was verified on #320's head and archived
       (`DifferentialChangedCount`, `differential-noop`, `awaiting-first-scan`)
       move behind a "Scan diagnostics" disclosure. Release-number copy ("Release
       2.3 scaffold") leaves the UI. "Failing Actions" agrees with repository
-      detail. Team Activity is scoped to the owner or removed. _(state: planned)_
+      detail. Team Activity is scoped to the owner or removed. Defect evidence:
+      issues #341 (Avg Active Run renders `0m` for no sample) and #343 (Team
+      Activity counts every author's commits). _(state: planned)_
       `check: npx vitest run frontend/lib/portfolioTrendView.test.ts`
 - [ ] **Repository detail agrees with itself.** Each panel shows loading,
       unavailable or error, never a stale score beside "not found" (README 95

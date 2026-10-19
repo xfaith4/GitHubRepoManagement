@@ -108,7 +108,31 @@ it.
   [`docs/governance/operator-queue.md`](docs/governance/operator-queue.md), not
   in an agent milestone.
 - A non-blocking discovery is recorded with a bounded follow-up and does not
-  silently enlarge the active unit.
+  silently enlarge the active unit. A defect is recorded as described in
+  Defects below.
+
+### Defects
+
+GitHub Issues is the defect registry. Reports under `output/`, scratchpads and
+session memory are evidence, never the record.
+
+- At task start, list open defects for the area you will touch:
+  `gh issue list --label bug --state open --search "<area>" --json number,title,labels`.
+  Read an issue body only when it bears on the task.
+- File every confirmed, actionable defect as an issue before the session ends,
+  labelled `bug` and one triage label. The body states Observed, Expected,
+  Impact, Evidence/reproduction, Suspected cause (when known) and Verification
+  criteria. Search open and closed issues and
+  [`docs/governance/deferred-work.md`](docs/governance/deferred-work.md) first;
+  when a roadmap or deferred item already owns the defect, link it rather than
+  restating its scope.
+- Triage against the active release: `triage:active-release` names the Current
+  focus item it bears on; otherwise `triage:deferred`, or `needs-triage` when
+  unsure. A label never adds roadmap scope; bringing a defect into the roadmap
+  is a roadmap change.
+- A fixing PR states `Fixes #N` with its verification evidence. Any other
+  closure carries a disposition comment (duplicate of, not reproducible on
+  `<sha>`, owner decision) and the matching close reason.
 
 ### Proposal state is not delivery state
 
@@ -320,8 +344,9 @@ A provider session may end at any legitimate durable boundary:
 Do not manufacture a commit or open a PR merely to avoid ending with a status.
 Before exit, persist what changed, exact checks and results, current branch and
 head, WorkPacket/run/mandate identifiers, residual scope, incorrect assumptions,
-decisions parked, authority consumed, and the next eligible transition. A later
-session must be able to resume without depending on conversation memory.
+decisions parked, authority consumed, defects filed as issues, and the next
+eligible transition. A later session must be able to resume without depending
+on conversation memory.
 
 ## Conventions
 
