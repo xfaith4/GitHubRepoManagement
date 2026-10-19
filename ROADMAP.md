@@ -12,7 +12,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-10-16
+**Last updated:** 2026-10-19
 
 **Where the product stands (evaluation of 2026-10-16, checked against live
 data).** About eight merged PRs on other repositories, ever, almost all of them
@@ -35,6 +35,18 @@ history that keeps failures and rejections.
 operator work is in the operator queue. Take the first `[ ]` not already in
 flight.
 
+- [ ] **Every session starts from one briefing and ends with one handoff note
+      (owner decision, 2026-10-19).** Fresh sessions spent their context
+      rebuilding state by hand and lost handoffs between them: on 2026-10-19
+      the current note sat on an unmerged branch, the first one a new session
+      found was a stale `HANDOFF.md` under `output/`, and its written-down state
+      was wrong within minutes. Every 4.1 item pays that cost on each session.
+      `tools/Get-SessionBriefing.ps1` reads the live state in one screen; the
+      one open issue labelled `handoff` holds only what a live read cannot give,
+      rewritten by `tools/Publish-SessionHandoff.ps1`; `AGENTS.md` names both.
+      Done when the gate is green in CI and the first handoff issue exists.
+      _(state: built)_
+      `check: pwsh ./tests/Test-SessionBriefing.ps1 -FailOnError`
 - [ ] **Open a real roadmap-repair PR from the repair preview (loop steps 2
       and 5).** The console's repair-PR button only ever built a dry-run plan.
       From the preview it now opens a real pull request on the target

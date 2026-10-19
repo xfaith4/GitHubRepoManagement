@@ -39,14 +39,21 @@ cannot override Steering, branch protection, repository policy, or the
 owner-review classes below. No prior successful action implies authority for a
 later one.
 
-Read in this order before modifying anything:
+Start every session with `pwsh ./tools/Get-SessionBriefing.ps1`. In one
+screen it reads the checkout and its distance from `origin/main`, every
+worktree, dirty files, open PRs with the checks on their head, open defects,
+the roadmap's open Current-focus items, the operator queue, and the one open
+issue labelled `handoff`. Do not rebuild that picture by hand, and do not trust
+an older copy of it.
+
+Then read in this order before modifying anything:
 
 1. Steering.
 2. This file.
 3. The active roadmap and, when an item appears absent, completed-release
    history.
 4. The active mandate and WorkPacket, when execution is orchestrated.
-5. Current repository, worktree, branch, PR, CI, cancellation, and mandate
+5. Whatever the briefing reports as unavailable, and cancellation and mandate
    state.
 
 Revalidate the premise of any queued task, scheduled continuation, handoff, or
@@ -349,11 +356,23 @@ A provider session may end at any legitimate durable boundary:
 - integration reconciled and the next unit selected.
 
 Do not manufacture a commit or open a PR merely to avoid ending with a status.
-Before exit, persist what changed, exact checks and results, current branch and
-head, WorkPacket/run/mandate identifiers, residual scope, incorrect assumptions,
-decisions parked, authority consumed, defects filed as issues, and the next
-eligible transition. A later session must be able to resume without depending
-on conversation memory.
+Before exit, persist on the PR, issue or WorkPacket each fact concerns: what
+changed, exact checks and results, WorkPacket/run/mandate identifiers, residual
+scope, incorrect assumptions, authority consumed, and defects filed as issues.
+A later session must be able to resume without depending on conversation
+memory.
+
+Then rewrite the handoff note: the one open GitHub issue labelled `handoff`,
+replaced whole with `pwsh ./tools/Publish-SessionHandoff.ps1 -BodyPath <file>`
+(`-Template` prints the empty note). The previous note is kept as a comment on
+the issue. The note holds only what a live read cannot give the next session:
+the next action, the intent behind in-flight work, decisions made, traps, and
+parked questions, in at most 60 lines, linking the PR or issue that holds the
+detail. Leave branch heads, CI results, PR lists and dirty files to the
+briefing; a written copy of them is stale within minutes. The note lives on
+GitHub so a fresh session on `main` reads it at once, without waiting for a
+branch to merge. Notes under `output/`, worklogs on unmerged branches and
+conversation memory are evidence at most, never the handoff.
 
 ## Conventions
 

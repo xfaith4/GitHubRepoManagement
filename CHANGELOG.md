@@ -2,6 +2,38 @@
 
 All notable changes to this project are documented here.
 
+## 2026-10-19 — A session starts from one briefing and ends with one handoff note
+
+Fresh sessions spent their context rebuilding state by hand, and handoffs were
+lost between them. On 2026-10-19 the current handoff sat in a worklog on the
+unmerged `fix/insights-defects` branch, invisible from `main`; the first
+handoff a new session found was a stale `output/runner-repair-20261018/HANDOFF.md`;
+and the state the note had written down (main's head, which head was green) was
+wrong within five minutes of being written. `AGENTS.md` listed what to persist
+but never where.
+
+- **`tools/Get-SessionBriefing.ps1` is the first command of every session.** One
+  screen, read live: checkout and distance from `origin/main`, worktrees, dirty
+  files, open PRs with the checks on their head (pending is never failed), open
+  defects by triage label, the roadmap's open Current-focus items and the age of
+  that section, the operator queue, the handoff note, and handoff-shaped notes
+  left under `output/`, named as evidence. A section it cannot read says
+  "unavailable" and why. `-AsJson` for machine use.
+- **The handoff note is one open GitHub issue labelled `handoff`**, rewritten
+  whole by `tools/Publish-SessionHandoff.ps1`, which keeps the previous note as
+  a comment. It holds only what a live read cannot give: next action, intent of
+  in-flight work, decisions, traps, parked questions, at most 60 lines; the
+  publisher refuses a note missing a section or with an empty next action. It
+  lives on GitHub so a session on `main` reads it without waiting for a merge.
+- **`AGENTS.md`** opens the session-start order with the briefing and names the
+  handoff issue as the one place a session's handoff goes; notes under
+  `output/`, worklogs on unmerged branches and conversation memory are evidence
+  at most. Copilot mirror regenerated.
+- **Gate:** `tests/Test-SessionBriefing.ps1`, registered in
+  `scripts/Invoke-TestSuite.ps1`. It also parses this repository's own
+  `ROADMAP.md` and operator queue, so a format change that would blind the
+  briefing fails CI rather than a fresh session.
+
 ## 2026-10-19 — Confirmed defects live in GitHub Issues, not in `output/`
 
 The 2026-10-19 Insights investigation confirmed seven defects and saved them
