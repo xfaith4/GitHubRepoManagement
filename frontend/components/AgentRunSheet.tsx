@@ -17,6 +17,7 @@
  * opened from a status pill is a place to look, not a place to dispatch from.
  */
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { getAgentRuns } from '../services/apiClient';
 import type { AgentRun } from '../types';
 
@@ -59,8 +60,18 @@ const AgentRunSheet = ({ onClose }: AgentRunSheetProps) => {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" data-testid="agent-run-sheet-overlay">
+  // Issue #338: the sheet is opened from the sticky header, whose
+  // `backdrop-blur` makes it the containing block for `position: fixed`
+  // descendants. Rendered in place, the overlay was header-sized and the dialog
+  // (close button included) overflowed above the viewport. A portal to <body>
+  // gives the overlay the viewport back. A click on the backdrop itself, not on
+  // anything inside the dialog, closes the sheet.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+      data-testid="agent-run-sheet-overlay"
+      onClick={event => { if (event.target === event.currentTarget) onClose(); }}
+    >
       <div
         role="dialog"
         aria-modal="true"
@@ -107,6 +118,9 @@ const AgentRunSheet = ({ onClose }: AgentRunSheetProps) => {
                   {run.selectedTaskText ? (
                     <p className="mt-1 text-xs text-gray-400 break-words">{run.selectedTaskText}</p>
                   ) : null}
+                  {run.outcomeDetail && (run.status === 'failed' || run.status === 'blocked') ? (
+                    <p className="mt-1 text-xs text-amber-200/90 break-words" data-testid="agent-run-sheet-outcome">{run.outcomeDetail}</p>
+                  ) : null}
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                     {run.branch ? <span className="break-all">{run.branch}</span> : null}
                     {formatWhen(run.updatedAt) ? <span>updated {formatWhen(run.updatedAt)}</span> : null}
@@ -128,7 +142,8 @@ const AgentRunSheet = ({ onClose }: AgentRunSheetProps) => {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
