@@ -90,6 +90,7 @@ $executionModuleRoot = Join-Path $WorkspaceRoot 'backend\modules\execution'
 . (Join-Path $docAuditModuleRoot 'DocAudit.Scanner.ps1')
 . (Join-Path $docAuditModuleRoot 'RepositoryImprovement.Workflow.ps1')
 . (Join-Path $executionModuleRoot 'Execution.Ledger.ps1')
+. (Join-Path $executionModuleRoot 'Execution.Eligibility.ps1')
 . (Join-Path $executionModuleRoot 'Execution.LaneObservation.ps1')
 . (Join-Path $executionModuleRoot 'Execution.WorkPacket.ps1')
 . (Join-Path $executionModuleRoot 'Execution.ProviderRegistry.ps1')
