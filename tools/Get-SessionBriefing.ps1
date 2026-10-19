@@ -196,6 +196,7 @@ function Get-SessionBriefingData {
         github        = $github
         roadmap       = $roadmap
         operatorQueue = $queue
+        reading       = Get-SessionReadingPlan -Root $Root
         strayNotes    = @(Get-StrayNote -OutputRoot (Join-Path $Root 'output'))
     }
 }
@@ -206,20 +207,7 @@ function Format-SessionBriefing {
     $short = { param([string]$s, [int]$n) if ($s.Length -le $n) { $s } else { $s.Substring(0, $n - 3) + '...' } }
 
     $out.Add("# Session briefing - $($Data.generatedAt)")
-    $out.Add('')
-    $g = $Data.git
-    $distance = 'distance from origin/main unknown'
-    if ($null -ne $g.behind) { $distance = "behind origin/main $($g.behind), ahead $($g.ahead)" }
-    $out.Add("## Checkout")
-    $out.Add("$($Data.workspaceRoot) on $($g.branch) @ $($g.head); origin/main @ $($g.originMain); $distance ($($g.fetch))")
-    if (@($g.dirty).Count) {
-        $out.Add("Dirty ($(@($g.dirty).Count)): " + ((@($g.dirty) | Select-Object -First 8 | ForEach-Object { $_.Trim() }) -join '; '))
-    } else { $out.Add('Clean.') }
-    foreach ($w in @($g.worktrees | Where-Object { -not $_.current })) {
-        $d = 'dirty unknown'; if ($null -ne $w.dirty) { $d = "$($w.dirty) dirty" }
-        $out.Add("Worktree: $($w.path) on $($w.branch) @ $($w.head), $d")
-    }
-
+    $out.Add('Read the handoff first. It is the one open issue labelled `handoff`; everything after it is read live.')
     $out.Add('')
     $out.Add('## Handoff')
     $gh = $Data.github
@@ -238,6 +226,28 @@ function Format-SessionBriefing {
         foreach ($line in ($body -split '\r?\n')) { $out.Add($line) }
     } else {
         $out.Add("$($gh.handoff.status): $($gh.handoff.detail)")
+    }
+
+    $out.Add('')
+    $out.Add('## Read next (required; read these ranges, not whole files)')
+    foreach ($item in @($Data.reading.required)) {
+        if ($item.found) { $out.Add("$($item.path) lines $($item.start)-$($item.end) ($($item.lines) lines): $($item.label)") }
+        else { $out.Add("$($item.path): section not found ($($item.label)) - read the whole file and fix tools/SessionHandoff.ps1") }
+    }
+    $out.Add("On demand only: $($Data.reading.onDemand).")
+
+    $out.Add('')
+    $g = $Data.git
+    $distance = 'distance from origin/main unknown'
+    if ($null -ne $g.behind) { $distance = "behind origin/main $($g.behind), ahead $($g.ahead)" }
+    $out.Add('## Checkout')
+    $out.Add("$($Data.workspaceRoot) on $($g.branch) @ $($g.head); origin/main @ $($g.originMain); $distance ($($g.fetch))")
+    if (@($g.dirty).Count) {
+        $out.Add("Dirty ($(@($g.dirty).Count)): " + ((@($g.dirty) | Select-Object -First 8 | ForEach-Object { $_.Trim() }) -join '; '))
+    } else { $out.Add('Clean.') }
+    foreach ($w in @($g.worktrees | Where-Object { -not $_.current })) {
+        $d = 'dirty unknown'; if ($null -ne $w.dirty) { $d = "$($w.dirty) dirty" }
+        $out.Add("Worktree: $($w.path) on $($w.branch) @ $($w.head), $d")
     }
 
     $out.Add('')
@@ -275,9 +285,9 @@ function Format-SessionBriefing {
     }
 
     $out.Add('')
-    $out.Add('## Operator queue (Ben only; never blocks agent work)')
-    if (-not @($Data.operatorQueue).Count) { $out.Add('Empty.') }
-    foreach ($row in @($Data.operatorQueue)) { $out.Add("$($row.id) [$($row.needs)] $(& $short $row.action 90)") }
+    $queueIds = (@($Data.operatorQueue) | ForEach-Object { $_.id }) -join ', '
+    if (-not $queueIds) { $queueIds = 'empty' }
+    $out.Add("Operator queue (Ben only; never blocks agent work, never yours to do): $(@($Data.operatorQueue).Count) rows ($queueIds) in docs/governance/operator-queue.md")
 
     if (@($Data.strayNotes).Count) {
         $out.Add('')

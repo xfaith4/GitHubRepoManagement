@@ -32,22 +32,35 @@ cannot override Steering, branch protection, repository policy, or the
 owner-review classes below. No prior successful action implies authority for a
 later one.
 
-Start every session with `pwsh ./tools/Get-SessionBriefing.ps1`. In one
-screen it reads the checkout and its distance from `origin/main`, every
-worktree, dirty files, open PRs with the checks on their head, open defects,
-the roadmap's open Current-focus items, the operator queue, and the one open
-issue labelled `handoff`. Do not rebuild that picture by hand, and do not trust
-an older copy of it.
+### Session start
 
-Then read in this order before modifying anything:
+Every session starts from `pwsh ./tools/Get-SessionBriefing.ps1`; in Claude
+Code a SessionStart hook in `.claude/settings.json` runs it and puts its
+output in context, so it is already there. The briefing opens with the
+handoff note (the one open issue labelled `handoff`), then reads live, in one
+screen, the checkout and its distance from `origin/main`, every worktree,
+dirty files, open PRs with the checks on their head, open defects, the
+roadmap's open Current-focus items and the operator queue. Do not rebuild that
+picture by hand, and do not trust an older copy of it.
 
-1. Steering.
-2. This file.
-3. The active roadmap and, when an item appears absent, completed-release
-   history.
+Then, before modifying anything, read only what the briefing's "Read next"
+section lists, as the line ranges it prints:
+
+1. This file, whole.
+2. Steering sections 1-2 (purpose, the contracts) and 5-6 (working rules,
+   things that look like progress and are not).
+3. The roadmap's Current Status section: the focus items in order, then the
+   full text of the item you take.
 4. The active mandate and WorkPacket, when execution is orchestrated.
 5. Whatever the briefing reports as unavailable, and cancellation and mandate
    state.
+
+Read the rest on demand, not by default: steering sections 3-4 (proof ladder,
+direction) before choosing what to build or claiming proof, or when a choice
+feels like a matter of taste; other roadmap sections when an item or rule
+names them; completed-release history when an item appears absent. The ranges
+are defined once, in `tools/SessionHandoff.ps1`, and
+`tests/Test-SessionBriefing.ps1` fails when a heading they depend on moves.
 
 Revalidate the premise of any queued task, scheduled continuation, handoff, or
 old prompt before acting. Stale instructions do not become authority because
@@ -123,7 +136,8 @@ it.
 GitHub Issues is the defect registry. Reports under `output/`, scratchpads and
 session memory are evidence, never the record.
 
-- At task start, list open defects for the area you will touch:
+- The briefing lists every open defect by triage label. For the area you will
+  touch, search further only when needed:
   `gh issue list --label bug --state open --search "<area>" --json number,title,labels`.
   Read an issue body only when it bears on the task.
 - File every confirmed, actionable defect as an issue before the session ends,
@@ -140,6 +154,10 @@ session memory are evidence, never the record.
 - A fixing PR states `Fixes #N` with its verification evidence. Any other
   closure carries a disposition comment (duplicate of, not reproducible on
   `<sha>`, owner decision) and the matching close reason.
+- Never put a closing keyword (`close`, `fix`, `resolve` in any tense) right
+  before an issue number you are not fixing: GitHub reads `Not fixed: #344` as
+  `fixed: #344` and closes the issue on merge, which is how #344 was lost on
+  2026-10-19. Write `#344 stays open` or `Not addressed here: #344`.
 
 ### Proposal state is not delivery state
 

@@ -1,5 +1,10 @@
 # Worklogs — where agent scratch files live
 
+> **These are history, never a handoff.** The current handoff is the one open
+> GitHub issue labelled `handoff`, which `tools/Get-SessionBriefing.ps1` prints
+> first. A worklog here that calls itself a handoff, such as
+> `2026-10-19-insights-defects/progress.md`, was superseded the day it landed.
+
 Agent working notes (`findings.md`, `progress.md`, `task_plan.md` and their
 relatives) belong **here**, never in the repository root.
 

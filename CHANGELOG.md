@@ -33,6 +33,26 @@ but never where.
   `scripts/Invoke-TestSuite.ps1`. It also parses this repository's own
   `ROADMAP.md` and operator queue, so a format change that would blind the
   briefing fails CI rather than a fresh session.
+- **The briefing arrives on its own and reads the handoff first.** A
+  SessionStart hook in `.claude/settings.json` (startup, resume, clear,
+  compact) puts the briefing in a Claude session's context. It opens with the
+  handoff note; `CLAUDE.md`, the `ROADMAP.md` header and the worklogs README
+  point at the issue, and the 14-row operator queue shrinks to one line.
+- **Required reading is a list of ranges, not three whole files.** Before:
+  `AGENTS.md`, all of steering and all of `ROADMAP.md`, about 1,400 lines.
+  Now: `AGENTS.md`, steering sections 1-2 and 5-6, and the roadmap's Current
+  Status section, about 650 lines, printed by the briefing as live line
+  ranges; steering 3-4 and the rest of the roadmap are read on demand. The
+  ranges are defined by heading in `tools/SessionHandoff.ps1`, and the gate
+  fails when a heading moves. Steering's handoff rule now points at the issue
+  and leaves "what merged, what is in CI" to the live read.
+- **Lost work recovered from the stale notes before they were deleted.**
+  #344 was closed by #346's merge although unfixed: GitHub read the PR's
+  wording as a closing keyword. It is reopened, and `AGENTS.md` now forbids a
+  closing keyword before an issue number that is not being fixed. The runner's
+  stale-HEAD branching, recorded only in a gitignored report, is #349. The three
+  stale `output/` note folders from 2026-10-18 and 2026-10-19 were then
+  deleted (local, gitignored).
 
 ## 2026-10-19 — Insights tells the truth about runner runs
 

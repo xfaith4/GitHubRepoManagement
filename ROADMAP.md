@@ -1,6 +1,7 @@
 # GitHub Repo Management — Active Execution Roadmap
 
 > **Status:** Active
+> **Session start:** `pwsh ./tools/Get-SessionBriefing.ps1` (automatic in Claude Code). The handoff is the one pinned issue labelled `handoff`; nothing under `output/` or `docs/history/worklogs/` is a handoff.
 > **Active release:** **Release 4.1 — Proof of Value** (2026-10-16 to 2026-11-15)
 > **Owner decision (Ben, 2026-10-16):** until 2026-11-15 the product has one job: prove, on repositories other than this one, that it can find a worthwhile improvement, propose it with evidence, hand it to a suitable coding agent, get it verified, merged and recorded, and measure what all of that cost the operator. Feature work that the loop does not need is frozen, by name the v2 console (Release 4.0 phase E), Release 3.9 and Release 4.0 phases B–E. The success figures are targets, not incentives to inflate a metric. Frozen work does not resume on 2026-11-15 by default; the delivery evidence decides its priority.
 > **Work ordering:** Must work now ([Current focus](#current-status-agent-context)) → Must improve next ([§7](#7-must-improve-next--observed-bottlenecks)) → Deferred ([`docs/governance/deferred-work.md`](docs/governance/deferred-work.md))
@@ -41,9 +42,12 @@ flight.
       the current note sat on an unmerged branch, the first one a new session
       found was a stale `HANDOFF.md` under `output/`, and its written-down state
       was wrong within minutes. Every 4.1 item pays that cost on each session.
-      `tools/Get-SessionBriefing.ps1` reads the live state in one screen; the
-      one open issue labelled `handoff` holds only what a live read cannot give,
-      rewritten by `tools/Publish-SessionHandoff.ps1`; `AGENTS.md` names both.
+      `tools/Get-SessionBriefing.ps1` reads the live state in one screen and
+      a SessionStart hook puts it in context; it opens with the one open issue
+      labelled `handoff`, which holds only what a live read cannot give and is
+      rewritten by `tools/Publish-SessionHandoff.ps1`. Required reading is the
+      ranges the briefing prints (about 650 lines, down from about 1,400);
+      the rest is on demand. `AGENTS.md`, `CLAUDE.md` and steering name both.
       Done when the gate is green in CI and the first handoff issue exists.
       _(state: built)_
       `check: pwsh ./tests/Test-SessionBriefing.ps1 -FailOnError`

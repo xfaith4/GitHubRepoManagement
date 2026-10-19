@@ -7,6 +7,19 @@
 > Read it first. This file adds only Claude-specific mechanics and may narrow,
 > but never widen, the authority or permissions defined there.
 
+## Session start and handoff
+
+- The SessionStart hook in `.claude/settings.json` runs
+  `tools/Get-SessionBriefing.ps1` on startup, resume, clear and compact, and
+  its output is already in your context. It opens with the handoff note: the
+  pinned issue labelled `handoff`. Read that first, then the "Read next"
+  ranges it lists. If the briefing is missing from context, run
+  `pwsh ./tools/Get-SessionBriefing.ps1` yourself.
+- End the session by rewriting that issue with
+  `pwsh ./tools/Publish-SessionHandoff.ps1 -BodyPath <file>` (AGENTS.md,
+  "Session completion and handoff"). Never hand off through `output/`, a
+  worklog or memory.
+
 ## Claude specifics
 
 - Claude is an implementation provider: inspect authorized files, make the

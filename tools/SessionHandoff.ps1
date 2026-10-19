@@ -25,6 +25,17 @@ $script:SessionHandoffHeadings = @(
     '## Traps',
     '## Parked'
 )
+# Required reading for every session, by heading, so a renamed or moved section
+# fails tests/Test-SessionBriefing.ps1 instead of silently shifting line numbers.
+# Everything else is read on demand (AGENTS.md "Authority and document roles").
+$script:SessionRequiredReading = @(
+    @{ path = 'AGENTS.md'; label = 'the operating contract, whole'; start = $null; end = $null },
+    @{ path = 'docs/governance/steering.md'; label = 'steering 1-2: purpose and the contracts'; start = '^## 1\. '; end = '^## 3\. ' },
+    @{ path = 'docs/governance/steering.md'; label = 'steering 5-6: working rules, false progress'; start = '^## 5\. '; end = $null },
+    @{ path = 'ROADMAP.md'; label = 'roadmap Current Status: the focus items in order'; start = '^## Current Status'; end = '^## 1\. ' }
+)
+$script:SessionOnDemandReading = 'steering 3-4 (proof ladder, direction) before choosing what to build or claiming proof; the rest of ROADMAP.md when a section is named; docs/history/completed-releases.md when an item seems absent'
+
 # Files a session has historically left under output/ as a "handoff". They are
 # evidence at best; the briefing names them so nobody mistakes one for the record.
 $script:StrayNoteNames = @('HANDOFF.md', 'progress.md', 'task_plan.md', 'findings.md')
@@ -97,6 +108,63 @@ function Get-RoadmapFocus {
         lastUpdated = $lastUpdated
         openItems   = $open.ToArray()
     }
+}
+
+function Get-ReadingRange {
+    <#
+    .SYNOPSIS
+        Resolves one required-reading entry to 1-based start and end lines.
+    .DESCRIPTION
+        No start pattern means the whole file. The end is the line before the
+        end pattern's first match after the start, less trailing blank and
+        `---` lines; no end pattern means the end of the file.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Lines,
+        [Parameter()][AllowNull()][string]$StartPattern,
+        [Parameter()][AllowNull()][string]$EndPattern
+    )
+
+    $start = 1
+    if ($StartPattern) {
+        $start = 0
+        for ($i = 0; $i -lt $Lines.Count; $i++) { if ($Lines[$i] -match $StartPattern) { $start = $i + 1; break } }
+        if ($start -eq 0) { return [pscustomobject]@{ found = $false; start = $null; end = $null } }
+    }
+    $end = $Lines.Count
+    if ($EndPattern) {
+        for ($i = $start; $i -lt $Lines.Count; $i++) { if ($Lines[$i] -match $EndPattern) { $end = $i; break } }
+    }
+    while ($end -gt $start -and ($Lines[$end - 1].Trim() -eq '' -or $Lines[$end - 1].Trim() -eq '---')) { $end-- }
+    [pscustomobject]@{ found = $true; start = $start; end = $end }
+}
+
+function Get-SessionReadingPlan {
+    <#
+    .SYNOPSIS
+        The required reading with live line ranges, plus the on-demand note.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Root)
+
+    $items = [System.Collections.Generic.List[object]]::new()
+    foreach ($spec in $script:SessionRequiredReading) {
+        $full = Join-Path $Root $spec.path
+        $range = [pscustomobject]@{ found = $false; start = $null; end = $null }
+        if (Test-Path -LiteralPath $full) {
+            $range = Get-ReadingRange -Lines @(Get-Content -LiteralPath $full -Encoding UTF8) -StartPattern $spec.start -EndPattern $spec.end
+        }
+        $items.Add([pscustomobject]@{
+            path  = $spec.path
+            label = $spec.label
+            found = $range.found
+            start = $range.start
+            end   = $range.end
+            lines = $(if ($range.found) { $range.end - $range.start + 1 } else { 0 })
+        })
+    }
+    [pscustomobject]@{ required = $items.ToArray(); onDemand = $script:SessionOnDemandReading }
 }
 
 function Get-OperatorQueueRow {

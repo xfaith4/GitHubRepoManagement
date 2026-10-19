@@ -141,12 +141,46 @@ Assert-That (@($data.roadmap.openItems).Count -ge 1) 'the briefing carries the o
 $text = (& $briefing -WorkspaceRoot $WorkspaceRoot -NoFetch -SkipGitHub) -join "`n"
 Assert-That ($text -match '(?m)^## Handoff\r?\nunavailable: skipped') 'the text briefing says the handoff is unavailable, not missing'
 Assert-That ($text -match '(?m)^## Open PRs\r?\nunavailable:') 'the text briefing says PRs are unavailable, not "None."'
+$order = @('## Handoff', '## Read next', '## Checkout', '## Open PRs') | ForEach-Object { $text.IndexOf($_) }
+Assert-That ((@($order | Where-Object { $_ -lt 0 }).Count -eq 0) -and ($order[0] -lt $order[1]) -and ($order[1] -lt $order[2]) -and ($order[2] -lt $order[3])) 'the handoff prints first, then the reading list, then live state'
 
-# 9. the contract names the mechanism
+# 8b. required reading resolves to real, bounded slices of the real files
+$plan = Get-SessionReadingPlan -Root $WorkspaceRoot
+Assert-That (@($plan.required | Where-Object { -not $_.found }).Count -eq 0) ('every required-reading heading is found: ' + ((@($plan.required | Where-Object { -not $_.found }) | ForEach-Object { $_.label }) -join '; '))
+Assert-That (@($plan.required | Where-Object { $_.found -and $_.end -lt $_.start }).Count -eq 0) 'every required-reading range ends at or after its start'
+$steeringLines = @(Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'docs/governance/steering.md'))
+$s12 = @($plan.required | Where-Object { $_.label -like 'steering 1-2*' })[0]
+$s12Text = $steeringLines[($s12.start - 1)..($s12.end - 1)] -join "`n"
+Assert-That ($s12Text -match '(?m)^## 2\. ' -and $s12Text -notmatch '(?m)^## 3\. ') 'steering 1-2 covers section 2 and stops before section 3'
+$roadmapLines = @(Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'ROADMAP.md'))
+$rs = @($plan.required | Where-Object { $_.path -eq 'ROADMAP.md' })[0]
+$rsText = $roadmapLines[($rs.start - 1)..($rs.end - 1)] -join "`n"
+Assert-That ($rsText -match '\*\*Current focus' -and $rsText -notmatch '(?m)^## 1\. ') 'the roadmap slice holds Current focus and stops before section 1'
+$requiredLines = (@($plan.required) | Measure-Object -Property lines -Sum).Sum
+$wholeLines = @('AGENTS.md', 'docs/governance/steering.md', 'ROADMAP.md') | ForEach-Object { @(Get-Content -LiteralPath (Join-Path $WorkspaceRoot $_)).Count } | Measure-Object -Sum
+Assert-That ($requiredLines -lt (0.75 * $wholeLines.Sum)) "required reading stays well under the three whole files ($requiredLines of $($wholeLines.Sum) lines)"
+Assert-That ((Get-ReadingRange -Lines @('# a', '## 1. x', 'body', '', '---', '## 3. y') -StartPattern '^## 1\. ' -EndPattern '^## 3\. ').end -eq 3) 'a range drops trailing blank and --- lines'
+Assert-That (-not (Get-ReadingRange -Lines @('# a') -StartPattern '^## 9\. ' -EndPattern $null).found) 'a missing heading is reported as not found'
+
+# 9. the contract, the provider overlay, the roadmap and the hook name the mechanism
 $agents = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'AGENTS.md') -Raw
 Assert-That ($agents -match 'tools/Get-SessionBriefing\.ps1') 'AGENTS.md tells a session to run the briefing'
 Assert-That ($agents -match 'tools/Publish-SessionHandoff\.ps1') 'AGENTS.md names the handoff publisher'
 Assert-That ($agents -match "label(led)? ``handoff``") 'AGENTS.md names the handoff issue label'
+$claude = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'CLAUDE.md') -Raw
+Assert-That ($claude -match 'tools/Get-SessionBriefing\.ps1' -and $claude -match "labelled ``handoff``") 'CLAUDE.md, which Claude Code loads automatically, points at the briefing and the handoff issue'
+$roadmapHead = (Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'ROADMAP.md') -TotalCount 12) -join "`n"
+Assert-That ($roadmapHead -match 'tools/Get-SessionBriefing\.ps1') 'the ROADMAP.md header names the briefing'
+$settingsPath = Join-Path $WorkspaceRoot '.claude/settings.json'
+Assert-That (Test-Path -LiteralPath $settingsPath) '.claude/settings.json exists'
+if (Test-Path -LiteralPath $settingsPath) {
+    $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+    $hooks = @()
+    if ($settings.PSObject.Properties['hooks'] -and $settings.hooks.PSObject.Properties['SessionStart']) { $hooks = @($settings.hooks.SessionStart) }
+    $briefingHook = @($hooks | Where-Object { $_.matcher -match 'startup' -and $_.matcher -match 'compact' } |
+        ForEach-Object { @($_.hooks) } | Where-Object { $_.type -eq 'command' -and $_.command -match 'tools/Get-SessionBriefing\.ps1' })
+    Assert-That ($briefingHook.Count -eq 1) 'a SessionStart hook on startup and compact runs the briefing'
+}
 
 Write-Host ("Session briefing: {0} passed, {1} failed" -f $passed, $failures.Count)
 foreach ($f in $failures) { Write-Host "  FAIL: $f" -ForegroundColor Red }
