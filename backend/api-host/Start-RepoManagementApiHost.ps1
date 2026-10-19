@@ -811,9 +811,13 @@ function Get-PortfolioTrendSeedPayload {
             $generatedAt = (Get-Date).ToUniversalTime().ToString('o')
         }
 
+        # Issue #342: the converter already returns its list with `,@()`, so an
+        # outer `@()` made one entry holding all 62 and every trend, leverage
+        # and coverage figure read a sample of 1. Assign it as returned.
+        $seedEntries = Convert-PortfolioIndexReposToAssessments -IndexRepos @($indexPayload.repos)
         return [pscustomobject]@{
             available   = $true
-            entries     = @(Convert-PortfolioIndexReposToAssessments -IndexRepos @($indexPayload.repos))
+            entries     = $seedEntries
             summary     = Get-ObjectPropertyValue -InputObject $indexPayload -PropertyName 'summary' -Default $null
             generatedAt = $generatedAt
             seedSource  = 'portfolio-index'
@@ -7147,9 +7151,26 @@ function Invoke-AgentRunAutoClose {
         [Parameter()][int]$CooldownMinutes = 10
     )
 
-    $summary = [ordered]@{ considered = 0; attempted = 0; advanced = 0; failed = 0 }
+    $summary = [ordered]@{ considered = 0; attempted = 0; advanced = 0; failed = 0; runnerAdvanced = 0 }
 
     try {
+        # Issue #339: a run that failed or stopped for review on the local
+        # runner never reaches GitHub, so the pull-request walk below cannot
+        # close it. Its runner summary already says how it ended. Local files
+        # only: no token, no network, no cooldown.
+        try {
+            $runnerSync = Sync-AgentRunFromRunnerOutcome -WorkspaceRoot $WorkspaceRoot
+            $summary['runnerAdvanced'] = [int]$runnerSync.advanced
+            if ([int]$runnerSync.advanced -gt 0) {
+                Write-HostLog ("[TRACE] agent-runs.autoclose correlationId={0} closed {1} run(s) from runner outcomes" -f $CorrelationId, $runnerSync.advanced)
+            }
+            foreach ($syncError in @($runnerSync.errors)) {
+                Write-HostLog ("[WARN ] agent-runs.autoclose correlationId={0} runner outcome skipped: {1}" -f $CorrelationId, $syncError)
+            }
+        } catch {
+            Write-HostLog ("[WARN ] agent-runs.autoclose correlationId={0} runner-outcome sync failed: {1}" -f $CorrelationId, $_.Exception.Message)
+        }
+
         # 'completed' and 'failed' are terminal. 'blocked' is not: a blocked run
         # can still be unblocked and land, so it stays in the sweep.
         $openStatuses = @('dispatched', 'active', 'blocked')
@@ -13892,11 +13913,23 @@ try {
                         $totalAttempted = $completedHistory.Count + $cancelledHistory.Count
                         $errorRatePct   = if ($totalAttempted -gt 0) {
                             [math]::Round($cancelledHistory.Count / $totalAttempted * 100, 1)
-                        } else { 0.0 }
+                        } else { $null }
 
                         $stateCounts = @{}
                         foreach ($st in @('idle','ready','running','blocked','complete')) {
                             $stateCounts[$st] = @($ledger.entries | Where-Object { $_.executionState -eq $st }).Count
+                        }
+
+                        # Issue #340: runner runs never pass through a lane, so
+                        # the figures above cannot see them. Report them beside
+                        # the lane figures, with their own basis, rather than
+                        # letting a 0% lane error rate stand for the whole system.
+                        $runnerRuns = $null
+                        try {
+                            $runnerRuns = Get-RunnerRunOutcomeSummary -WorkspaceRoot $WorkspaceRoot -Days 14 -Now $now
+                        } catch {
+                            Write-HostLog ("WARN execution.metrics correlationId={0} runner outcomes unavailable: {1}" -f $correlationId, $_.Exception.Message)
+                            $runnerRuns = @{ available = $false; reason = $_.Exception.Message }
                         }
 
                         Add-MetricCounter -Name 'api_requests_total'
@@ -13910,6 +13943,8 @@ try {
                                 avgCurrentRunMins = $avgRunningMins
                                 errorRatePct      = $errorRatePct
                                 stateCounts       = $stateCounts
+                                basis             = 'execution lane ledger (portal-dispatched lanes only)'
+                                runnerRuns        = $runnerRuns
                                 computedAt        = $now.ToString('o')
                             }
                         }

@@ -34,6 +34,52 @@ but never where.
   `ROADMAP.md` and operator queue, so a format change that would blind the
   briefing fails CI rather than a fresh session.
 
+## 2026-10-19 — Insights tells the truth about runner runs
+
+Six of the seven defects the 2026-10-19 Insights investigation filed are
+fixed. Against a copy of that day's live evidence, the fixes produce: runner
+runs 5 in 14 days, 4 failed, 80%; the three agent-run records stuck at
+`dispatched` close as two `failed` with their runner's error and one
+`blocked` awaiting review of `b19eae4`; the trend seed carries 62
+repositories, not 1.
+
+- **Agent runs close from the runner's outcome (#339).**
+  `Sync-AgentRunFromRunnerOutcome` reads each open record's runner summary
+  (`dispatchRunId`) and closes a `failed` or `refused` run as `failed`, and
+  an `awaiting-review` or `blocked` run as `blocked`, with `outcome` and
+  `outcomeDetail` saying why. `blocked` stays in the pull-request sweep, so a
+  later push and merge can still complete it. A record that names a pull
+  request, or whose runner run has not finished, is left alone.
+  `Invoke-AgentRunAutoClose` runs it first, locally, with no token or
+  network. The agent-run sheet shows the reason.
+- **Execution metrics count runner runs (#340).** `GET /api/execution/metrics`
+  gains `runnerRuns` (14-day window: total, finished, failed, in flight,
+  cancelled, committed, error rate, basis) from
+  `Get-RunnerRunOutcomeSummary`, and labels its lane figures' `basis`. The
+  lane `errorRatePct` is `null` when no lane work finished. The Insights
+  "Error Rate" tile, which read 0% while 4 of 5 runs failed, is now "Runner
+  Failures (14d)" with its count.
+- **No sample is not zero (#341).** `avgCurrentRunMins` and `errorRatePct`
+  stay `null` through the API client, and Avg Active Run reads "—, no lane
+  running" instead of `0m`.
+- **The agent-run sheet closes by click (#338).** It renders through a portal
+  to `<body>`, so the blurred sticky header no longer clips the overlay, and
+  a backdrop click closes it.
+- **The trend seed carries every repository (#342).** The second `@()` around
+  `Convert-PortfolioIndexReposToAssessments` is gone; a tripwire in
+  `tests/Test-InsightsTruth.ps1` fails any caller that adds one back.
+- **"Team Activity Dashboard" is "Commit Activity" (#343).** It says it counts
+  all authors' commits in the indexed clones, drops "Active Contributors"
+  (which counted each repository's last commit author), and reports the runs
+  that recorded a commit, from the runner's records, separately.
+- **Not fixed: #344**, running-lane progress. The runner writes no phase
+  field, so honest progress needs the runner to record its phase at each step,
+  which is the deferred lane-tile item's scope.
+
+New gate: `tests/Test-InsightsTruth.ps1` (31 assertions), run in the suite.
+The host changes take effect after the elevated service restart; the UI
+changes after `npm run build`.
+
 ## 2026-10-19 — Confirmed defects live in GitHub Issues, not in `output/`
 
 The 2026-10-19 Insights investigation confirmed seven defects and saved them

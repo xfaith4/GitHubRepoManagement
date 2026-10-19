@@ -1,11 +1,17 @@
 import React, { useMemo, useState } from 'react';
-import { type RepoStatus } from '../types';
+import { type RepoStatus, type RunnerRunOutcomes } from '../types';
 
 interface ChangeHistoryPanelProps {
   repos: RepoStatus[];
+  /** The runner's own run records, the one source that knows which commits the product made. */
+  runnerRuns?: RunnerRunOutcomes | null;
 }
 
-const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
+// Issue #343: this panel was "Team Activity Dashboard". There is no team, and
+// the index's commit counts include every author, the operator above all. It
+// now says what it counts, and reports the product's own commits separately
+// from the runner's records rather than pretending the totals tell them apart.
+const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos, runnerRuns = null }) => {
   // Captured once per mount via the lazy initializer, so render stays pure
   // (react-hooks/purity). Week/month activity windows do not need a clock that
   // ticks between re-renders — a stable "now" is the correct semantic here.
@@ -15,20 +21,11 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
     const monthWindowMs = 30 * 24 * 60 * 60 * 1000;
     const totalCommitsWeek = repos.reduce((sum, r) => sum + (r.commitsLastWeek ?? 0), 0);
     const totalCommitsMonth = repos.reduce((sum, r) => sum + (r.commitsLastMonth ?? 0), 0);
-    
-    const uniqueContributorsWeek = new Set<string>();
-    const uniqueContributorsMonth = new Set<string>();
+
     let recentReposByDateWeek = 0;
     let recentReposByDateMonth = 0;
-    
-    repos.forEach(r => {
-      if ((r.commitsLastWeek ?? 0) > 0) {
-        uniqueContributorsWeek.add(r.lastCommitAuthor);
-      }
-      if ((r.commitsLastMonth ?? 0) > 0) {
-        uniqueContributorsMonth.add(r.lastCommitAuthor);
-      }
 
+    repos.forEach(r => {
       const lastCommitDateValue = r.lastCommitDate ? Date.parse(r.lastCommitDate) : Number.NaN;
       if (Number.isFinite(lastCommitDateValue)) {
         const ageMs = now - lastCommitDateValue;
@@ -59,8 +56,6 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
     return {
       totalCommitsWeek,
       totalCommitsMonth,
-      activeContributorsWeek: uniqueContributorsWeek.size,
-      activeContributorsMonth: uniqueContributorsMonth.size,
       activeReposWeek,
       activeReposMonth,
       avgCommitsPerRepoWeek,
@@ -93,9 +88,9 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
             <line x1="12" y1="1" x2="12" y2="23"></line>
             <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
           </svg>
-          Team Activity Dashboard
+          Commit Activity
         </h2>
-        <span className="text-sm text-gray-400">Real-time Development Metrics</span>
+        <span className="text-sm text-gray-400">All authors, local clones in the portfolio index</span>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -120,12 +115,6 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Active Repositories</span>
               <span className="text-xl font-semibold text-gray-200">{displayActiveReposWeek}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-400">Active Contributors</span>
-              <span className="text-xl font-semibold text-gray-200">
-                {activityMetrics.commitMetricsUnavailableWeek ? '—' : activityMetrics.activeContributorsWeek}
-              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Avg Commits/Repo</span>
@@ -163,12 +152,6 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Active Repositories</span>
               <span className="text-xl font-semibold text-gray-200">{displayActiveReposMonth}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-400">Active Contributors</span>
-              <span className="text-xl font-semibold text-gray-200">
-                {activityMetrics.commitMetricsUnavailableMonth ? '—' : activityMetrics.activeContributorsMonth}
-              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-400">Avg Commits/Repo</span>
@@ -222,6 +205,19 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
         </div>
       )}
       
+      {/* Made by the product: the runner's records, not the index's counts. */}
+      <div className="mt-6 bg-gray-900/50 p-5 rounded-lg border border-gray-700" data-testid="product-commit-activity">
+        <h3 className="text-lg font-medium text-gray-200 mb-2">Made by the product</h3>
+        {runnerRuns ? (
+          <p className="text-sm text-gray-300">
+            <strong className="text-blue-400">{runnerRuns.committed}</strong> of {runnerRuns.total} runner run{runnerRuns.total === 1 ? '' : 's'} in the last {runnerRuns.windowDays} days recorded a commit.
+            {' '}The commit totals above include these and every other author&apos;s work.
+          </p>
+        ) : (
+          <p className="text-sm text-gray-400">Runner outcomes were not reported, so the product&apos;s own commits cannot be separated from the totals above.</p>
+        )}
+      </div>
+
       {/* Activity Insights */}
       <div className="mt-6 p-4 bg-blue-900/20 border border-blue-700/50 rounded-lg">
         <div className="flex items-start">
@@ -231,13 +227,13 @@ const ChangeHistoryPanel: React.FC<ChangeHistoryPanelProps> = ({ repos }) => {
             <line x1="12" y1="8" x2="12.01" y2="8"></line>
           </svg>
           <div className="text-sm text-gray-300">
-            <strong className="text-blue-400">Executive Summary:</strong> 
+            <strong className="text-blue-400">Summary:</strong>
             {activityMetrics.totalCommitsWeek > 0 ? (
-              <span> Your team has made <strong>{activityMetrics.totalCommitsWeek}</strong> commit{activityMetrics.totalCommitsWeek === 1 ? '' : 's'} across <strong>{displayActiveReposWeek}</strong> repositor{displayActiveReposWeek === 1 ? 'y' : 'ies'} in the last 7 days, with <strong>{activityMetrics.activeContributorsWeek}</strong> active contributor{activityMetrics.activeContributorsWeek === 1 ? '' : 's'}. This month, there have been <strong>{activityMetrics.totalCommitsMonth}</strong> total commit{activityMetrics.totalCommitsMonth === 1 ? '' : 's'}.</span>
+              <span> <strong>{activityMetrics.totalCommitsWeek}</strong> commit{activityMetrics.totalCommitsWeek === 1 ? '' : 's'} by all authors across <strong>{displayActiveReposWeek}</strong> repositor{displayActiveReposWeek === 1 ? 'y' : 'ies'} in the last 7 days; <strong>{activityMetrics.totalCommitsMonth}</strong> in the last 30.</span>
             ) : activityMetrics.commitMetricsUnavailableWeek || activityMetrics.commitMetricsUnavailableMonth ? (
               <span> Recent repository updates were detected, but commit-count activity metrics are unavailable in the current status payload. Restart the API host from this repo checkout or clear the status cache to rebuild those metrics.</span>
             ) : (
-              <span> No commit activity detected in the last 7 days. Consider checking team engagement or data source configuration.</span>
+              <span> No commits in any indexed clone in the last 7 days.</span>
             )}
           </div>
         </div>

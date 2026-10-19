@@ -364,6 +364,10 @@ Invoke-ScriptGate -Name 'Dispatch eligibility' -ScriptPath (Join-Path $Workspace
 # so a format change that would blind a fresh session fails here instead.
 Invoke-ScriptGate -Name 'Session briefing' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-SessionBriefing.ps1') -ScriptArgs @('-FailOnError')
 
+# Issues #339, #340, #342 (2026-10-19) - runner outcomes close agent runs and
+# reach the metrics, and the trend seed carries every indexed repository.
+Invoke-ScriptGate -Name 'Insights truth' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-InsightsTruth.ps1') -ScriptArgs @('-FailOnError')
+
 # Validator R024 - a built or verified milestone's check is a step CI runs; the
 # milestone's own check line. The rule itself also runs inside the lint below.
 Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError')

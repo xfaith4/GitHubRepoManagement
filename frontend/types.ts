@@ -905,13 +905,31 @@ export interface RoadmapCompletionPreview {
 
 // Release 1.2 — Execution metrics, auto-scan schedule, cross-repo dependency graph
 
+// How the local runner's runs ended over a window (issue #340). Runner runs
+// never pass through a lane, so the lane figures cannot see them.
+export interface RunnerRunOutcomes {
+  windowDays: number;
+  total: number;
+  finished: number;
+  failed: number;
+  inFlight: number;
+  cancelled: number;
+  /** Runs that recorded a commit: work the product made (issue #343). */
+  committed: number;
+  /** null when no run finished in the window: no sample is not 0%. */
+  errorRatePct: number | null;
+  basis: string;
+}
+
 export interface ExecutionMetrics {
   completedToday: number;
   completedThisWeek: number;
   totalCompleted: number;
   totalCancelled: number;
-  avgCurrentRunMins: number;
-  errorRatePct: number;
+  /** null when no lane is running (issue #341). */
+  avgCurrentRunMins: number | null;
+  /** Lane ledger only; null when no lane work finished. */
+  errorRatePct: number | null;
   stateCounts: {
     idle: number;
     ready: number;
@@ -919,6 +937,8 @@ export interface ExecutionMetrics {
     blocked: number;
     complete: number;
   };
+  /** null when the host did not report runner outcomes. */
+  runnerRuns: RunnerRunOutcomes | null;
 }
 
 export interface ScanSchedule {
@@ -1929,6 +1949,8 @@ export interface AgentRun {
   operatorApproval?: AgentRunOperatorApproval | null;
   status: AgentRunStatus;
   outcome?: string | null;
+  /** Why the run ended, in words, when the local runner closed it (issue #339). */
+  outcomeDetail?: string | null;
   createdAt: string;
   updatedAt: string;
   lastRefreshAt?: string | null;

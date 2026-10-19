@@ -194,3 +194,39 @@ it('distinguishes ledger blockers from assessed repository blockers', () => {
   expect(screen.getByText('Execution blocked')).toBeVisible();
   expect(screen.getByText('of 15 ledger repositories')).toBeVisible();
 });
+
+// Issue #340: the 2026-10-19 figures. The lane ledger saw nothing; the runner
+// ran 5 times in 14 days and 4 failed. The tile must say 80%, not 0%.
+it('reports runner failures the lane ledger never sees', () => {
+  renderEmptyInsights({
+    executionMetrics: {
+      ...EMPTY_EXECUTION_METRICS,
+      runnerRuns: { windowDays: 14, total: 5, finished: 5, failed: 4, inFlight: 0, cancelled: 0, committed: 1, errorRatePct: 80, basis: 'runner summaries' },
+    },
+  });
+  const tile = screen.getByTestId('runner-failures-tile');
+  expect(within(tile).getByText('Runner Failures (14d)')).toBeVisible();
+  expect(within(tile).getByText('80%')).toBeVisible();
+  expect(within(tile).getByText('4 of 5 finished runs failed')).toBeVisible();
+  expect(within(tile).queryByText('0%')).toBeNull();
+});
+
+it('says a runner failure rate is unmeasured rather than 0%', () => {
+  renderEmptyInsights({ executionMetrics: { ...EMPTY_EXECUTION_METRICS } });
+  const tile = screen.getByTestId('runner-failures-tile');
+  expect(within(tile).getByText('runner outcomes not reported')).toBeVisible();
+  expect(tile.textContent).not.toContain('%');
+});
+
+// Issue #341: no running lane is no sample.
+it('renders no sample for Avg Active Run instead of 0m', () => {
+  renderEmptyInsights({ executionMetrics: { ...EMPTY_EXECUTION_METRICS, avgCurrentRunMins: null } });
+  const tile = screen.getByTestId('avg-active-run-tile');
+  expect(tile.textContent).not.toContain('0m');
+  expect(within(tile).getByText('no lane running')).toBeVisible();
+});
+
+it('renders a measured Avg Active Run in minutes', () => {
+  renderEmptyInsights({ executionMetrics: { ...EMPTY_EXECUTION_METRICS, avgCurrentRunMins: 12.4 } });
+  expect(within(screen.getByTestId('avg-active-run-tile')).getByText('12m')).toBeVisible();
+});

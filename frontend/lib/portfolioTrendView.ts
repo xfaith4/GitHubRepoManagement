@@ -184,8 +184,8 @@ export const EMPTY_EXECUTION_METRICS: ExecutionMetrics = {
   completedThisWeek: 0,
   totalCompleted: 0,
   totalCancelled: 0,
-  avgCurrentRunMins: 0,
-  errorRatePct: 0,
+  avgCurrentRunMins: null,
+  errorRatePct: null,
   stateCounts: {
     idle: 0,
     ready: 0,
@@ -193,6 +193,7 @@ export const EMPTY_EXECUTION_METRICS: ExecutionMetrics = {
     blocked: 0,
     complete: 0,
   },
+  runnerRuns: null,
 };
 
 /**

@@ -1,4 +1,4 @@
-import { type AiEgressConfirmation, type AiEgressRequest, type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type BackgroundScanStatus, type PortfolioSnapshot, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioTechInventoryResult, type TechInventoryEntry, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus, type ProviderToken, type ProviderAvailability } from '../types';
+import { type AiEgressConfirmation, type AiEgressRequest, type AiDocImproveApplyRequest, type AiDocImproveApplyResult, type BackgroundScanStatus, type PortfolioSnapshot, type RepoStatus, type RepoScopeClassification, type RepoScopeSummary, type RepoStaleness, type AppSettings, type Artifact, type GithubInsightsMeta, type OperationResult, type DocReviewRunRequest, type DocReviewRunResult, type ReportExportResult, type RoadmapIndex, type RoadmapContent, type RoadmapTaskPreview, type RoadmapTaskHistoryItem, type DocAuditIndex, type DocAuditEntry, type RepositoryImprovementPreview, type CopilotTaskPacket, type CopilotTaskHistoryItem, type RoadmapAuditIndex, type RoadmapAuditEntry, type RoadmapRepairPreview, type RoadmapRepairHistoryItem, type ExecutionQueueSummary, type ExecutionLaneEntry, type ExecutionHistoryRecord, type RoadmapLintResult, type ReadmeStandardizationPreview, type ReadmeStandardizationHistoryItem, type MaturityDriftResult, type NotificationWebhook, type RoadmapCompletionPreview, type ExecutionMetrics, type RunnerRunOutcomes, type ScanSchedule, type RoadmapDependencyGraph, type PortfolioTechInventoryResult, type TechInventoryEntry, type RepoEvaluationResult, type ReleaseDispatchCheck, type DispatchExecuteResult, type RepoGitStatusDetail, type GitActionResult, type ReadmeGenerationResult, type ReadmeGenerationApplyResult, type ReadmeGenerationHistoryItem, type PortfolioAssessmentResult, type PortfolioAssessmentEntry, type PortfolioAssessmentSummary, type PortfolioAssessmentScanSummary, type PortfolioChangeState, type PortfolioScanDecisionReason, type PortfolioScanStatus, type RepoCurationState, type PortfolioTrendResult, type PortfolioTrendSeries, type PortfolioTrendTopCandidate, type PortfolioTrendRepoSparkline, type OperationsRepoEntry, type OperationsRepoDetail, type OperationsReposResult, type OperationsPromptRefineRequest, type OperationsPromptRefineResult, type OperationsPromptHistoryItem, type ReadmeContent, type AiDocImprovePreviewRequest, type AiDocImprovePreviewResult, type AiDocUsage, type AiDocImprovementHistoryItem, type AiDocTemplatesResult, type AiDocTemplate, type AgentRun, type AgentRunsResult, type AgentRunDetailResult, type AgentRunRefreshResult, type MergeReadinessResult, type MergeReadinessMergeResult, type GitHubAuthStatus, type ProviderToken, type ProviderAvailability } from '../types';
 import { type AutomationHealthPayload } from '../lib/automationStatus';
 import { type PackagedItem } from '../lib/packagedItems';
 import { type RunnerPresencePayload } from '../lib/runnerPresence';
@@ -1828,13 +1828,32 @@ export async function previewRoadmapCompletion(
 export async function getExecutionMetrics(init?: { signal?: AbortSignal }): Promise<ExecutionMetrics> {
   const data = await fetchJson<any>(`${API_BASE_URL}/execution/metrics`, init);
   const d = data?.data ?? data ?? {};
+  // A missing sample stays null; coercing it to 0 rendered "0m" and "0%" as
+  // if they were measured (issues #340, #341).
+  const numberOrNull = (v: unknown): number | null =>
+    v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
+  const r = d.runnerRuns;
+  const runnerRuns: RunnerRunOutcomes | null =
+    r && typeof r === 'object' && r.available !== false && Number.isFinite(Number(r.total))
+      ? {
+          windowDays: Number(r.windowDays ?? 0),
+          total: Number(r.total ?? 0),
+          finished: Number(r.finished ?? 0),
+          failed: Number(r.failed ?? 0),
+          inFlight: Number(r.inFlight ?? 0),
+          cancelled: Number(r.cancelled ?? 0),
+          committed: Number(r.committed ?? 0),
+          errorRatePct: numberOrNull(r.errorRatePct),
+          basis: String(r.basis ?? ''),
+        }
+      : null;
   return {
     completedToday: Number(d.completedToday ?? 0),
     completedThisWeek: Number(d.completedThisWeek ?? 0),
     totalCompleted: Number(d.totalCompleted ?? 0),
     totalCancelled: Number(d.totalCancelled ?? 0),
-    avgCurrentRunMins: Number(d.avgCurrentRunMins ?? 0),
-    errorRatePct: Number(d.errorRatePct ?? 0),
+    avgCurrentRunMins: numberOrNull(d.avgCurrentRunMins),
+    errorRatePct: numberOrNull(d.errorRatePct),
     stateCounts: {
       idle: Number(d.stateCounts?.idle ?? 0),
       ready: Number(d.stateCounts?.ready ?? 0),
@@ -1842,6 +1861,7 @@ export async function getExecutionMetrics(init?: { signal?: AbortSignal }): Prom
       blocked: Number(d.stateCounts?.blocked ?? 0),
       complete: Number(d.stateCounts?.complete ?? 0),
     },
+    runnerRuns,
   };
 }
 
