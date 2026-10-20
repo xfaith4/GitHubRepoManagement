@@ -110,8 +110,11 @@ flight.
       with a dead runner pid closes as abandoned. The 2026-10-18 runner repair
       in `scripts/Invoke-RoadmapTaskRunner.ps1` handles readiness tasks with no
       selected checkbox when committing; `tests/Test-DeliveryLoop.ps1` covers
-      objective and run-ID commit labels. This bounded repair does not establish
-      dispatch-to-PR or live recovery proof. _(state: planned)_
+      objective and run-ID commit labels. Since #349 (2026-10-19) a run branch
+      starts at the freshly fetched PR base, not the clone's checkout, so its
+      PR carries only the agent's change; the same gate covers it. These
+      bounded repairs do not establish dispatch-to-PR or live recovery proof.
+      _(state: planned)_
       `check: pwsh ./tests/Test-DispatchToPr.ps1 -FailOnError`
 - [ ] **At least ten repositories legitimately ready for automated work.** One
       of 62 is ready today, and an investigation into why is under way. The

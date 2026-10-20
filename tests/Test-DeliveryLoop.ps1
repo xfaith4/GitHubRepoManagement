@@ -491,6 +491,60 @@ try {
     $hostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw
     Assert-That (([regex]::Matches($hostSource, 'Resolve-RepoPullRequestBase -WorkspaceRoot')).Count -ge 2 -and ([regex]::Matches($hostSource, '-BaseBranch \(\[string\]\$\w+Base\.base\)')).Count -ge 2) 'base: both PR-opening paths (approve-push and the reconcile tick) resolve the base and pass it'
 
+    # -- 12b. A run branches from the fetched PR base, not the clone's HEAD (#349)
+    # The clone is behind its remote AND sits on an unrelated branch with a
+    # dirty file: the two ways its HEAD used to leak into a run's PR.
+    $repoB = Initialize-FixtureRepo -Name 'behind-clone'
+    $bareB = Join-Path $scratch 'behind-clone-remote.git'
+    & git init --bare -q -b main $bareB 2>&1 | Out-Null
+    & git -C $repoB remote add origin $bareB 2>&1 | Out-Null
+    & git -C $repoB push -q origin main 2>&1 | Out-Null
+    & git -C $repoB remote set-head origin main 2>&1 | Out-Null
+    $upstreamB = Join-Path $scratch 'behind-clone-upstream'
+    & git clone -q $bareB $upstreamB 2>&1 | Out-Null
+    Set-Content -LiteralPath (Join-Path $upstreamB 'merged-later.txt') -Value 'landed on main after the clone last fetched' -Encoding UTF8
+    & git -C $upstreamB add merged-later.txt 2>&1 | Out-Null
+    & git -C $upstreamB -c user.name=fixture -c user.email=fixture@example.invalid commit -q -m 'upstream work' 2>&1 | Out-Null
+    & git -C $upstreamB push -q origin main 2>&1 | Out-Null
+    $upstreamTip = ((& git -C $upstreamB rev-parse HEAD) | Out-String).Trim()
+    & git -C $repoB switch -q -c 'feature/old' 2>&1 | Out-Null
+    Set-Content -LiteralPath (Join-Path $repoB 'old-feature.txt') -Value 'unrelated work' -Encoding UTF8
+    & git -C $repoB add old-feature.txt 2>&1 | Out-Null
+    & git -C $repoB -c user.name=fixture -c user.email=fixture@example.invalid commit -q -m 'unrelated feature' 2>&1 | Out-Null
+    $featureSha = ((& git -C $repoB rev-parse HEAD) | Out-String).Trim()
+    Set-Content -LiteralPath (Join-Path $repoB 'owner-dirty.txt') -Value 'uncommitted owner edit' -Encoding UTF8
+    $noPolicy = Join-Path $scratch 'no-such-policy.json'
+    $preStale = ((& git -C $repoB rev-parse 'refs/remotes/origin/main') | Out-String).Trim()
+    Assert-That ($preStale -ne $upstreamTip) 'run base: the fixture clone really is behind its remote before the run'
+
+    $startB = Resolve-RunBranchStart -CloneRoot $repoB -WorkspaceRoot $WorkspaceRoot -PolicyPath $noPolicy
+    Assert-That ([bool]$startB.ok -and [bool]$startB.fetched -and $startB.startPoint -eq 'origin/main' -and $startB.commit -eq $upstreamTip) "run base: the start is origin/main as fetched now, got ok=$($startB.ok) fetched=$($startB.fetched) start='$($startB.startPoint)' reason='$($startB.reason)'"
+    $wsB = New-RunWorkspace -CloneRoot $repoB -Branch 'roadmap/behind-run' -RunId 'behind-run' -WorkspaceRoot $WorkspaceRoot -StartPoint $startB.startPoint
+    $mergeBase = ((& git -C $repoB merge-base 'roadmap/behind-run' 'origin/main') | Out-String).Trim()
+    Assert-That ($mergeBase -eq $upstreamTip) "run base: the run branch's merge-base with origin/main IS origin/main, got '$mergeBase' (reason '$($wsB.reason)')"
+    & git -C $repoB merge-base --is-ancestor $featureSha 'roadmap/behind-run' 2>&1 | Out-Null
+    Assert-That ($LASTEXITCODE -ne 0) 'run base: the commit the clone had checked out is not in the run branch'
+    Assert-That (Test-Path -LiteralPath (Join-Path $wsB.path 'merged-later.txt')) 'run base: the agent sees the remote work the clone had not fetched'
+    Assert-That (((& git -C $repoB branch --show-current) | Out-String).Trim() -eq 'feature/old' -and (Test-Path -LiteralPath (Join-Path $repoB 'owner-dirty.txt'))) 'run base: the clone keeps its branch and its uncommitted file'
+    & git -C $repoB rev-parse --abbrev-ref --symbolic-full-name 'roadmap/behind-run@{upstream}' 2>&1 | Out-Null
+    Assert-That ($LASTEXITCODE -ne 0) 'run base: the run branch tracks nothing, so a bare push can never aim at the base'
+    & git -C $repoB worktree remove --force $wsB.path 2>&1 | Out-Null
+
+    $startP = Resolve-RunBranchStart -CloneRoot $repoP -WorkspaceRoot $WorkspaceRoot -RepoName 'base-policy' -PolicyPath $policyPath
+    Assert-That ([bool]$startP.ok -and $startP.startPoint -eq 'origin/staging') "run base: repository policy picks the start, the same base the PR will target, got '$($startP.startPoint)'"
+    $startGhost = Resolve-RunBranchStart -CloneRoot $repoP -WorkspaceRoot $WorkspaceRoot -RepoName 'ghost' -PolicyPath $policyPath
+    Assert-That (-not [bool]$startGhost.ok -and $startGhost.startPoint -eq '' -and $startGhost.reason -match 'does not exist on origin') 'run base: a clone with an origin but no resolvable base is not ok, with the resolver''s reason'
+    $startN = Resolve-RunBranchStart -CloneRoot $repoN -WorkspaceRoot $WorkspaceRoot -PolicyPath $noPolicy
+    Assert-That ([bool]$startN.ok -and $startN.startPoint -eq '' -and $startN.source -match 'no origin') 'run base: a clone with no origin branches from its HEAD, and says so'
+    $noDryFetch = Resolve-RunBranchStart -CloneRoot $repoB -WorkspaceRoot $WorkspaceRoot -PolicyPath $noPolicy -NoFetch
+    Assert-That ([bool]$noDryFetch.ok -and -not [bool]$noDryFetch.fetched -and $noDryFetch.reason -match 'fetch skipped') 'run base: -NoFetch (the dry run) resolves from the refs already fetched'
+    & git -C $repoB remote set-url origin (Join-Path $scratch 'gone-remote.git') 2>&1 | Out-Null
+    $offline = Resolve-RunBranchStart -CloneRoot $repoB -WorkspaceRoot $WorkspaceRoot -PolicyPath $noPolicy
+    Assert-That ([bool]$offline.ok -and -not [bool]$offline.fetched -and $offline.fetchError -ne '' -and $offline.startPoint -eq 'origin/main' -and $offline.reason -match 'fetch failed') "run base: a failed fetch falls back to the last-fetched base and records why, got '$($offline.reason)'"
+    $runnerSourceB = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'scripts\Invoke-RoadmapTaskRunner.ps1') -Raw
+    Assert-That ($runnerSourceB -match 'New-RunWorkspace -CloneRoot \$cloneRoot -Branch \$branch -RunId \$runId -WorkspaceRoot \$WorkspaceRoot -StartPoint \$runStart\.startPoint') 'run base: Invoke-QueuedTask creates the workspace at the resolved start point'
+    Assert-That ($runnerSourceB -match '\$runStart = Resolve-RunBranchStart[\s\S]*refusalCategory = ''no-pr-base''[\s\S]*Update-TaskSummary -SummaryPath \$summaryPath -Set @\{\s+status\s+= ''running''') 'run base: an unresolvable base is refused before the run is claimed'
+
     # -- 13. A live runner keeps its run; only a dead runner's run is orphaned --
     $runsO = Join-Path $scratch 'orphan-runs'
     $null = New-Item -ItemType Directory -Path $runsO -Force

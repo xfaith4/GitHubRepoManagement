@@ -10795,6 +10795,23 @@ Write-Step 'Branch cleanup — Release 3.4 milestone 5: deletion requires proof 
                     while ($null -ne $scope -and $scope -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $scope = $scope.Parent }
                     $scopeText = if ($null -ne $scope) { $scope.Extent.Text } else { $fileAst.Extent.Text }
                     $createsBranch = ($scopeText -match 'switch\s+-c\b') -or ($scopeText -match 'checkout\s+-b\b')
+                    # A run-owned worktree also creates the feature branch:
+                    # `git worktree add -b`, or a call to New-RunWorkspace,
+                    # whose branch creation tests/Test-DeliveryLoop.ps1 proves.
+                    # Read from the AST, not the text: the task runner passed
+                    # this gate from 2026-10-17 to 2026-10-19 only because a
+                    # dry-run log line still said "git switch -c" (#349).
+                    if (-not $createsBranch) {
+                        $scopeNode = if ($null -ne $scope) { $scope } else { $fileAst }
+                        $createsBranch = @($scopeNode.FindAll({
+                                    param($n)
+                                    if ($n -isnot [System.Management.Automation.Language.CommandAst]) { return $false }
+                                    if ($n.GetCommandName() -eq 'New-RunWorkspace') { return $true }
+                                    if ($n.GetCommandName() -ne 'git') { return $false }
+                                    $parts = @($n.CommandElements | ForEach-Object { $_.Extent.Text })
+                                    return (($parts -ccontains 'worktree') -and ($parts -ccontains 'add') -and ($parts -ccontains '-b'))
+                                }, $true)).Count -gt 0
+                    }
                     $refusesDefault = ($scopeText -match 'on-default-branch')
                     if (-not $createsBranch -and -not $refusesDefault) {
                         $report.Violations.Add([pscustomobject]@{ Site = $site; Why = 'commits in a scope that neither creates a feature branch nor refuses a default one — this commit lands on whatever branch is checked out' }) | Out-Null
