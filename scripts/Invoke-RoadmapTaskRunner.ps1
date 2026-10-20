@@ -36,7 +36,10 @@
     Off by default: an agent that reads a stale working copy produces a
     proposal computed from out-of-date content, which merges cleanly and reads
     as correct in review. Use this only when you know the base is stale and
-    want the task run against it anyway.
+    want the task run against it anyway. Since #349 (2026-10-19) a run
+    branches from the freshly fetched PR base (origin/<base>) whenever the
+    clone has an origin, so this gate, and this switch, apply only to a clone
+    with no origin, whose run still branches from its HEAD.
 
 .PARAMETER SyncMain
     Release 3.4, step 2 of the delivery loop: fast-forward the repository's
@@ -153,6 +156,9 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path 
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Copilot.ps1')
 # H38-16: the codex branch below runs through this.
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\agent-adapters\Adapter.Codex.ps1')
+# #349: a run branches from the base its pull request will target, and that
+# base has one resolver, shared with approve-push and the reconcile tick.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\roadmap\Roadmap.PrSubmitter.ps1')
 if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot }
 if ([string]::IsNullOrWhiteSpace($StopFilePath)) {
     # Resolved through REPO_MGMT_RUNNER_CONTROL_ROOT like the portal's writer, so a
@@ -780,6 +786,100 @@ function Get-RunWorkspaceRoot {
     return (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\agent-workspaces')
 }
 
+function Resolve-RunBranchStart {
+    <#
+    .SYNOPSIS
+        Where a new run branch starts: the freshly fetched pull-request base
+        (origin/<base>), never whatever the clone has checked out.
+
+    .DESCRIPTION
+        #349, 2026-10-19. New-RunWorkspace branched from the clone's HEAD and
+        nothing fetched first. A clone left on an old commit or on another
+        branch handed the run every commit between that HEAD and the PR base:
+        the PR showed unrelated changes, and the agent built against stale code.
+
+        The start is the base publication will target (Resolve-RepoPullRequestBase:
+        repository policy, then origin/HEAD, then an existing origin/main or
+        origin/master), so the run's diff against its PR base is the agent's
+        change alone. The fetch moves only origin's remote-tracking refs; the
+        clone's checkout, index and files are not touched.
+
+          - No origin remote: the clone's HEAD, said so. Nothing can be
+            published from such a clone, and local-only runs keep working.
+          - The fetch fails: the last-fetched origin/<base>, with the failure
+            recorded. Absence of evidence is not divergence (the freshness
+            gate's rule), and the last fetch is still the PR base, not an
+            arbitrary checkout.
+          - Origin exists but no base resolves: not ok, with the resolver's
+            reason. A run whose PR would be refused is not worth an agent.
+
+        Git never prompts here: a credential prompt would hang a headless
+        runner, so the fetch fails instead and the fallback above applies.
+    .OUTPUTS
+        [pscustomobject] ok, startPoint, base, commit, source, fetched, fetchError, reason
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$CloneRoot,
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter()][AllowEmptyString()][string]$RepoName = '',
+        [Parameter()][AllowEmptyString()][string]$PolicyPath = '',
+        [Parameter()][switch]$NoFetch,
+        [Parameter()][int]$FetchTimeoutSeconds = 60
+    )
+
+    $result = [ordered]@{ ok = $false; startPoint = ''; base = ''; commit = ''; source = ''; fetched = $false; fetchError = ''; reason = '' }
+    if ([string]::IsNullOrWhiteSpace($RepoName)) { $RepoName = Split-Path -Leaf $CloneRoot }
+
+    $null = (& git -C $CloneRoot remote get-url origin 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        $result.ok = $true
+        $result.source = 'clone HEAD (no origin remote)'
+        $result.reason = 'The clone has no origin remote, so the run branches from its HEAD and cannot be published.'
+        return [pscustomobject]$result
+    }
+
+    if (-not $NoFetch) {
+        $savedPrompt = $env:GIT_TERMINAL_PROMPT
+        $savedGcm = $env:GCM_INTERACTIVE
+        try {
+            $env:GIT_TERMINAL_PROMPT = '0'
+            $env:GCM_INTERACTIVE = 'never'
+            $fetchOut = (& git -C $CloneRoot -c 'http.lowSpeedLimit=1' -c ("http.lowSpeedTime={0}" -f $FetchTimeoutSeconds) fetch --quiet origin 2>&1) | Out-String
+            if ($LASTEXITCODE -eq 0) { $result.fetched = $true }
+            else { $result.fetchError = [string](@($fetchOut.Trim() -split "`n") | Select-Object -First 1) }
+        }
+        finally {
+            $env:GIT_TERMINAL_PROMPT = $savedPrompt
+            $env:GCM_INTERACTIVE = $savedGcm
+        }
+    }
+
+    if (-not (Get-Command -Name 'Resolve-RepoPullRequestBase' -ErrorAction SilentlyContinue)) {
+        $result.reason = 'Resolve-RepoPullRequestBase is not loaded, so the run base cannot be resolved; refusing rather than branching from the clone''s checkout.'
+        return [pscustomobject]$result
+    }
+    $resolveArgs = @{ WorkspaceRoot = $WorkspaceRoot; RepoName = $RepoName; RepoPath = $CloneRoot }
+    if (-not [string]::IsNullOrWhiteSpace($PolicyPath)) { $resolveArgs.PolicyPath = $PolicyPath }
+    $prBase = Resolve-RepoPullRequestBase @resolveArgs
+    if (-not [bool]$prBase.ok) {
+        $result.reason = [string]$prBase.reason
+        if ($result.fetchError) { $result.reason += (' (fetch failed: {0})' -f $result.fetchError) }
+        return [pscustomobject]$result
+    }
+
+    $result.base = [string]$prBase.base
+    $result.startPoint = ('origin/{0}' -f $result.base)
+    $result.source = [string]$prBase.source
+    $result.commit = ((& git -C $CloneRoot rev-parse --verify --quiet ("refs/remotes/origin/{0}^{{commit}}" -f $result.base) 2>$null) | Out-String).Trim()
+    $short = if ($result.commit.Length -ge 7) { $result.commit.Substring(0, 7) } else { $result.commit }
+    $result.reason = if ($result.fetched) { ("branches from {0} at {1}, fetched now" -f $result.startPoint, $short) }
+    elseif ($NoFetch) { ("branches from {0} at {1}, as last fetched (fetch skipped)" -f $result.startPoint, $short) }
+    else { ("branches from {0} at {1}, as last fetched; the fetch failed: {2}" -f $result.startPoint, $short, $result.fetchError) }
+    $result.ok = $true
+    return [pscustomobject]$result
+}
+
 function New-RunWorkspace {
     <#
     .SYNOPSIS
@@ -794,10 +894,12 @@ function New-RunWorkspace {
         clone's refs, so the branch it commits is visible to approve-push by
         name and nothing in the clone moves.
 
-        The branch is created from the clone's current HEAD, exactly where the
-        old switch would have started; an existing branch (a resumed run) is
-        checked out as it is. Failure throws: the clone is never switched as a
-        fallback.
+        A new branch starts at -StartPoint, the fetched PR base from
+        Resolve-RunBranchStart (#349), with no upstream: it is pushed by name,
+        and tracking origin/<base> would make a bare `git push` aim at the base.
+        Without a start point it starts at the clone's HEAD (a clone with no
+        origin). An existing branch (a resumed run) is checked out as it is.
+        Failure throws: the clone is never switched as a fallback.
     .OUTPUTS
         [pscustomobject] path, created, reason
     #>
@@ -808,7 +910,8 @@ function New-RunWorkspace {
         [Parameter(Mandatory)][string]$CloneRoot,
         [Parameter(Mandatory)][string]$Branch,
         [Parameter(Mandatory)][string]$RunId,
-        [Parameter(Mandatory)][string]$WorkspaceRoot
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter()][AllowEmptyString()][string]$StartPoint = ''
     )
 
     $root = Get-RunWorkspaceRoot -WorkspaceRoot $WorkspaceRoot
@@ -829,13 +932,18 @@ function New-RunWorkspace {
     $output = if ($branchExists) {
         (& git -C $CloneRoot worktree add --quiet $path $Branch 2>&1) | Out-String
     }
+    elseif (-not [string]::IsNullOrWhiteSpace($StartPoint)) {
+        (& git -C $CloneRoot worktree add --quiet --no-track -b $Branch $path $StartPoint 2>&1) | Out-String
+    }
     else {
         (& git -C $CloneRoot worktree add --quiet -b $Branch $path 2>&1) | Out-String
     }
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $path)) {
         throw ("Could not create the run workspace at '{0}' for branch '{1}': {2}" -f $path, $Branch, $output.Trim())
     }
-    $reason = if ($branchExists) { ("worktree on existing branch '{0}'" -f $Branch) } else { ("worktree on new branch '{0}' from the clone's HEAD" -f $Branch) }
+    $reason = if ($branchExists) { ("worktree on existing branch '{0}'" -f $Branch) }
+    elseif (-not [string]::IsNullOrWhiteSpace($StartPoint)) { ("worktree on new branch '{0}' from {1}" -f $Branch, $StartPoint) }
+    else { ("worktree on new branch '{0}' from the clone's HEAD" -f $Branch) }
     return [pscustomobject]@{ path = $path; created = $true; reason = $reason }
 }
 
@@ -1683,7 +1791,29 @@ function Invoke-QueuedTask {
         }
     }
 
-    $freshness = Test-RunnerBaseFreshness -RepoPath $repo
+    # #349 (2026-10-19) - the run branch starts at the freshly fetched PR base,
+    # not at whatever the clone has checked out, so the PR carries the agent's
+    # change and nothing else. Resolved before the claim: a clone whose PR base
+    # cannot be named is refused while the task is still queued. A dry run
+    # resolves from the refs already fetched and fetches nothing.
+    $runStart = Resolve-RunBranchStart -CloneRoot $repo -WorkspaceRoot $WorkspaceRoot -NoFetch:$DryRun
+    if (-not [bool]$runStart.ok) {
+        $msg = ("Refusing to start the run: {0}" -f $runStart.reason)
+        Write-Host ("  [task] runId={0} refused (no-pr-base): {1}" -f $runId, $msg) -ForegroundColor Red
+        if (-not $DryRun) {
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                status = 'refused'; refusalCategory = 'no-pr-base'; error = $msg
+                runnerCompletedAt = (Get-Date).ToString('o')
+            }
+        }
+        return
+    }
+    Write-Host ("  [task] run base: {0} ({1})" -f $runStart.reason, $runStart.source) -ForegroundColor $(if ($runStart.fetchError) { 'DarkYellow' } else { 'DarkGray' })
+
+    # The clone-checkout freshness gate below guards a branch taken from the
+    # clone's HEAD. A run that starts at origin/<base> does not read the
+    # checkout, so the gate applies only when there is no fetched base.
+    $freshness = if ([string]::IsNullOrWhiteSpace($runStart.startPoint)) { Test-RunnerBaseFreshness -RepoPath $repo } else { $null }
     if ($null -ne $freshness -and $freshness.isStale -and -not $script:AcknowledgeStaleBase) {
         $msg = ("Refusing to branch from a stale base. {0}{1}" -f $freshness.summary, $(if ($freshness.remedy) { " Run: $($freshness.remedy)" } else { '' }))
         Write-Host ("  [task] runId={0} refused (stale-base): {1}" -f $runId, $msg) -ForegroundColor Red
@@ -1704,7 +1834,8 @@ function Invoke-QueuedTask {
     }
 
     if ($DryRun) {
-        Write-Host "  [DRYRUN] would: claim -> git switch -c $branch -> launch $localCommand -> verify -> commit -> awaiting-review" -ForegroundColor Yellow
+        $dryStart = if ($runStart.startPoint) { $runStart.startPoint } else { "the clone's HEAD" }
+        Write-Host "  [DRYRUN] would: claim -> worktree $branch from $dryStart -> launch $localCommand -> verify -> commit -> awaiting-review" -ForegroundColor Yellow
         if ($localProvider -eq 'codex') {
             Write-Host ("  [DRYRUN] {0} {1} (cwd={2})" -f $localCommand, "exec --json --sandbox workspace-write --output-schema <schema> <prompt>", $repo) -ForegroundColor Yellow
         }
@@ -1775,8 +1906,12 @@ function Invoke-QueuedTask {
         # by name from localRepoPath. The clone is never switched as a fallback:
         # if the workspace cannot be made, the run is refused.
         $cloneRoot = $repo
-        $workspace = New-RunWorkspace -CloneRoot $cloneRoot -Branch $branch -RunId $runId -WorkspaceRoot $WorkspaceRoot
-        Update-TaskSummary -SummaryPath $summaryPath -Set @{ workspacePath = $workspace.path; workspaceKind = 'git-worktree' }
+        $workspace = New-RunWorkspace -CloneRoot $cloneRoot -Branch $branch -RunId $runId -WorkspaceRoot $WorkspaceRoot -StartPoint $runStart.startPoint
+        Update-TaskSummary -SummaryPath $summaryPath -Set @{
+            workspacePath = $workspace.path; workspaceKind = 'git-worktree'
+            runBase = [string]$runStart.startPoint; runBaseCommit = [string]$runStart.commit
+            runBaseSource = [string]$runStart.source; runBaseFetched = [bool]$runStart.fetched
+        }
         Write-Host ("  workspace: {0} ({1})" -f $workspace.path, $workspace.reason) -ForegroundColor DarkGray
         # Everything below runs against the workspace. Absolute clone paths the
         # prompt or the entry carry are remapped so the agent reads and edits
