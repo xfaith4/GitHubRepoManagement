@@ -160,28 +160,62 @@ function Get-ReadingRange {
     [pscustomobject]@{ found = $true; start = $start; end = $end }
 }
 
+function Get-BriefingSource {
+    <#
+    .SYNOPSIS
+        Where the briefing reads tracked files (roadmap, operator queue, required
+        reading) from: 'origin/main' when the checkout is behind it, else 'checkout'.
+    .DESCRIPTION
+        #353. The live checkout is the running service and is left behind
+        origin/main on purpose (OQ-16), so its ROADMAP.md is not the state a
+        session builds on. Ahead-only, level, or no origin/main reads the
+        checkout as before: there is nothing newer to read.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()][AllowNull()][object]$Behind,
+        [Parameter()][bool]$OriginMainKnown
+    )
+    if ($OriginMainKnown -and $null -ne $Behind -and [int]$Behind -gt 0) { return 'origin/main' }
+    'checkout'
+}
+
 function Get-SessionReadingPlan {
     <#
     .SYNOPSIS
         The required reading with live line ranges, plus the on-demand note.
+    .PARAMETER TextByPath
+        File text by repository-relative path, read from somewhere other than
+        the checkout (origin/main, #353). A path it names is ranged over that
+        text and marked with -TextSource; any other path is read from $Root.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Root)
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter()][hashtable]$TextByPath = @{},
+        [Parameter()][string]$TextSource = 'origin/main'
+    )
 
     $items = [System.Collections.Generic.List[object]]::new()
     foreach ($spec in $script:SessionRequiredReading) {
         $full = Join-Path $Root $spec.path
         $range = [pscustomobject]@{ found = $false; start = $null; end = $null }
-        if (Test-Path -LiteralPath $full) {
+        $source = 'checkout'
+        if ($TextByPath.ContainsKey($spec.path)) {
+            $source = $TextSource
+            $range = Get-ReadingRange -Lines @([string]$TextByPath[$spec.path] -split '\r?\n') -StartPattern $spec.start -EndPattern $spec.end
+        } elseif (Test-Path -LiteralPath $full) {
             $range = Get-ReadingRange -Lines @(Get-Content -LiteralPath $full -Encoding UTF8) -StartPattern $spec.start -EndPattern $spec.end
         }
         $items.Add([pscustomobject]@{
-            path  = $spec.path
-            label = $spec.label
-            found = $range.found
-            start = $range.start
-            end   = $range.end
-            lines = $(if ($range.found) { $range.end - $range.start + 1 } else { 0 })
+            path   = $spec.path
+            label  = $spec.label
+            found  = $range.found
+            start  = $range.start
+            end    = $range.end
+            lines  = $(if ($range.found) { $range.end - $range.start + 1 } else { 0 })
+            source = $source
         })
     }
     [pscustomobject]@{ required = $items.ToArray(); onDemand = $script:SessionOnDemandReading }

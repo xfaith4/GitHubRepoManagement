@@ -44,6 +44,25 @@ made itself never meets, and Codex runs had no path rule at all.
 - **Roadmap:** the session-briefing item (#347, merged as `90a5ff8` with
   `smoke` green on `9c41796`) moves verified to the archive.
 
+## 2026-10-20 — The briefing reads origin/main when the checkout is behind it (#353)
+
+The live checkout is the running service and stays behind `origin/main` on
+purpose (OQ-16). The briefing read `ROADMAP.md`, the operator queue and the
+required-reading ranges from that checkout. On 2026-10-20 it reported Current
+focus as "Last updated 2026-10-16 … STALE" and left out the top item, while
+`origin/main` read 2026-10-19.
+
+- **When the checkout is behind `origin/main`**, `tools/Get-SessionBriefing.ps1`
+  reads those files with `git show origin/main:<path>` and says so: the focus
+  line ends "read from origin/main; the checkout is N behind", and each reading
+  range names `git show origin/main:<path>`. A checkout that is level, ahead
+  or without `origin/main` reads its own files as before.
+  `Get-BriefingSource` (`tools/SessionHandoff.ps1`) decides which, and
+  `Get-SessionReadingPlan -TextByPath` ranges over the text it is given.
+- **Gate:** `tests/Test-SessionBriefing.ps1` (60 assertions, 12 new) builds a
+  real upstream and a clone one commit behind it. The clone is briefed from
+  origin/main; after a fast-forward it is briefed from its own files.
+
 ## 2026-10-19 — A session starts from one briefing and ends with one handoff note
 
 Fresh sessions spent their context rebuilding state by hand, and handoffs were
