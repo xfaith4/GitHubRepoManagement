@@ -449,20 +449,6 @@ lanes are in [the archive](docs/history/completed-releases.md).
       in the run summary, is OQ-6 and closes the Release 3.0 residual.
       _(state: built)_
       `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **D-012 — the permission envelope binds on every local run.** For each
-      local adapter (Claude headless and interactive, Codex) the runner reads
-      what the run's branch adds over its base (`base...HEAD`) plus anything
-      left uncommitted, after every commit and before the push decision. A
-      path under a `forbiddenPaths` entry, or under `.github/workflows/**`,
-      which binds even when a packet omits it, fails the run by name with the
-      path and the rule, and the branch is not pushed; `failed` is also a
-      status Approve & push refuses. A run whose base cannot be read fails
-      closed. Provider deny rules stay a first layer, never the only one, and
-      `.github/workflows-proposed/` is not forbidden. Built 2026-10-20
-      (`Test-RunPermissionEnvelope` in the runner, `Find-ForbiddenPathChange`
-      in `Execution.WorkPacket.ps1`); the gate failed on a copy whose refusal
-      did not return. _(state: built)_
-      `check: pwsh ./tests/Test-PermissionEnvelope.ps1 -FailOnError`
 - [ ] **D-012, the rest: cloud runs, proposed workflows and the network
       allowlist.** A Copilot cloud task pushes from GitHub, so the runner's
       check never sees its branch; the host applies the same check before it

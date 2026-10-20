@@ -7792,3 +7792,25 @@ Verified 2026-10-20: `smoke` passed on the head of #347 (`9c41796`, run
 `scripts/Invoke-TestSuite.ps1`; #347 merged as `90a5ff8`. The first handoff
 issue is #348, opened 2026-10-19 and pinned. Release 4.1's other items stay
 open in ROADMAP.md.
+
+- [x] **D-012 — the permission envelope binds on every local run.** For each
+      local adapter (Claude headless and interactive, Codex) the runner reads
+      what the run's branch adds over its base (`base...HEAD`) plus anything
+      left uncommitted, after every commit and before the push decision. A
+      path under a `forbiddenPaths` entry, or under `.github/workflows/**`,
+      which binds even when a packet omits it, fails the run by name with the
+      path and the rule, and the branch is not pushed; `failed` is also a
+      status Approve & push refuses. A run whose base cannot be read fails
+      closed. Provider deny rules stay a first layer, never the only one, and
+      `.github/workflows-proposed/` is not forbidden. Built 2026-10-20
+      (`Test-RunPermissionEnvelope` in the runner, `Find-ForbiddenPathChange`
+      in `Execution.WorkPacket.ps1`); the gate failed on a copy whose refusal
+      did not return. *(state: verified)*
+      `check: pwsh ./tests/Test-PermissionEnvelope.ps1 -FailOnError`
+
+Verified 2026-10-20 (moved from ROADMAP.md §7): `smoke` passed on the head of
+#352 (`8c6306e`, run 39371954104), whose suite runs `Permission envelope` from
+`scripts/Invoke-TestSuite.ps1`. That head also carries the review fix for
+non-ASCII paths (git C-quoted them, so a committed `.github/workflows/dé.yml`
+would have passed). The rest of D-012 (Copilot cloud runs, proposed workflows,
+the network allowlist) stays open in ROADMAP.md §7.
