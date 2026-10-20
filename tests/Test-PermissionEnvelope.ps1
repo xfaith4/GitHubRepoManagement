@@ -141,6 +141,27 @@ try {
     $d = Test-RunPermissionEnvelope -RepoPath $dirty.path -BaseCommit $dirty.base -Packet $null
     Assert-That (-not $d.ok -and @($d.violations | Where-Object { $_.path -eq '.github/workflows/new.yml' }).Count -eq 1) 'an uncommitted workflow file fails the run'
 
+    # A non-ASCII name: git C-quotes it unless told not to (PR #352 review).
+    $accent = [string][char]0x00E9
+    $unicode = Initialize-FixtureRepo 'unicode'
+    Set-Content -LiteralPath (Join-Path $unicode.path ".github/workflows/d$accent.yml") -Value 'name: sneaky' -Encoding UTF8
+    $null = Invoke-FixtureGit -Repo $unicode.path -GitArgs @('add', '-A')
+    $null = Invoke-FixtureGit -Repo $unicode.path -GitArgs @('commit', '--quiet', '-m', 'agent adds a workflow with a non-ASCII name')
+    $u = Test-RunPermissionEnvelope -RepoPath $unicode.path -BaseCommit $unicode.base -Packet $null
+    Assert-That (-not $u.ok) 'a committed workflow with a non-ASCII name fails the run'
+    Assert-That (@($u.violations | Where-Object { $_.path -eq ".github/workflows/d$accent.yml" }).Count -eq 1) ("the violation names the file unquoted (got '{0}')" -f (@($u.violations | ForEach-Object { $_.path }) -join ', '))
+    Set-Content -LiteralPath (Join-Path $unicode.path ".github/workflows/n$accent.yml") -Value 'name: dirty' -Encoding UTF8
+    $u2 = Test-RunPermissionEnvelope -RepoPath $unicode.path -BaseCommit $unicode.base -Packet $null
+    Assert-That (@($u2.violations | Where-Object { $_.path -eq ".github/workflows/n$accent.yml" }).Count -eq 1) 'an uncommitted workflow with a non-ASCII name is named unquoted'
+    $cafe = Initialize-FixtureRepo 'cafe'
+    $null = New-Item -ItemType Directory -Path (Join-Path $cafe.path 'docs') -Force
+    Set-Content -LiteralPath (Join-Path $cafe.path "docs/caf$accent.md") -Value 'x' -Encoding UTF8
+    $null = Invoke-FixtureGit -Repo $cafe.path -GitArgs @('add', '-A')
+    $null = Invoke-FixtureGit -Repo $cafe.path -GitArgs @('commit', '--quiet', '-m', 'touch cafe')
+    $cafePacket = [pscustomobject]@{ scope = [pscustomobject]@{ forbiddenPaths = @("docs/caf$accent.md") } }
+    $cf = Test-RunPermissionEnvelope -RepoPath $cafe.path -BaseCommit $cafe.base -Packet $cafePacket
+    Assert-That (-not $cf.ok) 'a packet entry naming a non-ASCII file exactly binds'
+
     # A rename out of the directory removes a workflow: both sides count.
     $renamed = Initialize-FixtureRepo 'renamed'
     $null = Invoke-FixtureGit -Repo $renamed.path -GitArgs @('mv', '.github/workflows/ci.yml', 'ci.yml.bak')

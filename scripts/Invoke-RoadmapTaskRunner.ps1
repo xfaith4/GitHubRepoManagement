@@ -757,20 +757,32 @@ function Test-RunPermissionEnvelope {
         return [pscustomobject]$result
     }
 
-    $diffOutput = @(& git -C $RepoPath diff --name-only --no-renames ('{0}...HEAD' -f $BaseCommit) 2>&1)
-    if ($LASTEXITCODE -ne 0) {
+    # Paths are read raw: core.quotePath=false and -z stop git C-quoting a
+    # non-ASCII name (".github/workflows/d\303\251.yml"), which no pattern
+    # would match, and UTF-8 decoding keeps the name a packet entry can name.
+    $savedEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $diffOutput = @(& git -C $RepoPath -c core.quotePath=false diff --name-only --no-renames -z ('{0}...HEAD' -f $BaseCommit) 2>&1)
+        $diffExit = $LASTEXITCODE
+        $statusOutput = @(& git -C $RepoPath -c core.quotePath=false status --porcelain -z --no-renames --untracked-files=all 2>$null)
+    }
+    finally { [Console]::OutputEncoding = $savedEncoding }
+    if ($diffExit -ne 0) {
         $result.error = ('permission envelope unprovable: git diff {0}...HEAD failed: {1}; not pushed.' -f $BaseCommit, (($diffOutput | ForEach-Object { [string]$_ }) -join ' ').Trim())
         $result.summary = 'unprovable (git diff failed)'
         return [pscustomobject]$result
     }
 
     $changed = [System.Collections.Generic.List[string]]::new()
-    foreach ($line in $diffOutput) { if (-not [string]::IsNullOrWhiteSpace([string]$line)) { $changed.Add(([string]$line).Trim()) } }
-    foreach ($line in @(& git -C $RepoPath status --porcelain --untracked-files=all 2>$null)) {
-        $text = [string]$line
+    foreach ($name in ((@($diffOutput | ForEach-Object { [string]$_ }) -join "`n") -split "`0")) {
+        if (-not [string]::IsNullOrWhiteSpace($name)) { $changed.Add($name.Trim()) }
+    }
+    # `XY path` per NUL-terminated entry; --no-renames keeps it one path each.
+    foreach ($entry in ((@($statusOutput | ForEach-Object { [string]$_ }) -join "`n") -split "`0")) {
+        $text = $entry.TrimStart("`n")
         if ($text.Length -lt 4) { continue }
-        # `R  old -> new`: both names are changes.
-        foreach ($name in @($text.Substring(3) -split ' -> ')) { if (-not [string]::IsNullOrWhiteSpace($name)) { $changed.Add($name.Trim('"').Trim()) } }
+        $changed.Add($text.Substring(3))
     }
 
     $result.changedCount = $changed.Count

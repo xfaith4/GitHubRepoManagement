@@ -25,13 +25,19 @@ made itself never meets, and Codex runs had no path rule at all.
   packet, is still held to it. `.github/workflows-proposed/` is not forbidden.
   The matcher (`Test-PathGlobMatch`, `Find-ForbiddenPathChange`) handles `**`,
   `*`, `?`, directory prefixes, backslashes and case.
-- **Gate:** `tests/Test-PermissionEnvelope.ps1` (48 assertions), registered in
+- **Paths are read raw.** Git C-quotes a non-ASCII name by default
+  (`".github/workflows/d\303\251.yml"`), which no pattern matches, so the
+  first version of this check would have passed and pushed such a workflow
+  (found in review on #352). The diff and status are read with
+  `core.quotePath=false`, `-z` and UTF-8 decoding.
+- **Gate:** `tests/Test-PermissionEnvelope.ps1` (52 assertions), registered in
   `scripts/Invoke-TestSuite.ps1`. It runs the check against real temporary
-  repositories (an agent-committed workflow edit, an uncommitted one, a rename
-  out of the directory, a packet's own entry, a base that moved on, a missing
-  base) and reads the runner's AST to prove the check runs before the push and
-  its refusal returns. Removing that `return` from a copy of the runner fails
-  it.
+  repositories (an agent-committed workflow edit, an uncommitted one, a
+  non-ASCII workflow name committed and uncommitted, a rename out of the
+  directory, a packet's own entry, a base that moved on, a missing base) and
+  reads the runner's AST to prove the check runs before the push and its
+  refusal returns. Removing that `return` from a copy of the runner fails it,
+  and the non-ASCII cases fail on the quoted reading.
 - **Not covered yet:** a Copilot cloud task pushes from GitHub, so this check
   never sees its branch. That, naming a proposed workflow as waiting, and the
   network allowlist are the new item after D-012 in `ROADMAP.md` §7.
