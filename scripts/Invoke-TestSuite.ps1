@@ -368,6 +368,10 @@ Invoke-ScriptGate -Name 'Session briefing' -ScriptPath (Join-Path $WorkspaceRoot
 # reach the metrics, and the trend seed carries every indexed repository.
 Invoke-ScriptGate -Name 'Insights truth' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-InsightsTruth.ps1') -ScriptArgs @('-FailOnError')
 
+# D-012 - a run whose branch touches a forbidden path (.github/workflows/** at
+# least) fails by name in the runner and is never pushed.
+Invoke-ScriptGate -Name 'Permission envelope' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-PermissionEnvelope.ps1') -ScriptArgs @('-FailOnError')
+
 # Validator R024 - a built or verified milestone's check is a step CI runs; the
 # milestone's own check line. The rule itself also runs inside the lint below.
 Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError')

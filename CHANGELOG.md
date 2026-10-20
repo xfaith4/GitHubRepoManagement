@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented here.
 
+## 2026-10-20 — A run that touches a forbidden path fails by name and is never pushed (D-012)
+
+`AGENTS.md` already said a post-run diff touching `forbiddenPaths` fails the
+packet and prevents push, but nothing checked it. The only layer was the Claude
+adapter's `Edit(...)` deny rules, which a shell write or a commit the agent
+made itself never meets, and Codex runs had no path rule at all.
+
+- **The runner checks the branch before the push decision.**
+  `Test-RunPermissionEnvelope` (`scripts/Invoke-RoadmapTaskRunner.ps1`) reads
+  what the run's branch adds over its base (`git diff base...HEAD`, so a base
+  that moved on is not blamed on the run) plus anything still uncommitted,
+  after the agent's, the runner's and the completion edit's commits. A match
+  sets the run `failed` with the path and the rule it broke, for example
+  `.github/workflows/ci.yml (.github/workflows/**)`, records
+  `envelopeViolations`, and returns without pushing; Approve & push refuses a
+  `failed` run, so the branch stays local. A missing or unreadable base fails
+  closed. A passing run records `permissionEnvelope` on its summary.
+- **`.github/workflows/**` binds whatever the packet says.**
+  `Get-EffectiveForbiddenPath` (`backend/modules/execution/Execution.WorkPacket.ps1`)
+  adds it to the packet's own list, so a packet without it, or a run with no
+  packet, is still held to it. `.github/workflows-proposed/` is not forbidden.
+  The matcher (`Test-PathGlobMatch`, `Find-ForbiddenPathChange`) handles `**`,
+  `*`, `?`, directory prefixes, backslashes and case.
+- **Gate:** `tests/Test-PermissionEnvelope.ps1` (48 assertions), registered in
+  `scripts/Invoke-TestSuite.ps1`. It runs the check against real temporary
+  repositories (an agent-committed workflow edit, an uncommitted one, a rename
+  out of the directory, a packet's own entry, a base that moved on, a missing
+  base) and reads the runner's AST to prove the check runs before the push and
+  its refusal returns. Removing that `return` from a copy of the runner fails
+  it.
+- **Not covered yet:** a Copilot cloud task pushes from GitHub, so this check
+  never sees its branch. That, naming a proposed workflow as waiting, and the
+  network allowlist are the new item after D-012 in `ROADMAP.md` §7.
+- **Roadmap:** the session-briefing item (#347, merged as `90a5ff8` with
+  `smoke` green on `9c41796`) moves verified to the archive.
+
 ## 2026-10-19 — A session starts from one briefing and ends with one handoff note
 
 Fresh sessions spent their context rebuilding state by hand, and handoffs were

@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-10-19
+**Last updated:** 2026-10-20
 
 **Where the product stands (evaluation of 2026-10-16, checked against live
 data).** About eight merged PRs on other repositories, ever, almost all of them
@@ -36,21 +36,6 @@ history that keeps failures and rejections.
 operator work is in the operator queue. Take the first `[ ]` not already in
 flight.
 
-- [ ] **Every session starts from one briefing and ends with one handoff note
-      (owner decision, 2026-10-19).** Fresh sessions spent their context
-      rebuilding state by hand and lost handoffs between them: on 2026-10-19
-      the current note sat on an unmerged branch, the first one a new session
-      found was a stale `HANDOFF.md` under `output/`, and its written-down state
-      was wrong within minutes. Every 4.1 item pays that cost on each session.
-      `tools/Get-SessionBriefing.ps1` reads the live state in one screen and
-      a SessionStart hook puts it in context; it opens with the one open issue
-      labelled `handoff`, which holds only what a live read cannot give and is
-      rewritten by `tools/Publish-SessionHandoff.ps1`. Required reading is the
-      ranges the briefing prints (about 650 lines, down from about 1,400);
-      the rest is on demand. `AGENTS.md`, `CLAUDE.md` and steering name both.
-      Done when the gate is green in CI and the first handoff issue exists.
-      _(state: built)_
-      `check: pwsh ./tests/Test-SessionBriefing.ps1 -FailOnError`
 - [ ] **Open a real roadmap-repair PR from the repair preview (loop steps 2
       and 5).** The console's repair-PR button only ever built a dry-run plan.
       From the preview it now opens a real pull request on the target
@@ -464,16 +449,31 @@ lanes are in [the archive](docs/history/completed-releases.md).
       in the run summary, is OQ-6 and closes the Release 3.0 residual.
       _(state: built)_
       `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **D-012 — the permission envelope binds.** For every adapter, a post-run
-      diff touching any `forbiddenPaths` entry (`.github/workflows/**`) fails the
-      packet by name and the branch is not pushed; provider-native sandboxing is
-      a second layer, never the only one. An agent that needs CI changed writes
-      the proposal to `.github/workflows-proposed/` and names it as waiting. A
-      packet that needs the network declares an allowlist the owner approves;
-      `network false` is never loosened silently. Why next: the first
-      dispatched runs that push to other repositories make this real, and until
-      it binds the PR review is the only guard. _(state: planned)_
+- [ ] **D-012 — the permission envelope binds on every local run.** For each
+      local adapter (Claude headless and interactive, Codex) the runner reads
+      what the run's branch adds over its base (`base...HEAD`) plus anything
+      left uncommitted, after every commit and before the push decision. A
+      path under a `forbiddenPaths` entry, or under `.github/workflows/**`,
+      which binds even when a packet omits it, fails the run by name with the
+      path and the rule, and the branch is not pushed; `failed` is also a
+      status Approve & push refuses. A run whose base cannot be read fails
+      closed. Provider deny rules stay a first layer, never the only one, and
+      `.github/workflows-proposed/` is not forbidden. Built 2026-10-20
+      (`Test-RunPermissionEnvelope` in the runner, `Find-ForbiddenPathChange`
+      in `Execution.WorkPacket.ps1`); the gate failed on a copy whose refusal
+      did not return. _(state: built)_
       `check: pwsh ./tests/Test-PermissionEnvelope.ps1 -FailOnError`
+- [ ] **D-012, the rest: cloud runs, proposed workflows and the network
+      allowlist.** A Copilot cloud task pushes from GitHub, so the runner's
+      check never sees its branch; the host applies the same check before it
+      records that PR as the product's. An agent that needs CI changed names
+      its `.github/workflows-proposed/` file as waiting in its result. A packet
+      that needs the network declares an allowlist the owner approves;
+      `network false` is never loosened silently. Why next: the first
+      dispatched runs that push to other repositories make this real, and
+      until it binds for cloud runs the PR review is their only guard.
+      _(state: planned)_
+      `check: pwsh ./tests/Test-EnvelopeCloudAndNetwork.ps1 -FailOnError`
 - [ ] **The L0 road: a repository with no roadmap gets a first plan.** About
       49 scanned repositories sit at L0 with no roadmap file, "missing roadmap
       files" is a cause of failed runner runs, and one of 62 repositories is

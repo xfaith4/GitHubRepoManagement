@@ -411,6 +411,106 @@ function Read-WorkPacket {
 
 <#
 .SYNOPSIS
+    D-012 - the forbidden paths a run is held to: the packet's own list plus
+    `.github/workflows/**`, which stays forbidden to agents whatever a packet
+    says.
+
+.DESCRIPTION
+    The workflow floor is not packet data because a packet that omitted it,
+    or a run with no packet at all, would otherwise be allowed to rewrite CI.
+    A workflow an agent needs is proposed under `.github/workflows-proposed/`,
+    which this list does not cover. Duplicates are dropped, order is kept.
+#>
+function Get-EffectiveForbiddenPath {
+    param([Parameter()][object]$Packet = $null)
+
+    $paths = [System.Collections.Generic.List[string]]::new()
+    $scope = _WP_Field -Obj $Packet -Name 'scope' -Default $null
+    foreach ($entry in @(@(_WP_Field -Obj $scope -Name 'forbiddenPaths' -Default @()) + '.github/workflows/**')) {
+        $text = [string]$entry
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+        $text = $text.Trim()
+        if (-not ($paths | Where-Object { [string]::Equals($_, $text, [System.StringComparison]::OrdinalIgnoreCase) })) { $paths.Add($text) }
+    }
+    return , $paths.ToArray()
+}
+
+<#
+.SYNOPSIS
+    Pure - does a repository-relative path match a scope glob?
+
+.DESCRIPTION
+    `**` spans directories, `*` and `?` stay inside one segment, a trailing
+    `/` means everything below it, and a pattern with no wildcard matches the
+    path itself or anything under it. Separators are normalised to `/` and the
+    comparison ignores case, because the clones live on Windows and
+    `.GitHub/Workflows/ci.yml` is the same file there.
+#>
+function Test-PathGlobMatch {
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Path,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Pattern
+    )
+
+    $normalise = { param($s) (([string]$s).Trim() -replace '\\', '/') -replace '^(\./)+', '' -replace '^/+', '' }
+    $p = & $normalise $Path
+    $g = & $normalise $Pattern
+    if ([string]::IsNullOrEmpty($p) -or [string]::IsNullOrEmpty($g)) { return $false }
+    if ($g.EndsWith('/')) { $g += '**' }
+
+    if ($g -notmatch '[\*\?]') {
+        return ([string]::Equals($p, $g, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $p.StartsWith($g + '/', [System.StringComparison]::OrdinalIgnoreCase))
+    }
+
+    $regex = [System.Text.StringBuilder]::new('^')
+    $i = 0
+    while ($i -lt $g.Length) {
+        $c = $g[$i]
+        if ($c -eq '*' -and ($i + 1) -lt $g.Length -and $g[$i + 1] -eq '*') {
+            if (($i + 2) -lt $g.Length -and $g[$i + 2] -eq '/') { $null = $regex.Append('(?:.*/)?'); $i += 3 }
+            else { $null = $regex.Append('.*'); $i += 2 }
+            continue
+        }
+        if ($c -eq '*') { $null = $regex.Append('[^/]*') }
+        elseif ($c -eq '?') { $null = $regex.Append('[^/]') }
+        else { $null = $regex.Append([regex]::Escape([string]$c)) }
+        $i++
+    }
+    $null = $regex.Append('$')
+    return [regex]::IsMatch($p, $regex.ToString(), [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+}
+
+<#
+.SYNOPSIS
+    Pure - which changed paths break the envelope, and under which pattern.
+
+.DESCRIPTION
+    One row per offending path, naming the first pattern it matched, so the
+    failure says what was touched and which rule it broke. Empty when nothing
+    matched (an empty array, never $null).
+#>
+function Find-ForbiddenPathChange {
+    param(
+        [Parameter()][AllowEmptyCollection()][string[]]$ChangedPath = @(),
+        [Parameter()][AllowEmptyCollection()][string[]]$ForbiddenPath = @()
+    )
+
+    $violations = [System.Collections.Generic.List[object]]::new()
+    foreach ($changed in @($ChangedPath)) {
+        if ([string]::IsNullOrWhiteSpace($changed)) { continue }
+        foreach ($pattern in @($ForbiddenPath)) {
+            if (Test-PathGlobMatch -Path $changed -Pattern $pattern) {
+                $violations.Add([pscustomobject]@{ path = ($changed.Trim() -replace '\\', '/'); pattern = [string]$pattern })
+                break
+            }
+        }
+    }
+    return , $violations.ToArray()
+}
+
+<#
+.SYNOPSIS
     Render a WorkPacket as the prompt text a provider is given.
 
 .DESCRIPTION

@@ -7766,3 +7766,29 @@ responsibility, spends time to learn nothing. If a real case arrives where the
 runner is not running and the service fails to start it, the error that case
 produces is the thing to read — a rehearsed one would not have told us what the
 real one will.
+
+---
+
+## Release 4.1 — verified milestones (release still open; moved from ROADMAP.md under the §3 archive rule)
+
+- [x] **Every session starts from one briefing and ends with one handoff note
+      (owner decision, 2026-10-19).** Fresh sessions spent their context
+      rebuilding state by hand and lost handoffs between them: on 2026-10-19
+      the current note sat on an unmerged branch, the first one a new session
+      found was a stale `HANDOFF.md` under `output/`, and its written-down state
+      was wrong within minutes. Every 4.1 item pays that cost on each session.
+      `tools/Get-SessionBriefing.ps1` reads the live state in one screen and
+      a SessionStart hook puts it in context; it opens with the one open issue
+      labelled `handoff`, which holds only what a live read cannot give and is
+      rewritten by `tools/Publish-SessionHandoff.ps1`. Required reading is the
+      ranges the briefing prints (about 650 lines, down from about 1,400);
+      the rest is on demand. `AGENTS.md`, `CLAUDE.md` and steering name both.
+      Done when the gate is green in CI and the first handoff issue exists.
+      *(state: verified)*
+      `check: pwsh ./tests/Test-SessionBriefing.ps1 -FailOnError`
+
+Verified 2026-10-20: `smoke` passed on the head of #347 (`9c41796`, run
+39248278214), whose suite runs `Session briefing` from
+`scripts/Invoke-TestSuite.ps1`; #347 merged as `90a5ff8`. The first handoff
+issue is #348, opened 2026-10-19 and pinned. Release 4.1's other items stay
+open in ROADMAP.md.
