@@ -173,18 +173,44 @@ function Get-GitHubSection {
 function Get-SessionBriefingData {
     param([string]$Root, [bool]$Fetch, [bool]$IncludeGitHub)
 
-    $roadmapPath = Join-Path $Root 'ROADMAP.md'
+    # Git first: whether the checkout is behind origin/main decides where the
+    # tracked files below are read from (#353).
+    $git = Get-GitSection -Root $Root -Fetch $Fetch
+    $source = Get-BriefingSource -Behind $git.behind -OriginMainKnown ([bool]$git.originMain)
+    $roadmapRel = 'ROADMAP.md'
+    $queueRel = 'docs/governance/operator-queue.md'
+    $texts = @{}
+    if ($source -eq 'origin/main') {
+        $savedEncoding = [Console]::OutputEncoding
+        try {
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+            foreach ($rel in @(@($roadmapRel, $queueRel) + @($script:SessionRequiredReading | ForEach-Object { $_.path }) | Sort-Object -Unique)) {
+                $shown = Invoke-NativeText git @('-C', $Root, 'show', "origin/main:$rel")
+                if ($shown.ok) { $texts[$rel] = $shown.text }
+            }
+        } finally { [Console]::OutputEncoding = $savedEncoding }
+    }
+    $readTracked = {
+        param([string]$Rel)
+        if ($texts.ContainsKey($Rel)) { return $texts[$Rel] }
+        $full = Join-Path $Root $Rel
+        if (Test-Path -LiteralPath $full) { return (Get-Content -LiteralPath $full -Raw -Encoding UTF8) }
+        $null
+    }
+
     $roadmap = $null
-    if (Test-Path -LiteralPath $roadmapPath) {
-        $roadmap = Get-RoadmapFocus -Text (Get-Content -LiteralPath $roadmapPath -Raw -Encoding UTF8)
+    $roadmapText = & $readTracked $roadmapRel
+    if ($null -ne $roadmapText) {
+        $roadmap = Get-RoadmapFocus -Text $roadmapText
         $age = $null
         if ($roadmap.lastUpdated) { $age = [int]((Get-Date).Date - [datetime]::ParseExact($roadmap.lastUpdated, 'yyyy-MM-dd', $null)).TotalDays }
         $roadmap | Add-Member -NotePropertyName ageDays -NotePropertyValue $age
+        $roadmap | Add-Member -NotePropertyName source -NotePropertyValue $(if ($texts.ContainsKey($roadmapRel)) { 'origin/main' } else { 'checkout' })
     }
 
-    $queuePath = Join-Path $Root 'docs/governance/operator-queue.md'
     $queue = @()
-    if (Test-Path -LiteralPath $queuePath) { $queue = @(Get-OperatorQueueRow -Text (Get-Content -LiteralPath $queuePath -Raw -Encoding UTF8)) }
+    $queueText = & $readTracked $queueRel
+    if ($null -ne $queueText) { $queue = @(Get-OperatorQueueRow -Text $queueText) }
 
     $github = [pscustomobject]@{ available = $false; reason = 'skipped (-SkipGitHub)'; pullRequests = @(); defects = @(); handoff = $null }
     if ($IncludeGitHub) { $github = Get-GitHubSection }
@@ -192,11 +218,11 @@ function Get-SessionBriefingData {
     [pscustomobject]@{
         generatedAt   = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
         workspaceRoot = $Root
-        git           = Get-GitSection -Root $Root -Fetch $Fetch
+        git           = $git
         github        = $github
         roadmap       = $roadmap
         operatorQueue = $queue
-        reading       = Get-SessionReadingPlan -Root $Root
+        reading       = Get-SessionReadingPlan -Root $Root -TextByPath $texts
         strayNotes    = @(Get-StrayNote -OutputRoot (Join-Path $Root 'output'))
     }
 }
@@ -227,7 +253,9 @@ function Format-SessionBriefing {
     $out.Add('')
     $out.Add('## Read next (required; read these ranges, not whole files)')
     foreach ($item in @($Data.reading.required)) {
-        if ($item.found) { $out.Add("$($item.path) lines $($item.start)-$($item.end) ($($item.lines) lines): $($item.label)") }
+        $from = ''
+        if ($item.source -eq 'origin/main') { $from = " - origin/main's copy: git show origin/main:$($item.path)" }
+        if ($item.found) { $out.Add("$($item.path) lines $($item.start)-$($item.end) ($($item.lines) lines): $($item.label)$from") }
         else { $out.Add("$($item.path): section not found ($($item.label)) - read the whole file and fix tools/SessionHandoff.ps1") }
     }
     $out.Add("On demand only: $($Data.reading.onDemand).")
@@ -276,7 +304,9 @@ function Format-SessionBriefing {
     else {
         $stale = ''
         if ($null -ne $r.ageDays -and $r.ageDays -gt 3) { $stale = ' - STALE: update "Last updated" when you advance an item' }
-        $out.Add("Last updated $($r.lastUpdated) ($($r.ageDays) days ago)$stale")
+        $from = ''
+        if ($r.source -eq 'origin/main') { $from = " - read from origin/main; the checkout is $($Data.git.behind) behind" }
+        $out.Add("Last updated $($r.lastUpdated) ($($r.ageDays) days ago)$stale$from")
         foreach ($item in @($r.openItems)) { $out.Add("[$($item.state)] $(& $short $item.title 110)") }
     }
 

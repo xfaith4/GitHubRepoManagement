@@ -168,6 +168,50 @@ Assert-That ($requiredLines -lt (0.75 * $wholeLines.Sum)) "required reading stay
 Assert-That ((Get-ReadingRange -Lines @('# a', '## 1. x', 'body', '', '---', '## 3. y') -StartPattern '^## 1\. ' -EndPattern '^## 3\. ').end -eq 3) 'a range drops trailing blank and --- lines'
 Assert-That (-not (Get-ReadingRange -Lines @('# a') -StartPattern '^## 9\. ' -EndPattern $null).found) 'a missing heading is reported as not found'
 
+# 8c. a checkout behind origin/main is briefed from origin/main (#353)
+Assert-That ((Get-BriefingSource -Behind 10 -OriginMainKnown $true) -eq 'origin/main') 'a checkout 10 behind reads origin/main'
+Assert-That ((Get-BriefingSource -Behind 0 -OriginMainKnown $true) -eq 'checkout') 'a level checkout reads itself'
+Assert-That ((Get-BriefingSource -Behind $null -OriginMainKnown $true) -eq 'checkout') 'an unknown distance reads the checkout'
+Assert-That ((Get-BriefingSource -Behind 3 -OriginMainKnown $false) -eq 'checkout') 'no origin/main reads the checkout'
+$textPlan = Get-SessionReadingPlan -Root $WorkspaceRoot -TextByPath @{ 'ROADMAP.md' = "# R`n`n## Current Status (Agent Context)`n`nfocus`n`n---`n`n## 1. What" }
+$textRange = @($textPlan.required | Where-Object { $_.path -eq 'ROADMAP.md' })[0]
+Assert-That ($textRange.source -eq 'origin/main' -and $textRange.start -eq 3 -and $textRange.end -eq 5) ("a path given as text is ranged over that text and marked (got {0} {1}-{2})" -f $textRange.source, $textRange.start, $textRange.end)
+Assert-That (@($textPlan.required | Where-Object { $_.path -ne 'ROADMAP.md' -and $_.source -ne 'checkout' }).Count -eq 0) 'paths not given as text still read the checkout'
+
+$behindRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("session-briefing-behind-" + [guid]::NewGuid().ToString('n'))
+try {
+    $upstream = Join-Path $behindRoot 'upstream'
+    $checkout = Join-Path $behindRoot 'checkout'
+    $null = New-Item -ItemType Directory -Path $upstream -Force
+    $roadmapV = {
+        param([string]$Date, [string]$Item)
+        "# R`n`n## Current Status (Agent Context)`n`n**Last updated:** $Date`n`n**Current focus.**`n`n- [ ] **$Item** _(state: planned)_`n`n---`n`n## 1. What`n"
+    }
+    $gitQuiet = { param([string]$Repo, [string[]]$GitArgs) $null = & git -C $Repo -c user.name=fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false @GitArgs 2>&1 }
+    $null = & git init --quiet --initial-branch=main $upstream 2>&1
+    Set-Content -LiteralPath (Join-Path $upstream 'ROADMAP.md') -Value (& $roadmapV '2026-10-01' 'Old item.') -Encoding UTF8 -NoNewline
+    & $gitQuiet $upstream @('add', '-A')
+    & $gitQuiet $upstream @('commit', '--quiet', '-m', 'v1')
+    $null = & git clone --quiet $upstream $checkout 2>&1
+    Set-Content -LiteralPath (Join-Path $upstream 'ROADMAP.md') -Value (& $roadmapV '2026-10-19' 'New item.') -Encoding UTF8 -NoNewline
+    & $gitQuiet $upstream @('commit', '--quiet', '-am', 'v2')
+    & $gitQuiet $checkout @('fetch', '--quiet', 'origin')
+
+    $behindData = (& $briefing -WorkspaceRoot $checkout -NoFetch -SkipGitHub -AsJson | Out-String) | ConvertFrom-Json
+    Assert-That ($behindData.git.behind -eq 1) ("the fixture checkout is 1 behind origin/main (got {0})" -f $behindData.git.behind)
+    Assert-That ($behindData.roadmap.lastUpdated -eq '2026-10-19' -and $behindData.roadmap.source -eq 'origin/main') ("a checkout behind origin/main is briefed from origin/main's roadmap (got {0} from {1})" -f $behindData.roadmap.lastUpdated, $behindData.roadmap.source)
+    Assert-That (@($behindData.roadmap.openItems | Where-Object { $_.title -eq 'New item.' }).Count -eq 1) "the focus items are origin/main's"
+    Assert-That (@($behindData.reading.required | Where-Object { $_.path -eq 'ROADMAP.md' -and $_.source -eq 'origin/main' }).Count -eq 1) "the roadmap reading range is origin/main's"
+    $behindText = (& $briefing -WorkspaceRoot $checkout -NoFetch -SkipGitHub) -join "`n"
+    Assert-That ($behindText -match 'read from origin/main; the checkout is 1 behind') 'the text briefing says the roadmap came from origin/main'
+
+    & $gitQuiet $checkout @('merge', '--quiet', '--ff-only', 'origin/main')
+    $levelData = (& $briefing -WorkspaceRoot $checkout -NoFetch -SkipGitHub -AsJson | Out-String) | ConvertFrom-Json
+    Assert-That ($levelData.roadmap.source -eq 'checkout' -and $levelData.roadmap.lastUpdated -eq '2026-10-19') '(control) a level checkout is briefed from its own files'
+} finally {
+    Remove-Item -LiteralPath $behindRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 # 9. the contract, the provider overlay, the roadmap and the hook name the mechanism
 $agents = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'AGENTS.md') -Raw
 Assert-That ($agents -match 'tools/Get-SessionBriefing\.ps1') 'AGENTS.md tells a session to run the briefing'
