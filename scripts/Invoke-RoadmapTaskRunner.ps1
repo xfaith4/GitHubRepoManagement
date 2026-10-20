@@ -721,6 +721,84 @@ function Invoke-RunnerBranchPush {
     return [pscustomobject]$result
 }
 
+function Test-RunPermissionEnvelope {
+    <#
+    .SYNOPSIS
+        D-012 - does the run's branch touch a forbidden path? Read from git,
+        after the commit and before any push.
+
+    .DESCRIPTION
+        Provider settings (the Claude adapter's Edit deny rules, Codex's
+        sandbox) are a first layer and only cover the tools they know about:
+        a shell `Set-Content` or a `git commit` the agent made itself is not
+        an Edit. This is the layer that does not depend on the provider: what
+        the branch adds over its base (`base...HEAD`, so a base that moved on
+        is not read as the agent's change), plus anything still uncommitted,
+        against Get-EffectiveForbiddenPath.
+
+        It fails closed. With no base commit, or a diff git refuses, the run
+        cannot be shown to stay inside its envelope, so it is not ok and the
+        reason says why.
+    .OUTPUTS
+        [pscustomobject] ok, violations, forbidden, changedCount, error, summary
+    #>
+    param(
+        [Parameter(Mandatory)][string]$RepoPath,
+        [Parameter()][AllowEmptyString()][string]$BaseCommit = '',
+        [Parameter()][object]$Packet = $null
+    )
+
+    $forbidden = Get-EffectiveForbiddenPath -Packet $Packet
+    $result = [ordered]@{ ok = $false; violations = @(); forbidden = $forbidden; changedCount = 0; error = ''; summary = '' }
+
+    if ([string]::IsNullOrWhiteSpace($BaseCommit)) {
+        $result.error = 'permission envelope unprovable: the run''s base commit was not recorded, so its changes cannot be read; not pushed.'
+        $result.summary = 'unprovable (no base commit)'
+        return [pscustomobject]$result
+    }
+
+    # Paths are read raw: core.quotePath=false and -z stop git C-quoting a
+    # non-ASCII name (".github/workflows/d\303\251.yml"), which no pattern
+    # would match, and UTF-8 decoding keeps the name a packet entry can name.
+    $savedEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+        $diffOutput = @(& git -C $RepoPath -c core.quotePath=false diff --name-only --no-renames -z ('{0}...HEAD' -f $BaseCommit) 2>&1)
+        $diffExit = $LASTEXITCODE
+        $statusOutput = @(& git -C $RepoPath -c core.quotePath=false status --porcelain -z --no-renames --untracked-files=all 2>$null)
+    }
+    finally { [Console]::OutputEncoding = $savedEncoding }
+    if ($diffExit -ne 0) {
+        $result.error = ('permission envelope unprovable: git diff {0}...HEAD failed: {1}; not pushed.' -f $BaseCommit, (($diffOutput | ForEach-Object { [string]$_ }) -join ' ').Trim())
+        $result.summary = 'unprovable (git diff failed)'
+        return [pscustomobject]$result
+    }
+
+    $changed = [System.Collections.Generic.List[string]]::new()
+    foreach ($name in ((@($diffOutput | ForEach-Object { [string]$_ }) -join "`n") -split "`0")) {
+        if (-not [string]::IsNullOrWhiteSpace($name)) { $changed.Add($name.Trim()) }
+    }
+    # `XY path` per NUL-terminated entry; --no-renames keeps it one path each.
+    foreach ($entry in ((@($statusOutput | ForEach-Object { [string]$_ }) -join "`n") -split "`0")) {
+        $text = $entry.TrimStart("`n")
+        if ($text.Length -lt 4) { continue }
+        $changed.Add($text.Substring(3))
+    }
+
+    $result.changedCount = $changed.Count
+    $result.violations = Find-ForbiddenPathChange -ChangedPath $changed.ToArray() -ForbiddenPath $forbidden
+    if (@($result.violations).Count -eq 0) {
+        $result.ok = $true
+        $result.summary = ('passed: {0} changed path(s), none under {1}' -f $changed.Count, ($forbidden -join ', '))
+        return [pscustomobject]$result
+    }
+
+    $named = @($result.violations | ForEach-Object { '{0} ({1})' -f $_.path, $_.pattern }) -join ', '
+    $result.error = ('permission envelope: the run changed forbidden path(s): {0}. Not pushed. A workflow change is proposed under .github/workflows-proposed/ instead.' -f $named)
+    $result.summary = ('failed: {0} forbidden path(s)' -f @($result.violations).Count)
+    return [pscustomobject]$result
+}
+
 function Restore-RunnerStartBranch {
     <#
     .SYNOPSIS
@@ -1918,6 +1996,11 @@ function Invoke-QueuedTask {
         # the run's copy, not the operator's.
         $repo = $workspace.path
         $prompt = Convert-RunPathToWorkspace -Text $prompt -CloneRoot $cloneRoot -WorkspacePath $workspace.path
+        # D-012: the commit the permission-envelope check diffs against. The PR
+        # base when one resolved; a clone with no origin remote has none, so
+        # the workspace's HEAD before the agent runs stands in.
+        $envelopeBase = [string]$runStart.commit
+        if ([string]::IsNullOrWhiteSpace($envelopeBase)) { $envelopeBase = ((& git -C $repo rev-parse HEAD 2>$null) | Out-String).Trim() }
 
         # Launch the provider CLI in the repo.
         if (-not (Get-Command $localCommand -ErrorAction SilentlyContinue)) {
@@ -2209,6 +2292,29 @@ function Invoke-QueuedTask {
         }
         $commitSha = (& git -C $repo rev-parse --short HEAD 2>$null)
 
+        # D-012 - the permission envelope binds for every local adapter. Read
+        # after every commit (the agent's, the runner's, the completion edit)
+        # and before the push decision: a branch that touches a forbidden path
+        # fails by name and is never pushed. `failed` is also a status the
+        # host's Approve & push refuses, so the branch stays local either way.
+        $envelope = Test-RunPermissionEnvelope -RepoPath $repo -BaseCommit $envelopeBase -Packet $runWorkPacket
+        if (-not $envelope.ok) {
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                status             = 'failed'
+                error              = $envelope.error
+                branch             = $branch
+                commitSha          = "$commitSha"
+                filesChanged       = $filesChanged
+                verifyResult       = $verifyResult
+                permissionEnvelope = $envelope.summary
+                envelopeViolations = @($envelope.violations)
+                resultPath         = (Get-ExecutionResultPath -WorkspaceRoot $WorkspaceRoot -TaskId $runId)
+                runnerCompletedAt  = (Get-Date).ToString('o')
+            }
+            Write-Host ("  [envelope-refused] {0}" -f $envelope.error) -ForegroundColor Red
+            return
+        }
+
         # Release 3.8 M4 (H38-21) - the runner pushes; the host opens the PR.
         # This process is the one holding the operator's git credential helper,
         # and the host is the one holding the token Open-RepoBranchPullRequest
@@ -2257,6 +2363,7 @@ function Invoke-QueuedTask {
             resultPath        = (Get-ExecutionResultPath -WorkspaceRoot $WorkspaceRoot -TaskId $runId)
             resultSource      = $resultSource
             providerSessionId = $resultSessionId
+            permissionEnvelope = $envelope.summary
             runnerCompletedAt = (Get-Date).ToString('o')
         }
         foreach ($pushKey in $pushFields.Keys) { $summarySet[$pushKey] = $pushFields[$pushKey] }

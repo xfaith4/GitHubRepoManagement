@@ -7766,3 +7766,51 @@ responsibility, spends time to learn nothing. If a real case arrives where the
 runner is not running and the service fails to start it, the error that case
 produces is the thing to read — a rehearsed one would not have told us what the
 real one will.
+
+---
+
+## Release 4.1 — verified milestones (release still open; moved from ROADMAP.md under the §3 archive rule)
+
+- [x] **Every session starts from one briefing and ends with one handoff note
+      (owner decision, 2026-10-19).** Fresh sessions spent their context
+      rebuilding state by hand and lost handoffs between them: on 2026-10-19
+      the current note sat on an unmerged branch, the first one a new session
+      found was a stale `HANDOFF.md` under `output/`, and its written-down state
+      was wrong within minutes. Every 4.1 item pays that cost on each session.
+      `tools/Get-SessionBriefing.ps1` reads the live state in one screen and
+      a SessionStart hook puts it in context; it opens with the one open issue
+      labelled `handoff`, which holds only what a live read cannot give and is
+      rewritten by `tools/Publish-SessionHandoff.ps1`. Required reading is the
+      ranges the briefing prints (about 650 lines, down from about 1,400);
+      the rest is on demand. `AGENTS.md`, `CLAUDE.md` and steering name both.
+      Done when the gate is green in CI and the first handoff issue exists.
+      *(state: verified)*
+      `check: pwsh ./tests/Test-SessionBriefing.ps1 -FailOnError`
+
+Verified 2026-10-20: `smoke` passed on the head of #347 (`9c41796`, run
+39248278214), whose suite runs `Session briefing` from
+`scripts/Invoke-TestSuite.ps1`; #347 merged as `90a5ff8`. The first handoff
+issue is #348, opened 2026-10-19 and pinned. Release 4.1's other items stay
+open in ROADMAP.md.
+
+- [x] **D-012 — the permission envelope binds on every local run.** For each
+      local adapter (Claude headless and interactive, Codex) the runner reads
+      what the run's branch adds over its base (`base...HEAD`) plus anything
+      left uncommitted, after every commit and before the push decision. A
+      path under a `forbiddenPaths` entry, or under `.github/workflows/**`,
+      which binds even when a packet omits it, fails the run by name with the
+      path and the rule, and the branch is not pushed; `failed` is also a
+      status Approve & push refuses. A run whose base cannot be read fails
+      closed. Provider deny rules stay a first layer, never the only one, and
+      `.github/workflows-proposed/` is not forbidden. Built 2026-10-20
+      (`Test-RunPermissionEnvelope` in the runner, `Find-ForbiddenPathChange`
+      in `Execution.WorkPacket.ps1`); the gate failed on a copy whose refusal
+      did not return. *(state: verified)*
+      `check: pwsh ./tests/Test-PermissionEnvelope.ps1 -FailOnError`
+
+Verified 2026-10-20 (moved from ROADMAP.md §7): `smoke` passed on the head of
+#352 (`8c6306e`, run 39371954104), whose suite runs `Permission envelope` from
+`scripts/Invoke-TestSuite.ps1`. That head also carries the review fix for
+non-ASCII paths (git C-quoted them, so a committed `.github/workflows/dé.yml`
+would have passed). The rest of D-012 (Copilot cloud runs, proposed workflows,
+the network allowlist) stays open in ROADMAP.md §7.
