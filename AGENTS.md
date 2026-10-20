@@ -32,15 +32,35 @@ cannot override Steering, branch protection, repository policy, or the
 owner-review classes below. No prior successful action implies authority for a
 later one.
 
-Read in this order before modifying anything:
+### Session start
 
-1. Steering.
-2. This file.
-3. The active roadmap and, when an item appears absent, completed-release
-   history.
+Every session starts from `pwsh ./tools/Get-SessionBriefing.ps1`; in Claude
+Code a SessionStart hook in `.claude/settings.json` runs it and puts its
+output in context, so it is already there. The briefing opens with the
+handoff note (the one open issue labelled `handoff`), then reads live, in one
+screen, the checkout and its distance from `origin/main`, every worktree,
+dirty files, open PRs with the checks on their head, open defects, the
+roadmap's open Current-focus items and the operator queue. Do not rebuild that
+picture by hand, and do not trust an older copy of it.
+
+Then, before modifying anything, read only what the briefing's "Read next"
+section lists, as the line ranges it prints:
+
+1. This file, whole.
+2. Steering sections 1-2 (purpose, the contracts) and 5-6 (working rules,
+   things that look like progress and are not).
+3. The roadmap's Current Status section: the focus items in order, then the
+   full text of the item you take.
 4. The active mandate and WorkPacket, when execution is orchestrated.
-5. Current repository, worktree, branch, PR, CI, cancellation, and mandate
+5. Whatever the briefing reports as unavailable, and cancellation and mandate
    state.
+
+Read the rest on demand, not by default: steering sections 3-4 (proof ladder,
+direction) before choosing what to build or claiming proof, or when a choice
+feels like a matter of taste; other roadmap sections when an item or rule
+names them; completed-release history when an item appears absent. The ranges
+are defined once, in `tools/SessionHandoff.ps1`, and
+`tests/Test-SessionBriefing.ps1` fails when a heading they depend on moves.
 
 Revalidate the premise of any queued task, scheduled continuation, handoff, or
 old prompt before acting. Stale instructions do not become authority because
@@ -116,7 +136,8 @@ it.
 GitHub Issues is the defect registry. Reports under `output/`, scratchpads and
 session memory are evidence, never the record.
 
-- At task start, list open defects for the area you will touch:
+- The briefing lists every open defect by triage label. For the area you will
+  touch, search further only when needed:
   `gh issue list --label bug --state open --search "<area>" --json number,title,labels`.
   Read an issue body only when it bears on the task.
 - File every confirmed, actionable defect as an issue before the session ends,
@@ -133,6 +154,10 @@ session memory are evidence, never the record.
 - A fixing PR states `Fixes #N` with its verification evidence. Any other
   closure carries a disposition comment (duplicate of, not reproducible on
   `<sha>`, owner decision) and the matching close reason.
+- Never put a closing keyword (`close`, `fix`, `resolve` in any tense) right
+  before an issue number you are not fixing: GitHub reads `Not fixed: #344` as
+  `fixed: #344` and closes the issue on merge, which is how #344 was lost on
+  2026-10-19. Write `#344 stays open` or `Not addressed here: #344`.
 
 ### Proposal state is not delivery state
 
@@ -342,11 +367,23 @@ A provider session may end at any legitimate durable boundary:
 - integration reconciled and the next unit selected.
 
 Do not manufacture a commit or open a PR merely to avoid ending with a status.
-Before exit, persist what changed, exact checks and results, current branch and
-head, WorkPacket/run/mandate identifiers, residual scope, incorrect assumptions,
-decisions parked, authority consumed, defects filed as issues, and the next
-eligible transition. A later session must be able to resume without depending
-on conversation memory.
+Before exit, persist on the PR, issue or WorkPacket each fact concerns: what
+changed, exact checks and results, WorkPacket/run/mandate identifiers, residual
+scope, incorrect assumptions, authority consumed, and defects filed as issues.
+A later session must be able to resume without depending on conversation
+memory.
+
+Then rewrite the handoff note: the one open GitHub issue labelled `handoff`,
+replaced whole with `pwsh ./tools/Publish-SessionHandoff.ps1 -BodyPath <file>`
+(`-Template` prints the empty note). The previous note is kept as a comment on
+the issue. The note holds only what a live read cannot give the next session:
+the next action, the intent behind in-flight work, decisions made, traps, and
+parked questions, in at most 60 lines, linking the PR or issue that holds the
+detail. Leave branch heads, CI results, PR lists and dirty files to the
+briefing; a written copy of them is stale within minutes. The note lives on
+GitHub so a fresh session on `main` reads it at once, without waiting for a
+branch to merge. Notes under `output/`, worklogs on unmerged branches and
+conversation memory are evidence at most, never the handoff.
 
 ## Conventions
 

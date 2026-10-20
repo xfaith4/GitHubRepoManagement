@@ -359,6 +359,11 @@ Invoke-ScriptGate -Name 'Delivery loop' -ScriptPath (Join-Path $WorkspaceRoot 't
 # Lane 0.22 - one server-side dispatch-eligibility rule.
 Invoke-ScriptGate -Name 'Dispatch eligibility' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchEligibility.ps1') -ScriptArgs @('-FailOnError')
 
+# Release 4.1, 2026-10-19 - the session briefing and the handoff issue. The
+# briefing's parsers read this repository's own ROADMAP.md and operator queue,
+# so a format change that would blind a fresh session fails here instead.
+Invoke-ScriptGate -Name 'Session briefing' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-SessionBriefing.ps1') -ScriptArgs @('-FailOnError')
+
 # Issues #339, #340, #342 (2026-10-19) - runner outcomes close agent runs and
 # reach the metrics, and the trend seed carries every indexed repository.
 Invoke-ScriptGate -Name 'Insights truth' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-InsightsTruth.ps1') -ScriptArgs @('-FailOnError')

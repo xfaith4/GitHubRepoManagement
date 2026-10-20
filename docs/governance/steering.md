@@ -304,9 +304,10 @@ serves. Prefer the lowest rung that is not yet passed.
 - When you find a fact the roadmap or a doc has wrong, correct the doc in
   the same PR and say so in the handoff. When you find your own notes
   wrong, say that too.
-- Handoffs state: what merged, what is in CI, what you changed that the
-  owner did not ask for, what you got wrong, what decisions you parked, and
-  the next action with its check.
+- Handoffs go in the one open issue labelled `handoff` and state what you
+  changed that the owner did not ask for, what you got wrong, what decisions
+  you parked, and the next action with its check. What merged and what is in
+  CI is read live by `tools/Get-SessionBriefing.ps1`, never written down.
 - Do not add a keyword rule, a threshold, or a kind rule to make one
   repository come out right. Add it because the evidence line shows a
   pattern, record the repository it was observed on, and bump
