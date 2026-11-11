@@ -7814,3 +7814,25 @@ Verified 2026-10-20 (moved from ROADMAP.md §7): `smoke` passed on the head of
 non-ASCII paths (git C-quoted them, so a committed `.github/workflows/dé.yml`
 would have passed). The rest of D-012 (Copilot cloud runs, proposed workflows,
 the network allowlist) stays open in ROADMAP.md §7.
+
+- [x] **D-012, the rest: cloud runs, proposed workflows and the network
+      allowlist.** A Copilot cloud task pushes from GitHub, so the runner's
+      check never sees its branch; the host applies the same check before it
+      records that PR as the product's. An agent that needs CI changed names
+      its `.github/workflows-proposed/` file as waiting in its result. A packet
+      that needs the network declares an allowlist the owner approves;
+      `network false` is never loosened silently. Built 2026-11-10:
+      `Invoke-AgentRunRefresh` fails a cloud PR that touches a forbidden path
+      (`envelope-violation`, merged or not) and records none as delivered
+      until its files were read; `proposedWorkflows` rides the runner summary
+      and the run record; network needs an allowlist approved with
+      `tools/Approve-WorkPacketNetwork.ps1`. [non-blocker] an Approve button
+      in the portal. *(state: verified)*
+      `check: pwsh ./tests/Test-EnvelopeCloudAndNetwork.ps1 -FailOnError`
+
+Verified 2026-11-10 (moved from ROADMAP.md §7): `smoke` passed on the head of
+#360 (`1acdc63`, run 42951439904), whose suite runs `Envelope cloud and
+network` from `scripts/Invoke-TestSuite.ps1` (75 passed, 0 failed). That head
+also re-anchors the module-smoke trend fixture to the run date; its fixed
+2026-08-10 rows left the 90-day window on 2026-11-10 and failed module smoke
+on main. D-012 is closed.

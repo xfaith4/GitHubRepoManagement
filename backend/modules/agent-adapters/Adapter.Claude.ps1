@@ -129,8 +129,10 @@ function Resume-ClaudeExecution {
       - filesystemWrite: false denies Edit and Write. When true, edits stay
         governed by the permission mode, which accepts them inside the
         repository only; an edit outside it still asks, on purpose.
-      - network: false denies WebFetch, WebSearch and the common shell
-        fetchers.
+      - network: denied unless Resolve-PacketNetworkAccess grants it, which
+        needs `network true`, a host allowlist and the owner's approval of
+        that exact list. Granted, it allows WebFetch for those hosts only;
+        WebSearch and the shell fetchers stay denied either way.
       - githubWrite: false denies `git push` and `gh`.
       - Destructive local git (`reset --hard`, `clean`) and `rm -rf` are
         denied outright: the runner owns the branch, and nothing the task
@@ -158,7 +160,16 @@ function ConvertTo-ClaudePermissionSetting {
     # Absent means not granted. A packet that does not say shell: true gets no shell.
     $shell = ((_Claude_Field -Obj $permissions -Name 'shell' -Default $false) -eq $true)
     $write = ((_Claude_Field -Obj $permissions -Name 'filesystemWrite' -Default $false) -eq $true)
-    $network = ((_Claude_Field -Obj $permissions -Name 'network' -Default $false) -eq $true)
+    # D-012. `network true` alone grants nothing: the packet must name its hosts
+    # and carry the owner's approval of exactly those hosts. The resolver lives
+    # in Execution.WorkPacket.ps1; a caller that did not load it gets no
+    # network at all rather than the bare boolean.
+    $networkHosts = @()
+    $network = $false
+    if (Get-Command -Name 'Resolve-PacketNetworkAccess' -CommandType Function -ErrorAction Ignore) {
+        $access = Resolve-PacketNetworkAccess -Packet $Packet
+        if ($access.granted) { $network = $true; $networkHosts = @($access.allowlist) }
+    }
     $githubWrite = ((_Claude_Field -Obj $permissions -Name 'githubWrite' -Default $false) -eq $true)
 
     # Claude Code on Windows offers two shell tools, Bash and PowerShell, and
@@ -170,11 +181,20 @@ function ConvertTo-ClaudePermissionSetting {
     $shellTools = @('Bash', 'PowerShell')
     if ($shell) { foreach ($tool in $shellTools) { $allow.Add($tool) } } else { foreach ($tool in $shellTools) { $deny.Add($tool) } }
     if (-not $write) { foreach ($tool in @('Edit', 'Write', 'NotebookEdit')) { $deny.Add($tool) } }
-    if (-not $network) {
+    if ($network) {
+        # Approved hosts only. WebFetch is not denied outright here because a
+        # deny would beat the per-domain allows; a host off the list is never
+        # allowed, so it asks, and an unattended session cannot answer.
+        foreach ($networkHost in $networkHosts) { $allow.Add(('WebFetch(domain:{0})' -f $networkHost)) }
+        $deny.Add('WebSearch')
+    }
+    else {
         foreach ($rule in @('WebFetch', 'WebSearch')) { $deny.Add($rule) }
-        foreach ($tool in $shellTools) {
-            foreach ($cmd in @('curl', 'wget', 'Invoke-WebRequest', 'Invoke-RestMethod', 'iwr', 'irm')) { $deny.Add(('{0}({1}:*)' -f $tool, $cmd)) }
-        }
+    }
+    # The shell fetchers take any URL, so no allowlist can scope them; they
+    # stay denied whether or not the packet was granted the network.
+    foreach ($tool in $shellTools) {
+        foreach ($cmd in @('curl', 'wget', 'Invoke-WebRequest', 'Invoke-RestMethod', 'iwr', 'irm')) { $deny.Add(('{0}({1}:*)' -f $tool, $cmd)) }
     }
     if (-not $githubWrite) {
         foreach ($tool in $shellTools) { foreach ($cmd in @('git push', 'gh')) { $deny.Add(('{0}({1}:*)' -f $tool, $cmd)) } }

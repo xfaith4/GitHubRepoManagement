@@ -3177,6 +3177,92 @@ function Get-GitHubCommitCountViaApi {
     }
 }
 
+<#
+.SYNOPSIS
+    D-012 - every path a pull request changes, including the old name of a
+    renamed file, or $null when the list could not be read in full.
+
+.DESCRIPTION
+    A rename out of `.github/workflows/` removes a workflow, so the previous
+    name counts as changed. GitHub serves at most 3000 files per PR; a PR at
+    that cap cannot be proven clean, so it answers $null like any failure.
+#>
+function Get-PullRequestChangedPathViaApi {
+    param(
+        [Parameter(Mandatory = $true)][string]$Owner,
+        [Parameter(Mandatory = $true)][string]$Repo,
+        [Parameter(Mandatory = $true)][int]$Number,
+        [Parameter(Mandatory = $true)][hashtable]$Headers
+    )
+
+    $paths = [System.Collections.Generic.List[string]]::new()
+    try {
+        for ($page = 1; $page -le 30; $page++) {
+            $uri = "https://api.github.com/repos/$Owner/$Repo/pulls/$Number/files?per_page=100&page=$page"
+            $items = @(Invoke-RestMethod -Uri $uri -Headers $Headers -Method Get)
+            foreach ($item in $items) {
+                $name = [string](Get-ObjectPropertyValue -InputObject $item -PropertyName 'filename' -Default '')
+                if (-not [string]::IsNullOrWhiteSpace($name)) { $paths.Add($name) }
+                $previous = [string](Get-ObjectPropertyValue -InputObject $item -PropertyName 'previous_filename' -Default '')
+                if (-not [string]::IsNullOrWhiteSpace($previous)) { $paths.Add($previous) }
+            }
+            if ($items.Count -lt 100) { return , $paths.ToArray() }
+        }
+        Write-HostLog ("[WARN ] github.pullFiles owner={0} repo={1} pr={2} reached the 3000-file cap; envelope left unproven" -f $Owner, $Repo, $Number)
+        return $null
+    }
+    catch {
+        Write-HostLog ("[WARN ] github.pullFiles failed owner={0} repo={1} pr={2} error={3}" -f $Owner, $Repo, $Number, $_.Exception.Message)
+        return $null
+    }
+}
+
+<#
+.SYNOPSIS
+    D-012 - what Invoke-AgentRunRefresh needs to hold a cloud agent's pull
+    request to the permission envelope: the PR's changed paths and the run's
+    WorkPacket.
+
+.DESCRIPTION
+    Skips the file fetch when the run already holds a decided verdict for the
+    same head, because a commit does not change what it touches; the refresh
+    keeps that verdict. A failed fetch leaves `pullRequestFiles` $null, and
+    the refresh records the envelope as unproven rather than passed.
+#>
+function Get-AgentRunEnvelopeInput {
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+        [Parameter()][object]$Run = $null,
+        [Parameter()][object]$PullRequest = $null,
+        [Parameter(Mandatory = $true)][string]$Owner,
+        [Parameter(Mandatory = $true)][string]$Repo,
+        [Parameter(Mandatory = $true)][hashtable]$Headers
+    )
+
+    $files = $null
+    if ($null -ne $PullRequest) {
+        $number = Get-ObjectPropertyValue -InputObject $PullRequest -PropertyName 'number' -Default $null
+        $head = Get-ObjectPropertyValue -InputObject $PullRequest -PropertyName 'head' -Default $null
+        $headSha = [string](Get-ObjectPropertyValue -InputObject $head -PropertyName 'sha' -Default '')
+        $recorded = Get-ObjectPropertyValue -InputObject $Run -PropertyName 'permissionEnvelope' -Default $null
+        $recordedHead = [string](Get-ObjectPropertyValue -InputObject $recorded -PropertyName 'headSha' -Default '')
+        $recordedState = [string](Get-ObjectPropertyValue -InputObject $recorded -PropertyName 'state' -Default '')
+        $decided = (-not [string]::IsNullOrWhiteSpace($headSha)) -and $recordedHead -eq $headSha -and $recordedState -in @('passed', 'failed')
+        if ($null -ne $number -and -not $decided) {
+            $paths = Get-PullRequestChangedPathViaApi -Owner $Owner -Repo $Repo -Number ([int]$number) -Headers $Headers
+            if ($null -ne $paths) { $files = @{ ([int]$number) = $paths } }
+        }
+    }
+
+    $packet = $null
+    $dispatchRunId = [string](Get-ObjectPropertyValue -InputObject $Run -PropertyName 'dispatchRunId' -Default '')
+    if (-not [string]::IsNullOrWhiteSpace($dispatchRunId)) {
+        $packet = Read-WorkPacket -WorkspaceRoot $WorkspaceRoot -TaskId $dispatchRunId
+    }
+
+    return [pscustomobject]@{ pullRequestFiles = $files; packet = $packet }
+}
+
 function Get-LatestGitHubWorkflowRunViaApi {
     param(
         [Parameter(Mandatory = $true)]
@@ -7250,7 +7336,10 @@ function Invoke-AgentRunAutoClose {
                     $actionsRun = Get-LatestGitHubWorkflowRunViaApi -Owner $parts[0] -Repo $parts[1] -Headers $headers -Branch $branch
                 }
 
-                $result = Invoke-AgentRunRefresh -WorkspaceRoot $WorkspaceRoot -RunId $runId -PullRequests $pulls -ActionsRun $actionsRun -SiblingRuns $siblings -Actor 'system'
+                # D-012: a cloud agent pushed this PR from GitHub, so the
+                # runner never checked it; the envelope is checked here.
+                $envelopeInput = Get-AgentRunEnvelopeInput -WorkspaceRoot $WorkspaceRoot -Run $detail.run -PullRequest $candidate.pullRequest -Owner $parts[0] -Repo $parts[1] -Headers $headers
+                $result = Invoke-AgentRunRefresh -WorkspaceRoot $WorkspaceRoot -RunId $runId -PullRequests $pulls -ActionsRun $actionsRun -SiblingRuns $siblings -Actor 'system' -PullRequestFiles $envelopeInput.pullRequestFiles -Packet $envelopeInput.packet
                 $after = ([string](Get-ObjectPropertyValue -InputObject $result.run -PropertyName 'status' -Default $before)).ToLowerInvariant()
                 if ($after -ne $before) {
                     $summary['advanced'] = [int]$summary['advanced'] + 1
@@ -8323,7 +8412,9 @@ try {
                     $refreshActionsRun = Get-LatestGitHubWorkflowRunViaApi -Owner $refreshOwner -Repo $refreshRepoName -Headers $refreshHeaders -Branch $refreshBranch
                 }
 
-                $refreshResult = Invoke-AgentRunRefresh -WorkspaceRoot $WorkspaceRoot -RunId $refreshRunId -PullRequests $refreshPulls -ActionsRun $refreshActionsRun -SiblingRuns $refreshSiblings
+                # D-012: the same envelope check the automatic sweep applies.
+                $refreshEnvelopeInput = Get-AgentRunEnvelopeInput -WorkspaceRoot $WorkspaceRoot -Run $refreshDetail.run -PullRequest $refreshCandidate.pullRequest -Owner $refreshOwner -Repo $refreshRepoName -Headers $refreshHeaders
+                $refreshResult = Invoke-AgentRunRefresh -WorkspaceRoot $WorkspaceRoot -RunId $refreshRunId -PullRequests $refreshPulls -ActionsRun $refreshActionsRun -SiblingRuns $refreshSiblings -PullRequestFiles $refreshEnvelopeInput.pullRequestFiles -Packet $refreshEnvelopeInput.packet
 
                 Add-MetricCounter -Name 'api_requests_total'
                 Add-MetricHistogramValue -Name 'api_request_duration_ms' -Value ([double]((Get-Date) - $requestStart).TotalMilliseconds)

@@ -372,6 +372,11 @@ Invoke-ScriptGate -Name 'Insights truth' -ScriptPath (Join-Path $WorkspaceRoot '
 # least) fails by name in the runner and is never pushed.
 Invoke-ScriptGate -Name 'Permission envelope' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-PermissionEnvelope.ps1') -ScriptArgs @('-FailOnError')
 
+# D-012, the rest - a cloud agent's pull request is held to the same envelope
+# before the host records it as delivered, a proposed workflow is reported as
+# waiting for the owner, and network access needs an owner-approved allowlist.
+Invoke-ScriptGate -Name 'Envelope cloud and network' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-EnvelopeCloudAndNetwork.ps1') -ScriptArgs @('-FailOnError')
+
 # Validator R024 - a built or verified milestone's check is a step CI runs; the
 # milestone's own check line. The rule itself also runs inside the lint below.
 Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError')

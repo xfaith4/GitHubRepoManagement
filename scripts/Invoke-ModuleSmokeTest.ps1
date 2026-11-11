@@ -5816,7 +5816,10 @@ try {
     if ('task-fingerprint' -notin @($candidate.evidence.matchedBy)) { throw 'Association evidence is missing task-fingerprint' }
 
     # Refresh 1: draft PR + in-progress Actions -> active, no validation event.
-    $refresh1 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId `
+    # D-012: a refresh decides the envelope from the PR's changed paths; clean
+    # paths here, so the transitions below are the ones being exercised.
+    $refreshFiles = @{ 42 = @('src/feature.ps1', 'README.md') }
+    $refresh1 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequestFiles $refreshFiles `
         -PullRequests @($unrelatedPr, $agentPr) `
         -ActionsRun ([pscustomobject]@{ status = 'in_progress'; conclusion = ''; name = 'CI Smoke'; runUrl = 'https://github.com/owner/smoke-refresh-repo/actions/runs/1' })
     if ([string]$refresh1.run.status -ne 'active') { throw "Expected status=active after draft-PR refresh, got '$($refresh1.run.status)'" }
@@ -5825,7 +5828,7 @@ try {
 
     # Refresh 2: PR ready for review + successful Actions -> completed + validation.passed.
     $agentPr.draft = $false
-    $refresh2 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId `
+    $refresh2 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequestFiles $refreshFiles `
         -PullRequests @($unrelatedPr, $agentPr) `
         -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI Smoke'; runUrl = 'https://github.com/owner/smoke-refresh-repo/actions/runs/2' })
     if ([string]$refresh2.run.status -ne 'completed') { throw "Expected status=completed after ready-PR refresh, got '$($refresh2.run.status)'" }
@@ -5835,14 +5838,14 @@ try {
     if ($null -eq $refresh2.run.metrics.timeToDeliverSeconds) { throw 'Refresh did not derive timeToDeliverSeconds from observed PR timing' }
 
     # Refresh 3: unchanged Actions conclusion must not emit a duplicate validation event.
-    $refresh3 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId `
+    $refresh3 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequestFiles $refreshFiles `
         -PullRequests @($unrelatedPr, $agentPr) `
         -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI Smoke'; runUrl = 'https://github.com/owner/smoke-refresh-repo/actions/runs/2' })
     if ($null -ne $refresh3.validationEvent) { throw 'Unchanged Actions conclusion emitted a duplicate validation event' }
 
     # Refresh 4: merged PR -> outcome merged.
     $agentPr.merged_at = $nowUtc.AddMinutes(30).ToString('o')
-    $refresh4 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequests @($agentPr)
+    $refresh4 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequests @($agentPr) -PullRequestFiles $refreshFiles
     if ([string]$refresh4.run.status -ne 'completed') { throw "Expected status=completed after merge, got '$($refresh4.run.status)'" }
     if ([string]$refresh4.run.outcome -ne 'merged') { throw "Expected outcome=merged, got '$($refresh4.run.outcome)'" }
 
@@ -6713,21 +6716,28 @@ if (-not $sqliteCap.available) {
         # exceed the number of distinct repos. Verified red first: the old SQL
         # returns ready=3 over 2 repos against this exact fixture.
         . (Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Analytics.ps1')
+        # The fixture day is relative to today. Get-PortfolioTrendPayload reads
+        # only the last 90 days, so a fixed date (it was 2026-08-10) aged out of
+        # the window on 2026-11-10 and failed the history-backed check below.
+        # Ten days back is inside the window and outside improvedThisWeek's 7.
+        $trendFixtureDate = (Get-Date).ToUniversalTime().Date.AddDays(-10)
+        $trendFixtureDay = $trendFixtureDate.ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+        $trendWindowStart = $trendFixtureDate.AddDays(-9)
         foreach ($mh in @(
-            @{ repo = 'trend-repo-a'; at = '2026-08-10T00:00:00.0000000Z'; level = 'L1-Informal';            score = 40; pending = 2 }
-            @{ repo = 'trend-repo-a'; at = '2026-08-10T06:00:00.0000000Z'; level = 'L3-Contract-Ready';      score = 60; pending = 2 }
-            @{ repo = 'trend-repo-a'; at = '2026-08-10T12:00:00.0000000Z'; level = 'L3-Contract-Ready';      score = 80; pending = 1 }
-            @{ repo = 'trend-repo-b'; at = '2026-08-10T00:30:00.0000000Z'; level = 'L4-Orchestration-Ready'; score = 30; pending = 3 }
+            @{ repo = 'trend-repo-a'; at = "$($trendFixtureDay)T00:00:00.0000000Z"; level = 'L1-Informal';            score = 40; pending = 2 }
+            @{ repo = 'trend-repo-a'; at = "$($trendFixtureDay)T06:00:00.0000000Z"; level = 'L3-Contract-Ready';      score = 60; pending = 2 }
+            @{ repo = 'trend-repo-a'; at = "$($trendFixtureDay)T12:00:00.0000000Z"; level = 'L3-Contract-Ready';      score = 80; pending = 1 }
+            @{ repo = 'trend-repo-b'; at = "$($trendFixtureDay)T00:30:00.0000000Z"; level = 'L4-Orchestration-Ready'; score = 30; pending = 3 }
         )) {
             $null = Invoke-AppDbNonQuery -DatabasePath $appDbInit.databasePath `
                 -Sql 'INSERT INTO maturity_history (repo_name, maturity_level, maturity_score, pending_count, captured_at) VALUES (@r, @l, @s, @p, @t)' `
                 -Parameters @{ r = $mh.repo; l = $mh.level; s = $mh.score; p = $mh.pending; t = $mh.at }
         }
 
-        $trendRows = @(_GetPortfolioTrendHistoryRows -DatabasePath $appDbInit.databasePath -StartUtc ([datetime]'2026-08-01T00:00:00Z'))
-        $trendDay = @($trendRows | Where-Object { [string]$_.captured_day -eq '2026-08-10' })[0]
+        $trendRows = @(_GetPortfolioTrendHistoryRows -DatabasePath $appDbInit.databasePath -StartUtc $trendWindowStart)
+        $trendDay = @($trendRows | Where-Object { [string]$_.captured_day -eq $trendFixtureDay })[0]
         if ($null -eq $trendDay) { throw 'The fixture day did not appear in the trend history rows' }
-        $distinctRepoCount = [long](Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql "SELECT COUNT(DISTINCT repo_name) AS n FROM maturity_history WHERE substr(captured_at,1,10)='2026-08-10'")[0].n
+        $distinctRepoCount = [long](Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(DISTINCT repo_name) AS n FROM maturity_history WHERE substr(captured_at,1,10)=@d' -Parameters @{ d = $trendFixtureDay })[0].n
         # The milestone-2 invariant, asserted directly against the store.
         if ([long]$trendDay.ready_repo_count -gt $distinctRepoCount) {
             throw "ready_repo_count ($($trendDay.ready_repo_count)) exceeds the distinct repo count ($distinctRepoCount) — a day is counting captures, not repos"
@@ -6738,7 +6748,7 @@ if (-not $sqliteCap.available) {
 
         # The per-repo sparkline follows the same rule: a day's point is the
         # latest capture, not an average over however many captures ran.
-        $sparkPoints = @(_GetPortfolioTrendRepoHistoryPoints -DatabasePath $appDbInit.databasePath -RepoName 'trend-repo-a' -StartUtc ([datetime]'2026-08-01T00:00:00Z') -FallbackDay '2026-08-10' -FallbackScore 0)
+        $sparkPoints = @(_GetPortfolioTrendRepoHistoryPoints -DatabasePath $appDbInit.databasePath -RepoName 'trend-repo-a' -StartUtc $trendWindowStart -FallbackDay $trendFixtureDay -FallbackScore 0)
         if ([double]$sparkPoints[0].value -ne 80.0) { throw "Sparkline day value must be the latest capture (80), got $($sparkPoints[0].value)" }
 
         # Milestone 4c — "not computed" and "zero" may not share a value.
@@ -7676,7 +7686,10 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
         }
 
         # CI passed on the head the PR actually carries -> verified.
-        $vhOk = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId -PullRequests @($vhPr) `
+        # D-012: clean changed paths, so the envelope passes and only the head
+        # binding decides verification.
+        $vhFiles = @{ 77 = @('src/a.ps1'); 78 = @('src/a.ps1'); 79 = @('src/a.ps1'); 80 = @('src/a.ps1') }
+        $vhOk = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId -PullRequests @($vhPr) -PullRequestFiles $vhFiles `
             -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/1'; headSha = 'aaa' })
         if ([string]$vhOk.run.prHeadSha -ne 'aaa') { throw "The PR's head must be recorded, got '$($vhOk.run.prHeadSha)'" }
         if ([string]$vhOk.run.verifiedHeadSha -ne 'aaa') { throw "CI passing on the PR's head must verify it, got '$($vhOk.run.verifiedHeadSha)'" }
@@ -7699,7 +7712,7 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
             merged_at = $null; closed_at = $null
             head = [pscustomobject]@{ ref = 'copilot/mismatch'; sha = 'aaa' }
         }
-        $vhMismatch = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhMismatchRun.runId -PullRequests @($vhPr2) `
+        $vhMismatch = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhMismatchRun.runId -PullRequests @($vhPr2) -PullRequestFiles $vhFiles `
             -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/2'; headSha = 'bbb' })
         if ($null -ne $vhMismatch.run.verifiedHeadSha) {
             throw "A success on a different head must not verify this one, got '$($vhMismatch.run.verifiedHeadSha)'"
@@ -7716,7 +7729,7 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
             merged_at = $null; closed_at = $null
             head = [pscustomobject]@{ ref = 'copilot/headless'; sha = 'aaa' }
         }
-        $vhNoHead = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhNoHeadRun.runId -PullRequests @($vhPr3) `
+        $vhNoHead = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhNoHeadRun.runId -PullRequests @($vhPr3) -PullRequestFiles $vhFiles `
             -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/3' })
         if ($null -ne $vhNoHead.run.verifiedHeadSha) {
             throw 'A rollup carrying no head must never verify a head'
@@ -7726,7 +7739,7 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
         # and the event says so -- a cleared field with no event would look
         # like the verification never happened.
         $vhPr.head = [pscustomobject]@{ ref = 'copilot/verified-head'; sha = 'ccc' }
-        $vhMoved = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId -PullRequests @($vhPr) `
+        $vhMoved = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId -PullRequests @($vhPr) -PullRequestFiles $vhFiles `
             -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/1'; headSha = 'aaa' })
         if ([string]$vhMoved.run.prHeadSha -ne 'ccc') { throw "The moved head must be recorded, got '$($vhMoved.run.prHeadSha)'" }
         if ($null -ne $vhMoved.run.verifiedHeadSha) { throw 'A moved head must invalidate the verified head' }
@@ -7753,7 +7766,7 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
             merged_at = $null; closed_at = $null
             head = [pscustomobject]@{ ref = 'copilot/golden' }
         }
-        $vhGolden = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhGoldenRun.runId -PullRequests @($vhGoldenPr) `
+        $vhGolden = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhGoldenRun.runId -PullRequests @($vhGoldenPr) -PullRequestFiles $vhFiles `
             -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/4' })
         if ([string]$vhGolden.run.status -ne 'completed' -or [string]$vhGolden.run.outcome -ne 'awaiting-merge') {
             throw 'A headless PR must still refresh exactly as it did before this packet'

@@ -34,6 +34,8 @@ Set-StrictMode -Version Latest
 # fixtures already in the operator's ledger are skipped when listed.
 . (Join-Path $PSScriptRoot '..\common\Config.OutputRoot.ps1')
 . (Join-Path $PSScriptRoot '..\common\Fixture.Records.ps1')
+# D-012: the permission envelope a cloud agent's pull request is held to.
+. (Join-Path $PSScriptRoot '..\execution\Execution.WorkPacket.ps1')
 
 $ErrorActionPreference = 'Stop'
 
@@ -674,6 +676,12 @@ function Select-AgentRunPullRequestCandidate {
       PR ready for review       active     -> completed (outcome awaiting-merge)
       PR merged                 *          -> completed (outcome merged)
       PR closed without merge   *          -> failed    (outcome pr-closed-without-merge)
+      PR changes a forbidden    *          -> failed    (outcome envelope-violation)
+      path (D-012)
+
+    D-012: none of the success transitions happens while the PR's changed
+    files are unread (-PullRequestFiles has no entry for it); the envelope is
+    then `unproven` and the run waits for a refresh that can read them.
 
     A validation.passed / validation.failed event is appended when the
     observed Actions conclusion changed since the previous refresh; derived
@@ -692,7 +700,16 @@ function Invoke-AgentRunRefresh {
         # candidate matcher so one pull request cannot close several runs.
         # Omitted by callers that have no sibling context; the matcher then
         # falls back to time-bounded matching alone.
-        [Parameter()][object[]]$SiblingRuns = @()
+        [Parameter()][object[]]$SiblingRuns = @(),
+        # D-012. The changed paths of each candidate pull request, keyed by PR
+        # number: a cloud agent pushes from GitHub, so the runner's envelope
+        # check never sees its branch and this is where the same check runs.
+        # A PR whose paths are absent here is UNPROVEN, never passed: it is not
+        # recorded as the product's until a refresh can read its files.
+        [Parameter()][AllowNull()][hashtable]$PullRequestFiles = $null,
+        # The run's WorkPacket, when one exists; its forbidden paths join the
+        # `.github/workflows/**` floor. Without one the floor alone applies.
+        [Parameter()][AllowNull()][object]$Packet = $null
     )
 
     $path = _AgentRunFilePath -WorkspaceRoot $WorkspaceRoot -RunId $RunId
@@ -709,6 +726,8 @@ function Invoke-AgentRunRefresh {
     $patch = @{ lastRefreshAt = $nowIso }
     $summaryParts = @()
     $headMovedEvent = $null
+    $envelope = $null
+    $envelopeViolationEvent = $null
 
     if ($null -ne $candidate.pullRequest) {
         $pr = $candidate.pullRequest
@@ -776,8 +795,28 @@ function Invoke-AgentRunRefresh {
             if ($null -ne $prCreatedAt) { $patch['agentStartedAt'] = $prCreatedAt }
         }
 
+        # D-012 - the permission envelope, applied to what the PR changed
+        # before the PR is recorded as this run's product.
+        $envelope = _AgentRunEnvelopeVerdict -Run $run -PullRequestNumber $patch['prNumber'] -HeadSha $prHeadSha `
+            -PullRequestFiles $PullRequestFiles -Packet $Packet -CheckedAt $nowIso
+        $patch['permissionEnvelope'] = $envelope.record
+        if ($envelope.newViolation) { $envelopeViolationEvent = $envelope.record }
+
         $agentCompletedAt = _AgentRunsField -Obj $metrics -Name 'agentCompletedAt'
-        switch ($prState) {
+        $transitionOn = $prState
+        if ($envelope.record.state -eq 'failed') {
+            $patch['status'] = 'failed'
+            $patch['outcome'] = 'envelope-violation'
+            $summaryParts += "PR #$($patch['prNumber']) breaks the permission envelope ($($envelope.record.summary))"
+            $transitionOn = 'envelope-held'
+        } elseif ($envelope.record.state -eq 'unproven' -and ($prState -eq 'merged' -or ($prState -eq 'open' -and -not $prDraft))) {
+            # Not recorded as the product's on a fetch failure. The next
+            # refresh that can read the files decides it.
+            $summaryParts += "PR #$($patch['prNumber']) $prState, envelope unproven (changed files not read); not recorded as delivered"
+            $transitionOn = 'envelope-held'
+        }
+        switch ($transitionOn) {
+            'envelope-held' { }
             'merged' {
                 $patch['status'] = 'completed'
                 $patch['outcome'] = 'merged'
@@ -806,6 +845,9 @@ function Invoke-AgentRunRefresh {
                     $summaryParts += "PR #$($patch['prNumber']) $prState"
                 }
             }
+        }
+        if (@($envelope.record.proposedWorkflows).Count -gt 0) {
+            $summaryParts += ('{0} workflow proposal(s) waiting for the owner' -f @($envelope.record.proposedWorkflows).Count)
         }
     } else {
         $summaryParts += 'no matching agent pull request found yet'
@@ -852,6 +894,13 @@ function Invoke-AgentRunRefresh {
         }
     }
 
+    # D-012. Green CI on a head that breaks the envelope, or whose envelope
+    # could not be checked, is not a head an operator may promote.
+    if ($null -ne $envelope -and $envelope.record.state -ne 'passed') {
+        $patch['verifiedHeadSha'] = $null
+        $patch['readyForOperatorAt'] = $null
+    }
+
     $summary = 'Refreshed from GitHub: ' + ($summaryParts -join '; ') + '.'
     $updated = Update-AgentRunRecord -WorkspaceRoot $WorkspaceRoot -RunId $RunId -Patch $patch -Actor $Actor -Summary $summary
 
@@ -860,6 +909,16 @@ function Invoke-AgentRunRefresh {
             -RepoName ([string](_AgentRunsField -Obj $updated -Name 'repoName' -Default '')) -Actor $Actor `
             -Summary ("The pull request head moved from {0} to {1}; the recorded verification no longer applies." -f $headMovedEvent.fromSha, $headMovedEvent.toSha) `
             -Data $headMovedEvent
+    }
+
+    if ($null -ne $envelopeViolationEvent) {
+        $null = Write-AgentRunEvent -WorkspaceRoot $WorkspaceRoot -EventType 'run.envelope-violation' -RunId $RunId `
+            -RepoName ([string](_AgentRunsField -Obj $updated -Name 'repoName' -Default '')) -Actor $Actor `
+            -Summary ('The pull request changes forbidden path(s); it is not recorded as delivered. {0}' -f $envelopeViolationEvent.summary) `
+            -Data ([ordered]@{
+                headSha    = $envelopeViolationEvent.headSha
+                violations = @($envelopeViolationEvent.violations)
+            })
     }
 
     if ($null -ne $validationEventType) {
@@ -879,8 +938,68 @@ function Invoke-AgentRunRefresh {
         association     = $candidate.evidence
         pullRequestFound = ($null -ne $candidate.pullRequest)
         validationEvent = $validationEventType
+        envelopeState   = if ($null -eq $envelope) { $null } else { $envelope.record.state }
         refreshedAt     = $nowIso
     }
+}
+
+<#
+.SYNOPSIS
+    D-012 - the envelope verdict for one pull request head, as a ledger record.
+
+.DESCRIPTION
+    Uses the paths the caller fetched for this PR number. When none were
+    supplied, a verdict already recorded for the SAME head is kept (a head
+    does not change what it touches), otherwise the verdict is `unproven`.
+    `newViolation` is true only the first time a head is found to fail, so a
+    violation is one event, not one per refresh.
+#>
+function _AgentRunEnvelopeVerdict {
+    param(
+        [object]$Run,
+        [object]$PullRequestNumber,
+        [string]$HeadSha,
+        [AllowNull()][hashtable]$PullRequestFiles,
+        [AllowNull()][object]$Packet,
+        [string]$CheckedAt
+    )
+
+    $paths = $null
+    if ($null -ne $PullRequestFiles -and $null -ne $PullRequestNumber) {
+        foreach ($key in @($PullRequestNumber, [string]$PullRequestNumber)) {
+            if ($PullRequestFiles.ContainsKey($key)) { $paths = @($PullRequestFiles[$key]); break }
+        }
+        if ($null -eq $paths) {
+            $asInt = 0
+            if ([int]::TryParse([string]$PullRequestNumber, [ref]$asInt)) {
+                foreach ($key in @([int]$asInt, [long]$asInt)) {
+                    if ($PullRequestFiles.ContainsKey($key)) { $paths = @($PullRequestFiles[$key]); break }
+                }
+            }
+        }
+    }
+
+    $previous = _AgentRunsField -Obj $Run -Name 'permissionEnvelope'
+    $previousState = [string](_AgentRunsField -Obj $previous -Name 'state' -Default '')
+    $previousHead = [string](_AgentRunsField -Obj $previous -Name 'headSha' -Default '')
+    $sameHead = (-not [string]::IsNullOrWhiteSpace($HeadSha)) -and $previousHead -eq $HeadSha
+
+    if ($null -eq $paths -and $sameHead -and $previousState -in @('passed', 'failed')) {
+        return [pscustomobject]@{ record = $previous; newViolation = $false }
+    }
+
+    $verdict = Test-ChangedPathEnvelope -ChangedPath $paths -Packet $Packet
+    $record = [pscustomobject][ordered]@{
+        state             = $verdict.state
+        headSha           = if ([string]::IsNullOrWhiteSpace($HeadSha)) { $null } else { $HeadSha }
+        changedCount      = $verdict.changedCount
+        violations        = @($verdict.violations)
+        proposedWorkflows = @($verdict.proposedWorkflows)
+        checkedAt         = $CheckedAt
+        summary           = $verdict.summary
+    }
+    $newViolation = ($verdict.state -eq 'failed') -and -not ($sameHead -and $previousState -eq 'failed')
+    return [pscustomobject]@{ record = $record; newViolation = $newViolation }
 }
 
 # ---------------------------------------------------------------------------

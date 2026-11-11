@@ -143,6 +143,20 @@ function New-WorkPacket {
         $instructionText = [string]$Instructions
     }
 
+    $permissionBlock = [ordered]@{
+        filesystemWrite = (_WP_Field -Obj $Permissions -Name 'filesystemWrite' -Default $null)
+        shell           = (_WP_Field -Obj $Permissions -Name 'shell' -Default $null)
+        network         = (_WP_Field -Obj $Permissions -Name 'network' -Default $null)
+        githubWrite     = (_WP_Field -Obj $Permissions -Name 'githubWrite' -Default $null)
+    }
+    # D-012. The allowlist and the owner's approval of it are optional and
+    # additive: a packet that never asked for the network carries neither, and
+    # renders and validates exactly as before.
+    $allowlist = _WP_Field -Obj $Permissions -Name 'networkAllowlist' -Default $null
+    if ($null -ne $allowlist) { $permissionBlock['networkAllowlist'] = @($allowlist | ForEach-Object { [string]$_ }) }
+    $approval = _WP_Field -Obj $Permissions -Name 'networkApproval' -Default $null
+    if ($null -ne $approval) { $permissionBlock['networkApproval'] = $approval }
+
     return [ordered]@{
         schemaVersion      = $script:WorkPacketSchemaVersion
         taskId             = [string]$TaskId
@@ -159,12 +173,7 @@ function New-WorkPacket {
         verification       = [ordered]@{
             commands = @($VerificationCommands)
         }
-        permissions        = [ordered]@{
-            filesystemWrite = (_WP_Field -Obj $Permissions -Name 'filesystemWrite' -Default $null)
-            shell           = (_WP_Field -Obj $Permissions -Name 'shell' -Default $null)
-            network         = (_WP_Field -Obj $Permissions -Name 'network' -Default $null)
-            githubWrite     = (_WP_Field -Obj $Permissions -Name 'githubWrite' -Default $null)
-        }
+        permissions        = $permissionBlock
         execution          = [ordered]@{
             attempt           = [int]$Attempt
             preferredProvider = [string]$PreferredProvider
@@ -315,6 +324,27 @@ function Test-WorkPacket {
         $permissionValue = _WP_Field -Obj $permissions -Name $permissionKey -Default $null
         if ($permissionValue -isnot [bool]) {
             $errors += ('permissions.{0} must be a boolean' -f $permissionKey)
+        }
+    }
+
+    # D-012. A packet that needs the network names the hosts it needs, and a
+    # packet that does not need it carries no allowlist: an allowlist sitting
+    # next to `network false` is a request nobody approved, and `network true`
+    # with no hosts is a blanket grant. Both are refused here, at the source.
+    $allowlistValue = _WP_Field -Obj $permissions -Name 'networkAllowlist' -Default $null
+    $allowlistHosts = @(@($allowlistValue) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    $networkValue = _WP_Field -Obj $permissions -Name 'network' -Default $null
+    if ($networkValue -is [bool]) {
+        if ($networkValue -and $allowlistHosts.Count -eq 0) {
+            $errors += 'permissions.network is true but permissions.networkAllowlist names no hosts'
+        }
+        if (-not $networkValue -and $allowlistHosts.Count -gt 0) {
+            $errors += 'permissions.networkAllowlist is set but permissions.network is false'
+        }
+    }
+    foreach ($networkHost in $allowlistHosts) {
+        if (-not (Test-NetworkAllowlistHost -HostName ([string]$networkHost))) {
+            $errors += ('permissions.networkAllowlist entry is not a host name: {0}' -f $networkHost)
         }
     }
 
@@ -507,6 +537,219 @@ function Find-ForbiddenPathChange {
         }
     }
     return , $violations.ToArray()
+}
+
+<#
+.SYNOPSIS
+    D-012 - Pure. The workflow changes a run proposes instead of making.
+
+.DESCRIPTION
+    `.github/workflows/**` is forbidden to agents; a CI change an agent needs
+    goes under `.github/workflows-proposed/`, and only the owner moves it
+    across. One row per proposed file, each `waiting-for-owner`, so the run's
+    result names what is waiting rather than leaving it to be found in a diff.
+    Empty when nothing was proposed (an empty array, never $null).
+#>
+function Find-ProposedWorkflowChange {
+    param([Parameter()][AllowEmptyCollection()][string[]]$ChangedPath = @())
+
+    $proposed = [System.Collections.Generic.List[object]]::new()
+    foreach ($changed in @($ChangedPath)) {
+        if ([string]::IsNullOrWhiteSpace($changed)) { continue }
+        if (Test-PathGlobMatch -Path $changed -Pattern '.github/workflows-proposed/**') {
+            $proposed.Add([pscustomobject]@{ path = ($changed.Trim() -replace '\\', '/'); state = 'waiting-for-owner' })
+        }
+    }
+    return , $proposed.ToArray()
+}
+
+<#
+.SYNOPSIS
+    D-012 - Pure. Hold a list of changed paths to a packet's envelope.
+
+.DESCRIPTION
+    The one verdict both roads share: the runner applies it to a local branch,
+    the host to a pull request a cloud agent pushed from GitHub, which the
+    runner never sees. Three states, not two:
+
+    - `passed`   - the paths were read and none is forbidden.
+    - `failed`   - at least one changed path matches a forbidden pattern.
+    - `unproven` - the paths could not be read ($null). Never treated as a
+                   pass: a PR whose files the host failed to fetch is not
+                   recorded as the product's on the strength of a fetch error.
+
+    `proposedWorkflows` is reported in every state that read the paths.
+#>
+function Test-ChangedPathEnvelope {
+    param(
+        [Parameter()][AllowNull()][object]$ChangedPath = $null,
+        [Parameter()][object]$Packet = $null
+    )
+
+    $forbidden = Get-EffectiveForbiddenPath -Packet $Packet
+    if ($null -eq $ChangedPath) {
+        return [pscustomobject]@{
+            state             = 'unproven'
+            ok                = $false
+            violations        = @()
+            proposedWorkflows = @()
+            forbidden         = $forbidden
+            changedCount      = 0
+            error             = 'permission envelope: the changed paths could not be read, so the envelope is unproven.'
+            summary           = 'envelope unproven: changed paths could not be read'
+        }
+    }
+
+    $paths = @(@($ChangedPath) | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $violations = Find-ForbiddenPathChange -ChangedPath $paths -ForbiddenPath $forbidden
+    $proposed = Find-ProposedWorkflowChange -ChangedPath $paths
+
+    $proposalNote = ''
+    if ($proposed.Count -gt 0) {
+        $proposalNote = '; {0} workflow proposal(s) waiting for the owner: {1}' -f $proposed.Count, (($proposed | ForEach-Object { $_.path }) -join ', ')
+    }
+
+    if ($violations.Count -gt 0) {
+        $listed = ($violations | ForEach-Object { '{0} ({1})' -f $_.path, $_.pattern }) -join ', '
+        return [pscustomobject]@{
+            state             = 'failed'
+            ok                = $false
+            violations        = $violations
+            proposedWorkflows = $proposed
+            forbidden         = $forbidden
+            changedCount      = $paths.Count
+            error             = ('permission envelope: the change touches forbidden path(s): {0}. A workflow change is proposed under .github/workflows-proposed/ instead.' -f $listed)
+            summary           = ('envelope failed: {0}{1}' -f $listed, $proposalNote)
+        }
+    }
+
+    return [pscustomobject]@{
+        state             = 'passed'
+        ok                = $true
+        violations        = @()
+        proposedWorkflows = $proposed
+        forbidden         = $forbidden
+        changedCount      = $paths.Count
+        error             = $null
+        summary           = ('envelope passed: {0} changed path(s), none forbidden{1}' -f $paths.Count, $proposalNote)
+    }
+}
+
+<#
+.SYNOPSIS
+    D-012 - Pure. Is this a bare host name an allowlist may carry?
+
+.DESCRIPTION
+    No scheme, path, port or wildcard: an allowlist entry grants one host, and
+    `*.example.com` or `https://example.com/x` would grant something other
+    than what the owner read.
+#>
+function Test-NetworkAllowlistHost {
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$HostName)
+
+    $name = $HostName.Trim()
+    if ($name.Length -eq 0 -or $name.Length -gt 253) { return $false }
+    return ($name -match '^(?i)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$')
+}
+
+<#
+.SYNOPSIS
+    D-012 - Pure. A stable fingerprint of an allowlist: sorted, lower-cased,
+    de-duplicated hosts, SHA-256.
+
+.DESCRIPTION
+    The approval records this, not the list, so adding one host after the
+    owner approved makes the approval stale instead of silently covering it.
+#>
+function Get-NetworkAllowlistFingerprint {
+    param([Parameter()][AllowEmptyCollection()][string[]]$Allowlist = @())
+
+    $hosts = @(@($Allowlist) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim().ToLowerInvariant() } | Sort-Object -Unique)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($hosts -join "`n"))
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { $hash = $sha.ComputeHash($bytes) } finally { $sha.Dispose() }
+    return (($hash | ForEach-Object { $_.ToString('x2') }) -join '')
+}
+
+<#
+.SYNOPSIS
+    D-012 - Pure. The record of the owner approving one exact allowlist.
+#>
+function New-NetworkAllowlistApproval {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Pure constructor: returns an approval record in memory and touches nothing.')]
+    param(
+        [Parameter(Mandatory)][string[]]$Allowlist,
+        [Parameter(Mandatory)][string]$ApprovedBy,
+        [Parameter()][string]$ApprovedAt = ''
+    )
+
+    $hosts = @(@($Allowlist) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($hosts.Count -eq 0) { throw 'An allowlist approval needs at least one host.' }
+    foreach ($networkHost in $hosts) {
+        if (-not (Test-NetworkAllowlistHost -HostName $networkHost)) { throw ('Not a host name: {0}' -f $networkHost) }
+    }
+    if ([string]::IsNullOrWhiteSpace($ApprovedBy)) { throw 'ApprovedBy is required.' }
+    if ([string]::IsNullOrWhiteSpace($ApprovedAt)) { $ApprovedAt = [DateTimeOffset]::Now.ToString('o') }
+
+    return [ordered]@{
+        approvedBy           = $ApprovedBy.Trim()
+        approvedAt           = $ApprovedAt
+        allowlistFingerprint = (Get-NetworkAllowlistFingerprint -Allowlist $hosts)
+    }
+}
+
+<#
+.SYNOPSIS
+    D-012 - Pure. What network access a packet actually grants.
+
+.DESCRIPTION
+    `network false` is never loosened: access is granted only when the packet
+    asks for the network, names its hosts, and carries an owner approval whose
+    fingerprint matches those hosts today. Every other case answers
+    `granted = $false` with the reason, and an adapter that cannot ask this
+    question denies the network outright.
+
+    States: `denied`, `awaiting-owner-approval`, `approval-stale`, `approved`.
+#>
+function Resolve-PacketNetworkAccess {
+    param([Parameter()][object]$Packet = $null)
+
+    $permissions = _WP_Field -Obj $Packet -Name 'permissions' -Default $null
+    $network = _WP_Field -Obj $permissions -Name 'network' -Default $null
+    $deny = {
+        param($state, $reason, $hosts)
+        [pscustomobject]@{ granted = $false; state = $state; allowlist = @($hosts); reason = $reason }
+    }
+
+    if ($network -isnot [bool] -or -not $network) {
+        return (& $deny 'denied' 'the packet does not ask for the network' @())
+    }
+
+    $hosts = @(@(_WP_Field -Obj $permissions -Name 'networkAllowlist' -Default @()) |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Sort-Object -Unique)
+    if ($hosts.Count -eq 0) {
+        return (& $deny 'denied' 'the packet asks for the network but names no hosts' @())
+    }
+    $badHost = @($hosts | Where-Object { -not (Test-NetworkAllowlistHost -HostName $_) })
+    if ($badHost.Count -gt 0) {
+        return (& $deny 'denied' ('the allowlist carries an entry that is not a host name: {0}' -f ($badHost -join ', ')) $hosts)
+    }
+
+    $approval = _WP_Field -Obj $permissions -Name 'networkApproval' -Default $null
+    $approvedBy = [string](_WP_Field -Obj $approval -Name 'approvedBy' -Default '')
+    if ([string]::IsNullOrWhiteSpace($approvedBy)) {
+        return (& $deny 'awaiting-owner-approval' 'the allowlist has not been approved by the owner' $hosts)
+    }
+    $fingerprint = [string](_WP_Field -Obj $approval -Name 'allowlistFingerprint' -Default '')
+    if ($fingerprint -ne (Get-NetworkAllowlistFingerprint -Allowlist $hosts)) {
+        return (& $deny 'approval-stale' 'the allowlist changed after the owner approved it' $hosts)
+    }
+
+    return [pscustomobject]@{ granted = $true; state = 'approved'; allowlist = $hosts; reason = ('approved by {0}' -f $approvedBy) }
 }
 
 <#
