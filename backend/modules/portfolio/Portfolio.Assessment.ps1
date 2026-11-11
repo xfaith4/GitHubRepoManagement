@@ -39,6 +39,9 @@ $ErrorActionPreference = 'Stop'
 # index the operator is reading. See Config.IndexPath.ps1 for the incident.
 . (Join-Path $PSScriptRoot '..\common\Config.IndexPath.ps1')
 . (Join-Path $PSScriptRoot 'Portfolio.KindSignals.ps1')
+# Lane 0.22 (loop step 1): only actionable roadmap lines are ranked. Loaded here
+# so no caller of Invoke-PortfolioAssessment can rank without it.
+. (Join-Path $PSScriptRoot '..\roadmap\Roadmap.ItemQuality.ps1')
 
 # ---------------------------------------------------------------------------
 # Standards loader
@@ -601,13 +604,30 @@ function _GetPendingRoadmapItems {
     $nextText = if ($null -ne $nextPending) { [string](_GetField -Obj $nextPending -Name 'text' -Default '') } else { '' }
     $nextTags = @(if ($null -ne $nextPending) { @(_GetField -Obj $nextPending -Name 'tags' -Default @() | ForEach-Object { [string]$_ }) } else { @() })
 
+    # Lane 0.22 (loop step 1). `sections[].pendingItems` are bare strings, so
+    # every tag but the next item's was lost here -- including [non-blocker],
+    # which the work-item quality model reads. The parser's flat `items` list
+    # keeps them; recover them by section + text where an entry carries it.
+    $tagLookup = @{}
+    foreach ($tagSource in @($source, $RoadmapEntry)) {
+        if ($null -eq $tagSource) { continue }
+        foreach ($flat in @(_GetField -Obj $tagSource -Name 'items' -Default @())) {
+            if ($null -eq $flat -or [bool](_GetField -Obj $flat -Name 'checked' -Default $false)) { continue }
+            $flatTags = @(_GetField -Obj $flat -Name 'tags' -Default @() | ForEach-Object { [string]$_ })
+            if ($flatTags.Count -eq 0) { continue }
+            $key = '{0}|{1}' -f [string](_GetField -Obj $flat -Name 'section' -Default ''), [string](_GetField -Obj $flat -Name 'text' -Default '')
+            if (-not $tagLookup.ContainsKey($key)) { $tagLookup[$key] = $flatTags }
+        }
+    }
+
     foreach ($sec in @(_GetField -Obj $source -Name 'sections' -Default @())) {
         if ($null -eq $sec) { continue }
         $sectionName = [string](_GetField -Obj $sec -Name 'name' -Default '')
         foreach ($pending in @(_GetField -Obj $sec -Name 'pendingItems' -Default @())) {
             $text = [string]$pending
             if ([string]::IsNullOrWhiteSpace($text)) { continue }
-            $tags = @(if (-not [string]::IsNullOrWhiteSpace($nextText) -and $text -eq $nextText) { $nextTags } else { @() })
+            $lookupKey = '{0}|{1}' -f $sectionName, $text
+            $tags = @(if ($tagLookup.ContainsKey($lookupKey)) { $tagLookup[$lookupKey] } elseif (-not [string]::IsNullOrWhiteSpace($nextText) -and $text -eq $nextText) { $nextTags } else { @() })
             $items.Add([pscustomobject]@{
                 text    = $text
                 section = $sectionName
@@ -738,8 +758,13 @@ function Invoke-PortfolioAssessment {
         [Parameter()][AllowEmptyCollection()][object[]]$ExecutionEntries    = @(),
         [Parameter()][AllowEmptyCollection()][object[]]$GitHubRepos         = @(),
         [Parameter()][object]$StructureStandards,
-        [Parameter()][object]$ValueScoringConfig
+        [Parameter()][object]$ValueScoringConfig,
+        # Lane 0.22. Omitted means the committed model; a missing or broken one
+        # throws, because ranking every line is the failure it prevents.
+        [Parameter()][object]$ItemRuleConfig
     )
+
+    if ($null -eq $ItemRuleConfig) { $ItemRuleConfig = Get-RoadmapItemRuleConfig }
 
     $roadmapMap     = _IndexByRepoName -Items $RoadmapEntries     -NameField 'repoName'
     $docAuditMap    = _IndexByRepoName -Items $DocAuditEntries    -NameField 'repoName'
@@ -905,7 +930,13 @@ function Invoke-PortfolioAssessment {
             -RoadmapState $roadmapState `
             -PendingItemCount $pendingCount
 
-        $pendingItemsRaw = @(_GetPendingRoadmapItems -RoadmapEntry $roadmapEntry -MaturityEntry $maturityEntry)
+        $pendingItemsAll = @(_GetPendingRoadmapItems -RoadmapEntry $roadmapEntry -MaturityEntry $maturityEntry)
+        # Lane 0.22 (loop step 1): classify before ranking. Only actionable lines
+        # are scored, so nothing downstream -- top item, packaging, queue,
+        # dispatch -- can pick the rest. They stay on the entry with reasons.
+        $itemQuality = Split-RoadmapItemByQuality -Items $pendingItemsAll -RepoName $repoName -Config $ItemRuleConfig
+        $pendingItemsRaw = @($itemQuality.actionable)
+        $excludedItems = @($itemQuality.excluded)
         $hasCiSignal = if ($null -ne $structAudit) { [bool]$structAudit.hasCiSignal } else { $false }
         $hasTestSignal = if ($null -ne $structAudit) { [bool]$structAudit.hasTestSignal } else { $false }
         $repoContext = [pscustomobject]@{
@@ -966,6 +997,9 @@ function Invoke-PortfolioAssessment {
             pendingItemCount    = $pendingCount
             nextPendingItemText = $nextItemText
             pendingItems        = @($scoredPendingItems)
+            excludedItems       = @($excludedItems)
+            excludedItemCount   = @($excludedItems).Count
+            itemQualityModelVersion = [string]$ItemRuleConfig.modelVersion
             topValueItem        = $topValueItem
             topDispatchableItem = $topDispatchableItem
             operatorOnlyItemCount = $operatorOnlyItemCount
@@ -1029,6 +1063,9 @@ function Invoke-PortfolioAssessment {
             pendingItemCount    = 0
             nextPendingItemText = ''
             pendingItems        = @()
+            excludedItems       = @()
+            excludedItemCount   = 0
+            itemQualityModelVersion = [string]$ItemRuleConfig.modelVersion
             topValueItem        = $null
             topDispatchableItem = $null
             operatorOnlyItemCount = 0
@@ -1649,6 +1686,9 @@ function New-PortfolioIndexPayload {
             # "most valuable" answer even when only a person can perform it.
             topDispatchableItem = _GetField -Obj $assessment -Name 'topDispatchableItem' -Default $null
             operatorOnlyItemCount = [int](_GetField -Obj $assessment -Name 'operatorOnlyItemCount' -Default 0)
+            # Lane 0.22: the lines kept out of ranking, each with its reason.
+            excludedItems       = @(_GetField -Obj $assessment -Name 'excludedItems' -Default @())
+            excludedItemCount   = [int](_GetField -Obj $assessment -Name 'excludedItemCount' -Default 0)
             activeRelease       = _GetField -Obj $assessment -Name 'activeRelease' -Default $null
             activePhasePlan     = _GetField -Obj $assessment -Name 'activePhasePlan' -Default $null
             budgetGuardrail     = _GetField -Obj $assessment -Name 'budgetGuardrail' -Default $null

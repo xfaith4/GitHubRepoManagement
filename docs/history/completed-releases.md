@@ -7854,3 +7854,64 @@ head of #361 (`ffefd44`, run 42956767234), whose suite runs `Delivery outcomes`
 from `scripts/Invoke-TestSuite.ps1` (45 passed, 0 failed). No smoke test calls
 the `/api/delivery` routes; source tripwires cover the three changed host
 lines.
+
+- [x] **A baseline now, then a weekly delivery report (loop step 8).** One
+      command writes the report from the ledgers and GitHub: PRs the product
+      initiated on other repositories, how many passed CI on their head, how
+      many merged, proposals rejected, operator minutes in total and per merged
+      improvement, agent-run failures by cause, and repositories ready for
+      automated work. Every figure carries its unit, basis, window and source
+      (`New-PortfolioMetric`); one the ledgers cannot compute reads "not
+      measured" with its reason, never 0. The first run reproduces the
+      2026-10-16 evaluation's figures as the baseline under
+      `evidence/baseline/<date>/`, and each weekly run says what moved since.
+      Built on `feat/delivery-report`: `tools/New-DeliveryReport.ps1`
+      (`-Baseline` once, then weekly into `output/delivery/reports/`) over
+      `Delivery.Report.ps1`. The baseline in `evidence/baseline/2026-10-16/`
+      matches the evaluation on PRs initiated (11), merged (10) and agent runs
+      (80); it reads 52 failed runs against the evaluation's 51; passed CI
+      reads 0 of 3, because CI was readable on only 3 of the 11 PRs (the token
+      lacks `checks:read`); rejects, operator time and readiness at the window
+      end read "not measured", each with its reason. *(state: verified)*
+      `check: pwsh ./tests/Test-DeliveryReport.ps1 -FailOnError`
+
+- [x] **Only actionable roadmap lines become work (Lane 0.22; loop step 1).**
+      Before ranking, each candidate is classified `actionable | done-statement |
+      deferred | guidance | fragment`. Only `actionable` is ranked, queued or
+      offered for dispatch, and each repository shows "Excluded (n)" with the
+      reason for each line. A run that completes writes its item back as done,
+      and the same item hash cannot be dispatched again inside a cooldown unless
+      the operator overrides. Built 2026-11-11: the model is
+      `backend/config/roadmap-item-rules.json` (1.0, calibrated on 2,087 open
+      lines across 65 roadmaps, each misfire recorded with its repo) and
+      `Roadmap.ItemQuality.ps1` is its only classifier; the assessment and the
+      dispatch picker rank only actionable lines and the Work Queue shows
+      "Excluded (n)" with reasons; the runner refuses an item it launched for
+      the same repository inside 24 hours (`item-cooldown`) unless queued with
+      `-OverrideCooldown`; write-back reuses Release 3.1. The approve and
+      lane-assign routes cannot pass the override yet. *(state: verified)*
+      `check: pwsh ./tests/Test-WorkItemQuality.ps1 -FailOnError`
+
+- [x] **A dispatched agent run ends in a pull request on another repository
+      (loop steps 3 to 5).** The local Claude runner pushes its branch and
+      opens the pull request, or the approve-push route does, and the run
+      records the PR URL. A run whose runner pid no longer matches the
+      heartbeat is closed as abandoned, with its reason, and is never left
+      `running`. Done when a fixture run (stubbed `gh`, local bare remote)
+      reaches a recorded PR URL, and a fixture run with a dead runner pid
+      closes as abandoned. Built 2026-11-11: with autoPush off (approval stays
+      on publication) the PR path is the approve-push route, whose body is now
+      `Invoke-RunApprovePush` in `Roadmap.PrSubmitter.ps1`; a base that cannot
+      resolve still pushes and records `open-refused` with its reason. The host
+      closes abandoned runs on every history read with
+      `Repair-OrphanedRunSummary -HeartbeatPath`, not only at runner startup.
+      Not yet shown on a live repository. *(state: verified)*
+      `check: pwsh ./tests/Test-DispatchToPr.ps1 -FailOnError`
+
+Verified 2026-11-11 (moved from ROADMAP.md Current focus): `smoke` passed on the
+head of #363 (`7e76f6f`, CI Smoke run 43026271412), whose suite runs
+`Delivery report` (107 passed, 0 failed), `Work item quality` (163 passed, 0
+failed) and `Dispatch to PR` (44 passed, 0 failed) from
+`scripts/Invoke-TestSuite.ps1`. The verification is fixture-level: no live
+runner has refused or overridden a real queued item, and no dispatched run has
+yet opened a PR on a live repository.

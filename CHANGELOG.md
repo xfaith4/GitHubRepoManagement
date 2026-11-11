@@ -2,6 +2,110 @@
 
 All notable changes to this project are documented here.
 
+## 2026-11-11 — A dispatched run ends in a pull request; a dead runner's run is closed (loop steps 3 to 5)
+
+The push and PR-opening code existed, but the approve-push route's body sat
+inline in the API host where no test could drive it, and a run whose runner
+died stayed `running` until a runner restarted and swept it.
+
+- **Approve-push is a module function.** `Invoke-RunApprovePush`
+  (`backend/modules/roadmap/Roadmap.PrSubmitter.ps1`) validates the run, pushes
+  its branch, resolves the PR base, opens the PR and records it on the run.
+  `POST /api/roadmap-agent/approve-push` now only maps its answer to HTTP
+  (400, 404, 409 and 200, same response shape as before).
+- **A base that cannot resolve is recorded, not silent.** The branch is still
+  pushed; the run reads `prState = 'open-refused'` with `prRefusal` (category
+  and reason), the same shape the delivery reconcile tick writes. Before, such
+  a run read `pushed` with nothing to say why no PR existed.
+- **The host closes abandoned runs.** `GET /api/roadmap-agent/history` first
+  calls `Repair-OrphanedRunSummary -HeartbeatPath`. A local run is closed
+  (failed, category `orphaned`, with its reason) when its runner pid does not
+  match a fresh heartbeat and its process is gone. A run whose process is
+  alive, and every github-hosted run, are left alone. The sweep never fails
+  the list. `Get-LiveRunnerPid` (`Execution.ProviderCapacity.ps1`) is the one
+  heartbeat reading shared with the capacity count.
+- **Known limits.** autoPush stays off for local providers, so the runner
+  itself never pushes; approval is the PR path. Pid reuse could make a dead
+  runner's pid look alive and keep its run open. Not yet shown on a live
+  repository.
+- **Verified:** `tests/Test-DispatchToPr.ps1` 44 passed (real `git push` to a
+  local bare remote, only the GitHub API stubbed); Test-DeliveryLoop 156 (its
+  base-wiring text gate now reads the approve path from the module),
+  Test-DeliveryOutcomes 45, Test-DeliveryReport 107, Test-WorkItemQuality 161,
+  Test-RoadmapStructure clean; PSScriptAnalyzer adds no finding on any touched
+  file.
+
+## 2026-11-11 — Only actionable roadmap lines become work (Lane 0.22, loop step 1)
+
+Every unchecked line was a candidate: "Done: …" statements, `[non-blocker]`
+notes, Definition-of-Done rules and bare lead-ins ("Remaining hardening:") were
+ranked and could be dispatched, and nothing stopped the same item from being
+launched twice in a row.
+
+- **One model classifies every open line.** `backend/config/roadmap-item-rules.json`
+  (model 1.0) sorts each line into actionable, done-statement, deferred,
+  guidance or fragment; `backend/modules/roadmap/Roadmap.ItemQuality.ps1` is the
+  only classifier. The rules were calibrated on 2,087 open lines across 65
+  roadmaps, and each misfire found is recorded with the repo it came from:
+  1,913 actionable, 147 deferred, 22 guidance, 5 fragment. A missing or broken
+  model throws; it never falls back to ranking everything.
+- **Only actionable lines are ranked, queued or dispatched.** The portfolio
+  assessment and the dispatch script's picker both use the model.
+  Each entry carries `excludedItems` (text, class, rule, reason, item hash)
+  and `excludedItemCount`, and the host's fallback text skips excluded lines.
+  The Work Queue shows "Excluded (n)" under each repository, with the reason
+  for each line.
+- **The same item is not launched twice inside 24 hours.** The runner refuses
+  a queued item that it launched for the same repository within the cooldown,
+  before claiming the entry (`refusalCategory = 'item-cooldown'`). The run
+  summary names the prior run and when the window ends. The picker passes over
+  cooling items and says how many it skipped. `-OverrideCooldown` (both
+  dispatch scripts) or `overrideCooldown: true` on the start route launches it
+  anyway, and the run records the override. Remediations are exempt; they run
+  under their own attempt cap.
+- **Completion write-back is reused,** not rebuilt: a finished run already
+  marks its item done through `Roadmap.WriteBack.ps1` (Release 3.1).
+- **Known limits.** A cooldown refusal is a `refused` run, so it counts
+  toward a tied ledger lane's three-failure cap and the runner's error rate.
+  The approve route (`Submit-PackagedItemToRunner`) and the lane-assign route
+  cannot pass the override yet; the runner still enforces the cooldown on
+  their entries.
+- **Verified:** `tests/Test-WorkItemQuality.ps1` 161 passed (first run red
+  against the previous picker and assessment); Test-DeliveryReport 107,
+  Test-DispatchEligibility 17, Test-DeliveryLoop 156; frontend typecheck, lint
+  (152 warnings, none new) and 564 unit tests.
+
+## 2026-11-11 — A delivery baseline, then a weekly report (loop step 8)
+
+The 2026-10-16 evaluation counted PRs, merges and failed runs by hand, and
+nothing could say next week what had moved since.
+
+- **One command writes the report.** `tools/New-DeliveryReport.ps1` reads the
+  delivery ledger, the runner's run summaries, the docs audit cache and GitHub
+  (`gh api` by default, or `-Token`), and writes JSON and Markdown. `-Baseline`
+  recomputes the evaluation's window into `evidence/baseline/2026-10-16/`;
+  without it, a weekly report lands in `output/delivery/reports/<date>` and
+  compares against the newest earlier report, or the baseline. `-WhatIf`
+  writes nothing.
+- **Every figure says what it is.** `New-DeliveryReport`
+  (`backend/modules/delivery/Delivery.Report.ps1`) builds PRs initiated, passed
+  CI, merged, proposals rejected, operator seconds in total and per merged
+  improvement, agent runs, failed runs grouped by cause, and repositories
+  ready, each through `New-PortfolioMetric` with its window. A figure the
+  records cannot give reads "not measured" with the reason, never 0: no ledger
+  decision before the window ended, CI unreadable, readiness audited only after
+  the window.
+- **Unreadable CI is never a failure.** `Resolve-DeliveryCiConclusion` answers
+  `unavailable` when check runs cannot be read and the head has no commit
+  status, and passed CI counts only PRs whose CI was read.
+- **The baseline against the evaluation.** PRs initiated 11, merged 10 and
+  agent runs 80 match. Failed runs read 52 against 51. Passed CI reads 0 of 3:
+  the configured token lacks `checks:read`, so 8 of the 11 PRs could not be
+  read. The baseline is tracked (`.gitignore` exception) because it cannot be
+  regenerated from a clone.
+- Gate: `tests/Test-DeliveryReport.ps1` (106 assertions, offline, GitHub
+  injected), registered in `scripts/Invoke-TestSuite.ps1`.
+
 ## 2026-11-10 — Every decision carries its outcome, read from GitHub (loop step 7)
 
 The delivery ledger recorded accept and reject, and an outcome refresh could

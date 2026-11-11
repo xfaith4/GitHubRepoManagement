@@ -573,6 +573,11 @@ function Resolve-DeliveryCiConclusion {
         }
     }
     $basis = ('{0} check run(s), {1} commit status(es)' -f @($CheckRun | Where-Object { $null -ne $_ }).Count, $statusCount)
+    # Unreadable check runs plus no commit status is not "no CI": most CI
+    # reports through check runs, so nothing is known about the head.
+    if ($null -eq $CheckRun -and $statusCount -eq 0) {
+        return [pscustomobject]@{ conclusion = 'unavailable'; basis = 'check runs were not readable with the configured token and the head has no commit status' }
+    }
     if ($signals.Count -eq 0) { return [pscustomobject]@{ conclusion = 'none'; basis = "no CI reported on the head commit ($basis)" } }
     if ($signals -contains 'failure') { return [pscustomobject]@{ conclusion = 'failure'; basis = $basis } }
     if ($signals -contains 'pending') { return [pscustomobject]@{ conclusion = 'pending'; basis = $basis } }

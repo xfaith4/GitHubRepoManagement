@@ -70,44 +70,6 @@ flight.
       `heldSummary` for "N held (why)". Slice 2 is the board and the controls,
       and the dispatch route refusing when `ok` is false. _(state: built)_
       `check: pwsh ./tests/Test-DispatchEligibility.ps1 -FailOnError`
-- [ ] **A baseline now, then a weekly delivery report (loop step 8).** One
-      command writes the report from the ledgers and GitHub: PRs the product
-      initiated on other repositories, how many passed CI on their head, how
-      many merged, proposals rejected, operator minutes in total and per merged
-      improvement, agent-run failures by cause, and repositories ready for
-      automated work. Every figure carries its unit, basis, window and source
-      (`New-PortfolioMetric`); one the ledgers cannot compute reads "not
-      measured" with its reason, never 0. The first run reproduces the
-      2026-10-16 evaluation's figures as the baseline under
-      `evidence/baseline/<date>/`, and each weekly run says what moved since.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-DeliveryReport.ps1 -FailOnError`
-- [ ] **Only actionable roadmap lines become work (Lane 0.22; loop step 1).**
-      Before ranking, each candidate is classified `actionable | done-statement |
-      deferred | guidance | fragment`. Only `actionable` is ranked, queued or
-      offered for dispatch, and each repository shows "Excluded (n)" with the
-      reason for each line. A run that completes writes its item back as done,
-      and the same item hash cannot be dispatched again inside a cooldown unless
-      the operator overrides. _(state: planned)_
-      `check: pwsh ./tests/Test-WorkItemQuality.ps1 -FailOnError`
-- [ ] **A dispatched agent run ends in a pull request on another repository
-      (loop steps 3 to 5).** The push and PR-opening code exists (Release 3.8
-      H38-21 and H38-22, archived), but no agent run outside the smoke tests
-      has happened since 2026-09-01 and 45 of 80 real runner runs failed. The
-      local Claude runner pushes its branch and opens the pull request, or the
-      approve-push route does, and the run records the PR URL. A run whose
-      runner pid no longer matches the heartbeat is closed as abandoned, with
-      its reason, and is never left `running`. Done when a fixture run (stubbed
-      `gh`, local bare remote) reaches a recorded PR URL, and a fixture run
-      with a dead runner pid closes as abandoned. The 2026-10-18 runner repair
-      in `scripts/Invoke-RoadmapTaskRunner.ps1` handles readiness tasks with no
-      selected checkbox when committing; `tests/Test-DeliveryLoop.ps1` covers
-      objective and run-ID commit labels. Since #349 (2026-10-19) a run branch
-      starts at the freshly fetched PR base, not the clone's checkout, so its
-      PR carries only the agent's change; the same gate covers it. These
-      bounded repairs do not establish dispatch-to-PR or live recovery proof.
-      _(state: planned)_
-      `check: pwsh ./tests/Test-DispatchToPr.ps1 -FailOnError`
 - [ ] **At least ten repositories legitimately ready for automated work.** One
       of 62 is ready today, and an investigation into why is under way. The
       rule changes it leads to come from that evidence: each names the

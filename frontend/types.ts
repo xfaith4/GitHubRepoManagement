@@ -1305,6 +1305,17 @@ export interface RepoStructureFinding {
 
 export type PortfolioValueTier = 'highest' | 'high' | 'medium' | 'low' | 'deferred' | 'unscored';
 
+/** Lane 0.22: an open roadmap line the item-quality model kept out of ranking and dispatch. */
+export interface RoadmapExcludedItem {
+  text: string;
+  section: string;
+  tags: string[];
+  itemClass: 'done-statement' | 'deferred' | 'guidance' | 'fragment' | string;
+  ruleId: string;
+  reason: string;
+  itemHash: string;
+}
+
 export interface PortfolioPendingItemValue {
   text: string;
   section: string;
@@ -1357,6 +1368,9 @@ export interface PortfolioAssessmentEntry {
   nextPendingItemText: string;
   pendingItems: PortfolioPendingItemValue[];
   topValueItem: PortfolioPendingItemValue | null;
+  excludedItems?: RoadmapExcludedItem[];
+  excludedItemCount?: number;
+  itemQualityModelVersion?: string | null;
   maturityLevel: RoadmapMaturityLevel;
   maturityScore: number;
   dispatchReadiness: DispatchReadiness;

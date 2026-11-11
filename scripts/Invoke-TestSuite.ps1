@@ -384,8 +384,24 @@ Invoke-ScriptGate -Name 'Delivery loop' -ScriptPath (Join-Path $WorkspaceRoot 't
 # when outcomes were last read. Only the refresh writes an outcome.
 Invoke-ScriptGate -Name 'Delivery outcomes' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryOutcomes.ps1') -ScriptArgs @('-FailOnError') -In static
 
+# Loop step 8: the delivery report. Every figure carries unit, basis, window
+# and source; not measured is null with a reason, never 0; each report says
+# what moved since the last, and the baseline sits beside the evaluation.
+Invoke-ScriptGate -Name 'Delivery report' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryReport.ps1') -ScriptArgs @('-FailOnError')
+
+# Loop steps 3 to 5: a finished run, once approved, pushes its branch and
+# records the PR it opened (or the named reason it could not); a run whose
+# runner pid no longer matches the heartbeat and whose process is gone is
+# closed as abandoned with its reason instead of staying `running`.
+Invoke-ScriptGate -Name 'Dispatch to PR' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchToPr.ps1') -ScriptArgs @('-FailOnError')
+
 # Lane 0.22 - one server-side dispatch-eligibility rule.
 Invoke-ScriptGate -Name 'Dispatch eligibility' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchEligibility.ps1') -ScriptArgs @('-FailOnError') -In static
+
+# Lane 0.22, loop step 1 - only actionable roadmap lines are ranked, queued or
+# dispatched; each exclusion carries its reason; an item is not launched twice
+# inside the cooldown unless the operator overrides.
+Invoke-ScriptGate -Name 'Work item quality' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-WorkItemQuality.ps1') -ScriptArgs @('-FailOnError')
 
 # Release 4.1, 2026-10-19 - the session briefing and the handoff issue. The
 # briefing's parsers read this repository's own ROADMAP.md and operator queue,

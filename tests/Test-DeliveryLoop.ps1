@@ -492,7 +492,11 @@ try {
     $shipped = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName 'FreshStartFamily' -RepoPath ''
     Assert-That ([bool]$shipped.ok -and $shipped.base -eq 'staging') 'base: the shipped policy sends FreshStartFamily pull requests to staging'
     $hostSource = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'backend\api-host\Start-RepoManagementApiHost.ps1') -Raw
-    Assert-That (([regex]::Matches($hostSource, 'Resolve-RepoPullRequestBase -WorkspaceRoot')).Count -ge 2 -and ([regex]::Matches($hostSource, '-BaseBranch \(\[string\]\$\w+Base\.base\)')).Count -ge 2) 'base: both PR-opening paths (approve-push and the reconcile tick) resolve the base and pass it'
+    # The reconcile tick lives in the host; approve-push lives in
+    # Invoke-RunApprovePush (Roadmap.PrSubmitter.ps1), which the host route calls.
+    $approveFn = (Get-Command -Name Invoke-RunApprovePush -CommandType Function).Definition
+    $basePassed = { param($text) ([regex]::Matches($text, 'Resolve-RepoPullRequestBase -WorkspaceRoot')).Count -ge 1 -and ([regex]::Matches($text, '-BaseBranch \(\[string\]\$\w*[bB]ase\.base\)')).Count -ge 1 }
+    Assert-That ((& $basePassed $hostSource) -and (& $basePassed $approveFn) -and $hostSource -match 'Invoke-RunApprovePush -WorkspaceRoot') 'base: both PR-opening paths (approve-push and the reconcile tick) resolve the base and pass it'
 
     # -- 12b. A run branches from the fetched PR base, not the clone's HEAD (#349)
     # The clone is behind its remote AND sits on an unrelated branch with a

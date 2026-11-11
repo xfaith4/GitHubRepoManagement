@@ -42,7 +42,12 @@ param(
     # LOCAL repo. 'copilot': legacy GitHub Copilot cloud dispatch (needs a remote).
     [Parameter()]
     [ValidateSet('claude', 'codex', 'copilot', 'auto')]
-    [string]$DispatchMode = 'claude'
+    [string]$DispatchMode = 'claude',
+
+    # Lane 0.22: select and queue an item even if the runner launched it for
+    # this repository inside the cooldown (backend/config/roadmap-item-rules.json).
+    [Parameter()]
+    [switch]$OverrideCooldown
 )
 
 Set-StrictMode -Version Latest
@@ -67,6 +72,12 @@ try {
 } catch {
     Write-Warning ("Executor classification unavailable; selecting by roadmap order only: {0}" -f $_.Exception.Message)
 }
+
+# Lane 0.22 (loop step 1): the work-item quality model. Loaded strictly: if it
+# cannot load, selecting by order alone would hand an agent a done statement or
+# a standing rule, which is the failure it exists to stop.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\roadmap\Roadmap.ItemQuality.ps1')
+$script:ItemRuleConfig = Get-RoadmapItemRuleConfig -ConfigPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\config\roadmap-item-rules.json')
 
 function Initialize-HistoryStore {
     param(
@@ -280,7 +291,16 @@ function Get-GitHubRoadmapContent {
 function Get-NextRoadmapTask {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$RoadmapContent
+        [string]$RoadmapContent,
+        # Lane 0.22: items the runner launched for this repository inside the
+        # cooldown are passed over, so selection moves to the next item rather
+        # than queueing one the runner will refuse. Empty means no history.
+        [Parameter()]
+        [AllowEmptyString()]
+        [string]$RepoPath = '',
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [object[]]$DispatchRecords = @()
     )
 
     $priorityPatterns = @(
@@ -296,17 +316,16 @@ function Get-NextRoadmapTask {
         'technical debt'
     )
 
-    $skipHeadingPatterns = @(
-        'operational review process',
-        'definition of done',
-        '^weekly$',
-        '^monthly$',
-        '^on every feature merge$'
-    )
-
+    # Lane 0.22 (loop step 1): the hard-coded skip-heading list this function
+    # carried (operational review, definition of done, weekly, monthly, on every
+    # feature merge) is now rules in backend/config/roadmap-item-rules.json, and
+    # the same model the assessment ranks with decides here. Only actionable
+    # lines are candidates.
     $lines = $RoadmapContent -split "`r?`n"
     $currentHeading = ''
     $items = New-Object System.Collections.Generic.List[object]
+    $excludedCount = 0
+    $coolingCount = 0
 
     for ($index = 0; $index -lt $lines.Count; $index++) {
         $line = [string]$lines[$index]
@@ -323,16 +342,21 @@ function Get-NextRoadmapTask {
             }
 
             $normalizedHeading = $currentHeading.ToLowerInvariant()
-            $skip = $false
-            foreach ($pattern in $skipHeadingPatterns) {
-                if ($normalizedHeading -match $pattern) {
-                    $skip = $true
-                    break
-                }
-            }
-
-            if ($skip) {
+            $lineTags = @([regex]::Matches($taskText, '\[([a-zA-Z0-9_-]+)\]') | ForEach-Object { $_.Groups[1].Value.ToLowerInvariant() })
+            $lineText = ([regex]::Replace(([regex]::Replace($taskText, '\s*\[[a-zA-Z0-9_-]+\]', '')), '\s{2,}', ' ')).Trim()
+            $quality = Get-RoadmapItemClass -Text $lineText -Section $currentHeading -Tags $lineTags -Config $script:ItemRuleConfig
+            if ($quality.itemClass -ne 'actionable') {
+                Write-Verbose ("Excluded ({0}, {1}): {2}" -f $quality.itemClass, $quality.ruleId, $taskText)
+                $excludedCount++
                 continue
+            }
+            if (-not [string]::IsNullOrWhiteSpace($RepoPath) -and @($DispatchRecords).Count -gt 0) {
+                $cooling = Test-RoadmapItemCooldown -RepoPath $RepoPath -Text $taskText -Records $DispatchRecords -Config $script:ItemRuleConfig
+                if ($cooling.coolingDown) {
+                    Write-Verbose ("Cooling down until {0}: {1}" -f $cooling.untilUtc, $taskText)
+                    $coolingCount++
+                    continue
+                }
             }
 
             $priority = 999
@@ -369,7 +393,8 @@ function Get-NextRoadmapTask {
     }
 
     if ($items.Count -eq 0) {
-        throw "No unchecked roadmap tasks ('- [ ]') were found in eligible roadmap sections."
+        $coolingNote = if ($coolingCount -gt 0) { (" {0} actionable item(s) were dispatched to this repository inside the cooldown; pass -OverrideCooldown to dispatch one again now." -f $coolingCount) } else { '' }
+        throw ("No actionable unchecked roadmap tasks ('- [ ]') were found; {0} open line(s) were excluded as done statements, deferred work, guidance or fragments (backend/config/roadmap-item-rules.json).{1}" -f $excludedCount, $coolingNote)
     }
 
     $ordered = $items | Sort-Object -Property ExecutorRank, Priority, LineNumber
@@ -398,6 +423,7 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($RoadmapPath)) {
         $resolvedRoadmap = Get-LocalRoadmapContent -Path $RoadmapPath
     }
+    $roadmapIsLocal = $null -ne $resolvedRoadmap
 
     if ($null -eq $resolvedRoadmap) {
         $script:GhCommandPath = Resolve-GhCommandPath
@@ -416,7 +442,19 @@ try {
         $resolvedRoadmap = Get-GitHubRoadmapContent -Repo $Repository -CandidatePaths $candidatePaths
     }
 
-    $taskSelection = Get-NextRoadmapTask -RoadmapContent $resolvedRoadmap.Content
+    # Only a local roadmap names the clone the runner keys its history by; a
+    # roadmap read from GitHub has no local path to match, so it is not held.
+    $selectionRepoPath = ''
+    $selectionRecords = @()
+    if (-not $OverrideCooldown -and $roadmapIsLocal) {
+        $selectionRepoPath = Split-Path -Parent $resolvedRoadmap.Path
+        # The function returns `, $records.ToArray()`; wrapping the call in @()
+        # nests that array, so every record would read as one array (and an
+        # empty history as one empty array that strict mode throws on).
+        $fetchedRecords = Get-RoadmapItemDispatchRecord -RunsDir $historyStore.RunsPath
+        if ($null -ne $fetchedRecords) { $selectionRecords = $fetchedRecords }
+    }
+    $taskSelection = Get-NextRoadmapTask -RoadmapContent $resolvedRoadmap.Content -RepoPath $selectionRepoPath -DispatchRecords $selectionRecords
 
     $nextTask = $taskSelection.Next
     $additionalTasks = $taskSelection.Additional
@@ -554,7 +592,7 @@ try {
         & $queueScript -WorkspaceRoot (Split-Path -Parent $PSScriptRoot) -RunId $historyStore.RunId `
             -Repository $Repository -LocalRepoPath $localRepoPath -RoadmapPath $resolvedRoadmap.Path `
             -SelectedTask $nextTask.TaskText -TaskDescription ($taskDescription -join "`n") -Branch $branch `
-            -QueuePath $QueuePath
+            -QueuePath $QueuePath -OverrideCooldown:$OverrideCooldown
         $summary = [ordered]@{
             runId             = $historyStore.RunId
             status            = 'queued'

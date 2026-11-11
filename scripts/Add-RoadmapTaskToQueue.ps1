@@ -30,6 +30,10 @@ param(
     [ValidateSet('claude', 'codex', 'copilot', 'auto')]
     [string]$DispatchTarget = 'claude',
     [string]$BaseBranch,
+    # Lane 0.22: launch this item even if it was dispatched to this repository
+    # inside the cooldown (backend/config/roadmap-item-rules.json). The runner
+    # records the override on the run summary.
+    [switch]$OverrideCooldown,
     [switch]$LoadFunctionsOnly
 )
 
@@ -66,6 +70,8 @@ if ($DispatchTarget -eq 'copilot' -and [string]::IsNullOrWhiteSpace($Repository)
 $entry = New-RoadmapQueueEntry -RunId $RunId -Repository $Repository -LocalRepoPath $LocalRepoPath `
     -RoadmapPath $RoadmapPath -SelectedTask $SelectedTask -TaskDescription $TaskDescription `
     -Branch $Branch -QueuedAt ((Get-Date).ToString('o')) -DispatchTarget $DispatchTarget -BaseBranch $BaseBranch
+# Added only when asked for, so every other entry keeps the canonical key set.
+if ($OverrideCooldown) { $entry['overrideCooldown'] = $true }
 
 $effectiveQueuePath = $QueuePath
 if ([string]::IsNullOrWhiteSpace($effectiveQueuePath)) {

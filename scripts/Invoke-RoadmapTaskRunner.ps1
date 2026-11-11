@@ -159,6 +159,11 @@ if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = Split-Path 
 # #349: a run branches from the base its pull request will target, and that
 # base has one resolver, shared with approve-push and the reconcile tick.
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\roadmap\Roadmap.PrSubmitter.ps1')
+# Lane 0.22 (loop step 1): the item cooldown. Every dispatch path ends here, so
+# this is the one place the same roadmap item cannot be launched twice inside
+# the window, whichever surface queued it.
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\modules\roadmap\Roadmap.ItemQuality.ps1')
+$script:ItemRuleConfig = Get-RoadmapItemRuleConfig -ConfigPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'backend\config\roadmap-item-rules.json')
 if ([string]::IsNullOrWhiteSpace($QueuePath)) { $QueuePath = Get-RoadmapQueuePath -WorkspaceRoot $WorkspaceRoot }
 if ([string]::IsNullOrWhiteSpace($StopFilePath)) {
     # Resolved through REPO_MGMT_RUNNER_CONTROL_ROOT like the portal's writer, so a
@@ -1646,6 +1651,42 @@ function Invoke-QueuedCopilotTask {
     }
 }
 
+function Resolve-QueuedTaskItemCooldown {
+    <#
+    .SYNOPSIS
+        Lane 0.22 - may this queue entry's roadmap item be launched now?
+    .DESCRIPTION
+        { refuse, overridden, exempt, verdict }. An entry with no selectedTask
+        is not a roadmap item and is never held. A remediation re-runs its item
+        on purpose under its own attempt cap, so it is exempt. An entry queued
+        with overrideCooldown = true is launched and the override is reported.
+    #>
+    param(
+        [Parameter(Mandatory)][object]$Entry,
+        [Parameter(Mandatory)][string]$RunId,
+        [object]$WorkPacket,
+        [string]$RunsDirectory = $runsDir,
+        [object]$Config = $script:ItemRuleConfig,
+        [datetime]$NowUtc = [datetime]::UtcNow
+    )
+    $names = @($Entry.PSObject.Properties.Name)
+    $text = if ($names -contains 'selectedTask') { [string]$Entry.selectedTask } else { '' }
+    $repoPath = if ($names -contains 'localRepoPath') { [string]$Entry.localRepoPath } else { '' }
+    $override = ($names -contains 'overrideCooldown') -and ($Entry.overrideCooldown -eq $true)
+    $isRemediation = ($null -ne $WorkPacket) -and (Get-Command -Name 'Test-WorkPacketIsRemediation' -ErrorAction SilentlyContinue) -and (Test-WorkPacketIsRemediation -Packet $WorkPacket)
+    $result = [ordered]@{ refuse = $false; overridden = $false; exempt = $false; verdict = $null }
+    if ([string]::IsNullOrWhiteSpace($text) -or [string]::IsNullOrWhiteSpace($repoPath) -or $null -eq $Config) { return [pscustomobject]$result }
+    if ($isRemediation) { $result.exempt = $true; return [pscustomobject]$result }
+
+    $records = Get-RoadmapItemDispatchRecord -RunsDir $RunsDirectory
+    $verdict = Test-RoadmapItemCooldown -RepoPath $repoPath -Text $text -Records $records -Config $Config -NowUtc $NowUtc -ExcludeRunId $RunId
+    $result.verdict = $verdict
+    if ($verdict.coolingDown) {
+        if ($override) { $result.overridden = $true } else { $result.refuse = $true }
+    }
+    return [pscustomobject]$result
+}
+
 function Invoke-QueuedTask {
     param([object]$Entry)
     $runId = [string]$Entry.runId
@@ -1684,6 +1725,33 @@ function Invoke-QueuedTask {
     }
 
     Write-Host ("`n[task] runId={0} repo={1} target={2}" -f $runId, $repo, $dispatchTarget) -ForegroundColor Cyan
+
+    # Lane 0.22 (loop step 1) - the same roadmap item is not launched twice
+    # inside the cooldown. Refused before the claim, so the entry is never
+    # marked running and no provider capacity is spent on it.
+    $itemCooldown = Resolve-QueuedTaskItemCooldown -Entry $Entry -RunId $runId -WorkPacket $runWorkPacket
+    if ($itemCooldown.refuse) {
+        $msg = ("Refusing to start the run: {0}" -f $itemCooldown.verdict.reason)
+        Write-Host ("  [task] runId={0} refused (item-cooldown): {1}" -f $runId, $msg) -ForegroundColor DarkYellow
+        if (-not $DryRun) {
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                status = 'refused'; refusalCategory = 'item-cooldown'; error = $msg
+                itemHash = $itemCooldown.verdict.itemHash; cooldownUntil = $itemCooldown.verdict.untilUtc
+                cooldownPriorRunId = $itemCooldown.verdict.lastRunId
+                runnerCompletedAt = (Get-Date).ToString('o')
+            }
+        }
+        return
+    }
+    if ($itemCooldown.overridden) {
+        Write-Host ("  [task] item cooldown overridden by the operator (prior run {0})" -f $itemCooldown.verdict.lastRunId) -ForegroundColor DarkYellow
+        if (-not $DryRun) {
+            Update-TaskSummary -SummaryPath $summaryPath -Set @{
+                cooldownOverride = $true; itemHash = $itemCooldown.verdict.itemHash
+                cooldownPriorRunId = $itemCooldown.verdict.lastRunId
+            }
+        }
+    }
 
     # H38-29/H38-30 -- a remediation decides its own provider, and the cap is
     # evaluated before anything that could spend capacity.
