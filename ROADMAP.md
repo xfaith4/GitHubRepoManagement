@@ -76,8 +76,11 @@ flight.
       before any PR existed. Outcomes are read from GitHub, never typed in. A
       decision with no outcome yet says so; it does not count as a failure.
       From the ledger alone, total operator minutes per merged improvement is
-      one computation over all decisions, rejected ones included.
-      _(state: planned)_
+      one computation over all decisions, rejected ones included. Built
+      2026-11-10 on `feat/delivery-outcomes`: the decision records the PR head
+      GitHub returned, outcomes name their head and source, the summary carries
+      one outcome per decision and when GitHub was last read; gate 45 passed.
+      _(state: built)_
       `check: pwsh ./tests/Test-DeliveryOutcomes.ps1 -FailOnError`
 - [ ] **A baseline now, then a weekly delivery report (loop step 8).** One
       command writes the report from the ledgers and GitHub: PRs the product
