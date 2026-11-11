@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-10-20
+**Last updated:** 2026-11-10
 
 **Where the product stands (evaluation of 2026-10-16, checked against live
 data).** About eight merged PRs on other repositories, ever, almost all of them
@@ -449,23 +449,6 @@ lanes are in [the archive](docs/history/completed-releases.md).
       in the run summary, is OQ-6 and closes the Release 3.0 residual.
       _(state: built)_
       `check: pwsh ./scripts/Invoke-ModuleSmokeTest.ps1`
-- [ ] **D-012, the rest: cloud runs, proposed workflows and the network
-      allowlist.** A Copilot cloud task pushes from GitHub, so the runner's
-      check never sees its branch; the host applies the same check before it
-      records that PR as the product's. An agent that needs CI changed names
-      its `.github/workflows-proposed/` file as waiting in its result. A packet
-      that needs the network declares an allowlist the owner approves;
-      `network false` is never loosened silently. Why next: the first
-      dispatched runs that push to other repositories make this real, and
-      until it binds for cloud runs the PR review is their only guard. Built
-      2026-11-10: `Invoke-AgentRunRefresh` fails a cloud PR that touches a
-      forbidden path (`envelope-violation`, merged or not) and records none as
-      delivered until its files were read; `proposedWorkflows` rides the runner
-      summary and the run record; network needs an allowlist approved with
-      `tools/Approve-WorkPacketNetwork.ps1`. [non-blocker] an Approve button
-      in the portal.
-      _(state: built)_
-      `check: pwsh ./tests/Test-EnvelopeCloudAndNetwork.ps1 -FailOnError`
 - [ ] **The L0 road: a repository with no roadmap gets a first plan.** About
       49 scanned repositories sit at L0 with no roadmap file, "missing roadmap
       files" is a cause of failed runner runs, and one of 62 repositories is
