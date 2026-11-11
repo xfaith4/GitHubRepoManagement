@@ -1,0 +1,481 @@
+{
+  "schemaVersion": "1",
+  "kind": "delivery-report",
+  "generatedAt": "2026-11-11T06:05:43.6488890Z",
+  "window": {
+    "start": null,
+    "end": "2026-10-17T00:00:00.0000000Z",
+    "text": "records through 2026-10-16"
+  },
+  "figures": {
+    "prsInitiated": {
+      "id": "delivery.report.prsInitiated",
+      "value": 11,
+      "unit": "count",
+      "basis": null,
+      "asOf": "2026-11-11T06:05:43.6488890Z",
+      "source": "github (PRs named by the delivery ledger, run summaries and runner branches)",
+      "coverage": null,
+      "confidence": "full",
+      "definition": "Pull requests opened in the window (records through 2026-10-16) on other repositories that a product record names.",
+      "reason": null,
+      "window": {
+        "start": null,
+        "end": "2026-10-17T00:00:00.0000000Z"
+      }
+    },
+    "prsPassedCi": {
+      "id": "delivery.report.prsPassedCi",
+      "value": 0,
+      "unit": "count",
+      "basis": {
+        "numerator": 0,
+        "denominator": 3
+      },
+      "asOf": "2026-11-11T06:05:43.6488890Z",
+      "source": "github (PRs named by the delivery ledger, run summaries and runner branches)",
+      "coverage": {
+        "assessed": 3,
+        "total": 11
+      },
+      "confidence": "partial",
+      "definition": "Initiated PRs whose current head commit passed CI (check runs and commit statuses), out of those whose CI could be read; coverage counts them against every initiated PR. A PR whose CI was unreadable is never counted as failed.",
+      "reason": null,
+      "window": {
+        "start": null,
+        "end": "2026-10-17T00:00:00.0000000Z"
+      }
+    },
+    "prsMerged": {
+      "id": "delivery.report.prsMerged",
+      "value": 10,
+      "unit": "count",
+      "basis": null,
+      "asOf": "2026-11-11T06:05:43.6488890Z",
+      "source": "github (PRs named by the delivery ledger, run summaries and runner branches)",
+      "coverage": null,
+      "confidence": "full",
+      "definition": "Product-initiated PRs on other repositories that merged in the window (records through 2026-10-16).",
+      "reason": null,
+      "window": {
+        "start": null,
+        "end": "2026-10-17T00:00:00.0000000Z"
+      }
+    },
+    "proposalsRejected": {
+      "id": "delivery.report.proposalsRejected",
+      "value": null,
+      "unit": "count",
+      "basis": null,
+      "asOf": "2026-11-11T06:05:43.6488890Z",
+      "source": null,
+      "coverage": null,
+      "confidence": "none",
+      "definition": "Proposals the operator rejected, each with a reason.",
+      "reason": "The delivery ledger held no decision by the window end: accepts and rejects were not recorded.",
+      "window": {
+        "start": null,
+        "end": "2026-10-17T00:00:00.0000000Z"
+      }
+    },
+    "operatorSeconds": {
+      "id": "delivery.operatorSeconds",
+      "value": null,
+      "unit": "seconds",
+      "basis": null,
+      "asOf": "2026-11-11T06:05:43.6488890Z",
+      "source": null,
+      "coverage": null,
+      "confidence": "none",
+      "definition": "Operator seconds across every decision and reported outcome review.",
+      "reason": "The delivery ledger held no decision by the window end: operator time was not recorded.",
+      "window": {
+        "start": null,
+        "end": "2026-10-17T00:00:00.0000000Z"
+      }
+    },
+    "operatorSecondsPerMergedImprovement": {
+      "id": "delivery.operatorSecondsPerMergedImprovement",
+      "value": null,
+      "unit": "seconds",
+      "basis": null,
+      "asOf": "2026-11-11T06:05:43.6488890Z",
+      "source": null,
+      "coverage": null,
+      "confidence": "none",
+      "definition": "Total operator seconds divided by merged improvements.",
+      "reason": "The delivery ledger held no decision by the window end: operator time was not recorded.",
+      "window": {
+        "start": null,
+        "end": "2026-10-17T00:00:00.0000000Z"
+      }
+    },
+    "agentRuns": {
+      "id": "delivery.report.agentRuns",
+      "value": 80,
+      "unit": "count",
+      "basis": null,
+      "asOf": "2026-11-11T06:05:43.6488890Z",
+      "source": "runner run summaries (output\\roadmap-task-history\\runs)",
+      "coverage": null,
+      "confidence": "full",
+      "definition": "Runner runs in the window on real repositories (smoke fixtures excluded), every status.",
+      "reason": null,
+      "window": {
+        "start": null,
+        "end": "2026-10-17T00:00:00.0000000Z"
+      }
+    },
+    "agentRunsFailed": {
+      "id": "delivery.report.agentRunsFailed",
+      "value": 52,
+      "unit": "count",
+      "basis": {
+        "numerator": 52,
+        "denominator": 80
+      },
+      "asOf": "2026-11-11T06:05:43.6488890Z",
+      "source": "runner run summaries (output\\roadmap-task-history\\runs)",
+      "coverage": null,
+      "confidence": "full",
+      "definition": "Runner runs in the window that failed, were blocked by a gate, or were refused (cancelled runs are not counted); failureCauses names why.",
+      "reason": null,
+      "window": {
+        "start": null,
+        "end": "2026-10-17T00:00:00.0000000Z"
+      }
+    },
+    "reposReady": {
+      "id": "delivery.report.reposReady",
+      "value": null,
+      "unit": "count",
+      "basis": null,
+      "asOf": "2026-11-11T06:05:43.6488890Z",
+      "source": null,
+      "coverage": null,
+      "confidence": "none",
+      "definition": "Audited repositories whose dispatch readiness is ready: eligible to receive agent work.",
+      "reason": "The docs audit cache keeps only its latest audit (2026-11-01), which is after the window ends; readiness at the window end was not recorded.",
+      "window": {
+        "start": null,
+        "end": "2026-10-17T00:00:00.0000000Z"
+      }
+    }
+  },
+  "failureCauses": [
+    {
+      "cause": "missing-roadmap",
+      "count": 17,
+      "exampleRunId": "20260323-012705-d8de03fc",
+      "example": "No roadmap markdown file found in repository 'xfaith4/gemini-cli'. Tried: ROADMAP.md, Roadmap.md, docs/planning/roadmap.md, docs/ROADMAP.md, roadmap.md"
+    },
+    {
+      "cause": "copilot-task-create",
+      "count": 13,
+      "exampleRunId": "20260529-070323-58f47058",
+      "example": "gh agent-task create failed with exit code 1"
+    },
+    {
+      "cause": "runner-pid-mismatch",
+      "count": 7,
+      "exampleRunId": "20260901-055444-53285e6c",
+      "example": "runner pid none is not this runner (16440); run abandoned at 2026-09-07T14:29:54Z"
+    },
+    {
+      "cause": "other",
+      "count": 6,
+      "exampleRunId": "20260815-050740-5e127a98",
+      "example": "This session carries a GitHub token in the environment, and gh ignores its stored OAuth credential whenever one is set. agent-task needs OAuth, so clear GH_TOKE"
+    },
+    {
+      "cause": "github-token",
+      "count": 4,
+      "exampleRunId": "20260712-035842-05da82e5",
+      "example": "GitHub token not found. Set either GitHub_Token or GITHUB_TOKEN in your environment."
+    },
+    {
+      "cause": "no-actionable-item",
+      "count": 4,
+      "exampleRunId": "20260801-020414-6a6dabea",
+      "example": "No unchecked roadmap tasks ('- [ ]') were found in eligible roadmap sections."
+    },
+    {
+      "cause": "gh-cli-missing",
+      "count": 1,
+      "exampleRunId": "20260320-063348-be0a5123",
+      "example": "GitHub CLI 'gh' was not found. Install GitHub CLI or set GH_CLI_PATH to gh.exe."
+    }
+  ],
+  "pullRequests": [
+    {
+      "url": "https://github.com/xfaith4/INcendiary/pull/7",
+      "repository": "xfaith4/INcendiary",
+      "sources": [
+        "runner-run"
+      ],
+      "createdAt": "2026-08-19T02:25:07.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-08-20T18:17:41.0000000Z",
+      "headSha": "44c9cb5bcf7c33282bd06240a3d0b91c2821e781",
+      "ciConclusion": "unavailable",
+      "ciBasis": "check runs were not readable with the configured token and the head has no commit status"
+    },
+    {
+      "url": "https://github.com/xfaith4/ben-fuhr-portfolio/pull/4",
+      "repository": "xfaith4/ben-fuhr-portfolio",
+      "sources": [
+        "runner-agent-task"
+      ],
+      "createdAt": "2026-08-29T18:37:22.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-09-05T22:59:06.0000000Z",
+      "headSha": "ffb91ee54acaeb3159e575a6630860c9eeec72c6",
+      "ciConclusion": "unavailable",
+      "ciBasis": "check runs were not readable with the configured token and the head has no commit status"
+    },
+    {
+      "url": "https://github.com/xfaith4/CupHandleDetectionv2/pull/3",
+      "repository": "xfaith4/CupHandleDetectionv2",
+      "sources": [
+        "runner-agent-task"
+      ],
+      "createdAt": "2026-08-31T04:37:19.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-09-04T03:22:26.0000000Z",
+      "headSha": "13a5007dac70192f2165585216ae8e87abf591b2",
+      "ciConclusion": "unavailable",
+      "ciBasis": "check runs were not readable with the configured token and the head has no commit status"
+    },
+    {
+      "url": "https://github.com/xfaith4/prompt-library-starter-pack/pull/1",
+      "repository": "xfaith4/prompt-library-starter-pack",
+      "sources": [
+        "runner-agent-task"
+      ],
+      "createdAt": "2026-08-31T05:23:45.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-09-04T06:01:03.0000000Z",
+      "headSha": "20cc0a12a1e7ff5bd56d37332536d404d2764911",
+      "ciConclusion": "none",
+      "ciBasis": "no CI reported on the head commit (0 check run(s), 0 commit status(es))"
+    },
+    {
+      "url": "https://github.com/xfaith4/SystemDashboard/pull/127",
+      "repository": "xfaith4/SystemDashboard",
+      "sources": [
+        "runner-agent-task"
+      ],
+      "createdAt": "2026-09-03T04:54:46.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-11-07T02:55:44.0000000Z",
+      "headSha": "c22c36597705aff7e549c0c5f6b1c870aee30c2b",
+      "ciConclusion": "unavailable",
+      "ciBasis": "check runs were not readable with the configured token and the head has no commit status"
+    },
+    {
+      "url": "https://github.com/xfaith4/RoadmapOrchestrator/pull/1",
+      "repository": "xfaith4/RoadmapOrchestrator",
+      "sources": [
+        "runner-agent-task"
+      ],
+      "createdAt": "2026-09-04T11:52:44.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-09-04T23:55:39.0000000Z",
+      "headSha": "9b0dca19597c4e2153a525c870263ddf0b224537",
+      "ciConclusion": "unavailable",
+      "ciBasis": "check runs were not readable with the configured token and the head has no commit status"
+    },
+    {
+      "url": "https://github.com/xfaith4/NetworkTracker/pull/4",
+      "repository": "xfaith4/NetworkTracker",
+      "sources": [
+        "runner-agent-task"
+      ],
+      "createdAt": "2026-09-07T02:45:36.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-09-07T02:48:17.0000000Z",
+      "headSha": "0465c3b033db73b32b99afd3a7d86e1f0b260c1c",
+      "ciConclusion": "unavailable",
+      "ciBasis": "check runs were not readable with the configured token and the head has no commit status"
+    },
+    {
+      "url": "https://github.com/xfaith4/PhotoToolboxv2/pull/51",
+      "repository": "xfaith4/PhotoToolboxv2",
+      "sources": [
+        "runner-agent-task"
+      ],
+      "createdAt": "2026-09-07T12:26:26.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-09-14T02:45:07.0000000Z",
+      "headSha": "c228a12a32c54cc10262f211418c678d3414d9d8",
+      "ciConclusion": "unavailable",
+      "ciBasis": "check runs were not readable with the configured token and the head has no commit status"
+    },
+    {
+      "url": "https://github.com/xfaith4/FowlingScorecard/pull/18",
+      "repository": "xfaith4/FowlingScorecard",
+      "sources": [
+        "runner-agent-task"
+      ],
+      "createdAt": "2026-09-07T14:32:49.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-09-15T00:12:56.0000000Z",
+      "headSha": "5a57ad8407d1a1f7f76c04fe40d9b15c024e831c",
+      "ciConclusion": "unavailable",
+      "ciBasis": "check runs were not readable with the configured token and the head has no commit status"
+    },
+    {
+      "url": "https://github.com/xfaith4/Genesys.Core/pull/67",
+      "repository": "xfaith4/Genesys.Core",
+      "sources": [
+        "runner-branch"
+      ],
+      "createdAt": "2026-09-06T06:27:47.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-09-06T07:19:09.0000000Z",
+      "headSha": "3fe79639a5a539c6039883bb65d0a7672408a517",
+      "ciConclusion": "failure",
+      "ciBasis": "8 check run(s), 0 commit status(es)"
+    },
+    {
+      "url": "https://github.com/xfaith4/Genesys.Core/pull/62",
+      "repository": "xfaith4/Genesys.Core",
+      "sources": [
+        "runner-branch"
+      ],
+      "createdAt": "2026-09-05T16:08:30.0000000Z",
+      "state": "merged",
+      "mergedAt": "2026-09-06T06:19:08.0000000Z",
+      "headSha": "117f7a4f40fd3764e71837ea946caea3e8ad4b7d",
+      "ciConclusion": "failure",
+      "ciBasis": "7 check run(s), 0 commit status(es)"
+    }
+  ],
+  "readErrors": [
+    {
+      "target": "xfaith4/administatortools#roadmap/20260808-160411-e22a2f35",
+      "error": "gh api /repos/xfaith4/administatortools/pulls?state=all&head=xfaith4:roadmap%2F20260808-160411-e22a2f35: gh: Not Found (HTTP 404)"
+    },
+    {
+      "target": "xfaith4/administatortools#roadmap/20260808-160711-838aec7e",
+      "error": "gh api /repos/xfaith4/administatortools/pulls?state=all&head=xfaith4:roadmap%2F20260808-160711-838aec7e: gh: Not Found (HTTP 404)"
+    },
+    {
+      "target": "xfaith4/administatortools#roadmap/20260906-152241-29e177b8",
+      "error": "gh api /repos/xfaith4/administatortools/pulls?state=all&head=xfaith4:roadmap%2F20260906-152241-29e177b8: gh: Not Found (HTTP 404)"
+    }
+  ],
+  "previous": null,
+  "changes": {
+    "prsInitiated": {
+      "previous": null,
+      "current": 11,
+      "delta": null,
+      "reason": "No earlier report to compare with."
+    },
+    "prsPassedCi": {
+      "previous": null,
+      "current": 0,
+      "delta": null,
+      "reason": "No earlier report to compare with."
+    },
+    "prsMerged": {
+      "previous": null,
+      "current": 10,
+      "delta": null,
+      "reason": "No earlier report to compare with."
+    },
+    "proposalsRejected": {
+      "previous": null,
+      "current": null,
+      "delta": null,
+      "reason": "No earlier report to compare with."
+    },
+    "operatorSeconds": {
+      "previous": null,
+      "current": null,
+      "delta": null,
+      "reason": "No earlier report to compare with."
+    },
+    "operatorSecondsPerMergedImprovement": {
+      "previous": null,
+      "current": null,
+      "delta": null,
+      "reason": "No earlier report to compare with."
+    },
+    "agentRuns": {
+      "previous": null,
+      "current": 80,
+      "delta": null,
+      "reason": "No earlier report to compare with."
+    },
+    "agentRunsFailed": {
+      "previous": null,
+      "current": 52,
+      "delta": null,
+      "reason": "No earlier report to compare with."
+    },
+    "reposReady": {
+      "previous": null,
+      "current": null,
+      "delta": null,
+      "reason": "No earlier report to compare with."
+    }
+  },
+  "baselineComparison": [
+    {
+      "figure": "prsInitiated",
+      "evaluation": "11",
+      "report": "11",
+      "note": "Matches: verified product-originated PRs created 2026-03-01 to 2026-10-16 (trial README)."
+    },
+    {
+      "figure": "prsMerged",
+      "evaluation": "10",
+      "report": "10",
+      "note": "Matches: of those merged (trial README; ROADMAP.md said \"about eight\")."
+    },
+    {
+      "figure": "prsPassedCi",
+      "evaluation": "not stated",
+      "report": "0 of 3",
+      "note": "Differs from the evaluation (four merged with failing checks and one was open with failing checks (trial README)): Initiated PRs whose current head commit passed CI (check runs and commit statuses), out of those whose CI could be read; coverage counts them against every initiated PR. A PR whose CI was unreadable is never counted as failed."
+    },
+    {
+      "figure": "agentRuns",
+      "evaluation": "80",
+      "report": "80",
+      "note": "Matches: non-smoke runner runs."
+    },
+    {
+      "figure": "agentRunsFailed",
+      "evaluation": "51",
+      "report": "52 of 80",
+      "note": "Differs from the evaluation (failed, blocked or refused (trial README; ROADMAP.md said 45 failed)): Runner runs in the window that failed, were blocked by a gate, or were refused (cancelled runs are not counted); failureCauses names why."
+    },
+    {
+      "figure": "proposalsRejected",
+      "evaluation": "not recorded",
+      "report": "not measured",
+      "note": "The delivery ledger held no decision by the window end: accepts and rejects were not recorded. Evaluation: no decision ledger existed."
+    },
+    {
+      "figure": "operatorSeconds",
+      "evaluation": "not recorded",
+      "report": "not measured",
+      "note": "The delivery ledger held no decision by the window end: operator time was not recorded. Evaluation: operator minutes never recorded."
+    },
+    {
+      "figure": "operatorSecondsPerMergedImprovement",
+      "evaluation": "not recorded",
+      "report": "not measured",
+      "note": "The delivery ledger held no decision by the window end: operator time was not recorded. Evaluation: operator minutes never recorded."
+    },
+    {
+      "figure": "reposReady",
+      "evaluation": "1 of 62",
+      "report": "not measured",
+      "note": "The docs audit cache keeps only its latest audit (2026-11-01), which is after the window ends; readiness at the window end was not recorded. Evaluation: PhotoToolboxv2 (trial README)."
+    }
+  ]
+}

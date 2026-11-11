@@ -80,7 +80,14 @@ flight.
       measured" with its reason, never 0. The first run reproduces the
       2026-10-16 evaluation's figures as the baseline under
       `evidence/baseline/<date>/`, and each weekly run says what moved since.
-      _(state: planned)_
+      Built on `feat/delivery-report`: `tools/New-DeliveryReport.ps1`
+      (`-Baseline` once, then weekly into `output/delivery/reports/`) over
+      `Delivery.Report.ps1`. The baseline in `evidence/baseline/2026-10-16/`
+      matches the evaluation on PRs initiated (11), merged (10) and agent runs
+      (80); it reads 52 failed runs against the evaluation's 51; passed CI
+      reads 0 of 3, because CI was readable on only 3 of the 11 PRs (the token
+      lacks `checks:read`); rejects, operator time and readiness at the window
+      end read "not measured", each with its reason. _(state: built)_
       `check: pwsh ./tests/Test-DeliveryReport.ps1 -FailOnError`
 - [ ] **Only actionable roadmap lines become work (Lane 0.22; loop step 1).**
       Before ranking, each candidate is classified `actionable | done-statement |

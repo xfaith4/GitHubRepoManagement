@@ -71,6 +71,13 @@ backend/modules/output/**
 # spill, which is the line this file already draws one comment above.
 !/evidence/trials/**
 
+# The delivery baseline (loop step 8) is not regenerable either: it reads the
+# runner's machine-local run summaries and GitHub state that drifts (CI on a
+# head, a PR merged later), and every weekly report measures movement against
+# it. Track only that report; other baseline spill stays ignored.
+!/evidence/baseline/*/delivery-report.json
+!/evidence/baseline/*/delivery-report.md
+
 # Agent worklogs at the repository root. The 2026-07-15 cleanup archived these
 # to docs/history/worklogs/ and they re-accrued within three weeks, so the
 # convention is enforced rather than restated: keep worklogs under

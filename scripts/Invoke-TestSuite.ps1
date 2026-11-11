@@ -361,6 +361,11 @@ Invoke-ScriptGate -Name 'Delivery loop' -ScriptPath (Join-Path $WorkspaceRoot 't
 # when outcomes were last read. Only the refresh writes an outcome.
 Invoke-ScriptGate -Name 'Delivery outcomes' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryOutcomes.ps1') -ScriptArgs @('-FailOnError')
 
+# Loop step 8: the delivery report. Every figure carries unit, basis, window
+# and source; not measured is null with a reason, never 0; each report says
+# what moved since the last, and the baseline sits beside the evaluation.
+Invoke-ScriptGate -Name 'Delivery report' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryReport.ps1') -ScriptArgs @('-FailOnError')
+
 # Lane 0.22 - one server-side dispatch-eligibility rule.
 Invoke-ScriptGate -Name 'Dispatch eligibility' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchEligibility.ps1') -ScriptArgs @('-FailOnError')
 

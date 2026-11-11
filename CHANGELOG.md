@@ -2,6 +2,37 @@
 
 All notable changes to this project are documented here.
 
+## 2026-11-11 — A delivery baseline, then a weekly report (loop step 8)
+
+The 2026-10-16 evaluation counted PRs, merges and failed runs by hand, and
+nothing could say next week what had moved since.
+
+- **One command writes the report.** `tools/New-DeliveryReport.ps1` reads the
+  delivery ledger, the runner's run summaries, the docs audit cache and GitHub
+  (`gh api` by default, or `-Token`), and writes JSON and Markdown. `-Baseline`
+  recomputes the evaluation's window into `evidence/baseline/2026-10-16/`;
+  without it, a weekly report lands in `output/delivery/reports/<date>` and
+  compares against the newest earlier report, or the baseline. `-WhatIf`
+  writes nothing.
+- **Every figure says what it is.** `New-DeliveryReport`
+  (`backend/modules/delivery/Delivery.Report.ps1`) builds PRs initiated, passed
+  CI, merged, proposals rejected, operator seconds in total and per merged
+  improvement, agent runs, failed runs grouped by cause, and repositories
+  ready, each through `New-PortfolioMetric` with its window. A figure the
+  records cannot give reads "not measured" with the reason, never 0: no ledger
+  decision before the window ended, CI unreadable, readiness audited only after
+  the window.
+- **Unreadable CI is never a failure.** `Resolve-DeliveryCiConclusion` answers
+  `unavailable` when check runs cannot be read and the head has no commit
+  status, and passed CI counts only PRs whose CI was read.
+- **The baseline against the evaluation.** PRs initiated 11, merged 10 and
+  agent runs 80 match. Failed runs read 52 against 51. Passed CI reads 0 of 3:
+  the configured token lacks `checks:read`, so 8 of the 11 PRs could not be
+  read. The baseline is tracked (`.gitignore` exception) because it cannot be
+  regenerated from a clone.
+- Gate: `tests/Test-DeliveryReport.ps1` (106 assertions, offline, GitHub
+  injected), registered in `scripts/Invoke-TestSuite.ps1`.
+
 ## 2026-11-10 — Every decision carries its outcome, read from GitHub (loop step 7)
 
 The delivery ledger recorded accept and reject, and an outcome refresh could
