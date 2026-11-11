@@ -43,6 +43,8 @@ backend/modules/output/**
 # nested .git directories, so `git add -A` errors out ("does not have a commit
 # checked out") or, worse, stages a fixture repo. Re-ignore them outright.
 /output/smoke/
+# Runner agent workspaces are clones of other repositories (nested .git), same trap.
+/output/agent-workspaces/
 
 # Generated evidence
 /evidence/**
@@ -96,3 +98,6 @@ backend/modules/output/**
 .env
 .env.*
 !.env.example
+
+# Machine-local Claude session state
+.claude/state/
