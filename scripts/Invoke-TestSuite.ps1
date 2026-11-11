@@ -369,6 +369,11 @@ Invoke-ScriptGate -Name 'Delivery report' -ScriptPath (Join-Path $WorkspaceRoot 
 # Lane 0.22 - one server-side dispatch-eligibility rule.
 Invoke-ScriptGate -Name 'Dispatch eligibility' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchEligibility.ps1') -ScriptArgs @('-FailOnError')
 
+# Lane 0.22, loop step 1 - only actionable roadmap lines are ranked, queued or
+# dispatched; each exclusion carries its reason; an item is not launched twice
+# inside the cooldown unless the operator overrides.
+Invoke-ScriptGate -Name 'Work item quality' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-WorkItemQuality.ps1') -ScriptArgs @('-FailOnError')
+
 # Release 4.1, 2026-10-19 - the session briefing and the handoff issue. The
 # briefing's parsers read this repository's own ROADMAP.md and operator queue,
 # so a format change that would blind a fresh session fails here instead.

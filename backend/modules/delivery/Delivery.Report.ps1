@@ -63,7 +63,7 @@ function Get-RunnerFailureCause {
         'GitHub token not found|token conflict|Bad credentials' { return 'github-token' }
         "GitHub CLI 'gh' was not found" { return 'gh-cli-missing' }
         'No roadmap markdown file found' { return 'missing-roadmap' }
-        "No unchecked roadmap tasks|SelectedTask' because it is an empty" { return 'no-actionable-item' }
+        "No (actionable )?unchecked roadmap tasks|SelectedTask' because it is an empty" { return 'no-actionable-item' }
         'runner pid .* is not this runner' { return 'runner-pid-mismatch' }
         '(claude|codex|copilot) execution failed' { return 'agent-exit' }
     }

@@ -95,7 +95,15 @@ flight.
       offered for dispatch, and each repository shows "Excluded (n)" with the
       reason for each line. A run that completes writes its item back as done,
       and the same item hash cannot be dispatched again inside a cooldown unless
-      the operator overrides. _(state: planned)_
+      the operator overrides. Built 2026-11-11: the model is
+      `backend/config/roadmap-item-rules.json` (1.0, calibrated on 2,087 open
+      lines across 65 roadmaps, each misfire recorded with its repo) and
+      `Roadmap.ItemQuality.ps1` is its only classifier; the assessment and the
+      dispatch picker rank only actionable lines and the Work Queue shows
+      "Excluded (n)" with reasons; the runner refuses an item it launched for
+      the same repository inside 24 hours (`item-cooldown`) unless queued with
+      `-OverrideCooldown`; write-back reuses Release 3.1. The approve and
+      lane-assign routes cannot pass the override yet. _(state: built)_
       `check: pwsh ./tests/Test-WorkItemQuality.ps1 -FailOnError`
 - [ ] **A dispatched agent run ends in a pull request on another repository
       (loop steps 3 to 5).** The push and PR-opening code exists (Release 3.8

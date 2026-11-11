@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "v1",
+  "modelVersion": "1.0",
+  "description": "Work-item quality model (Lane 0.22, loop step 1). Before ranking, every open roadmap checkbox is classified actionable | done-statement | deferred | guidance | fragment. Only actionable is ranked, queued or offered for dispatch; every other line is kept, with the rule that excluded it, so the repository can show \"Excluded (n)\" with a reason per line. Classes are tested in the order listed and the first matching rule wins; a line no rule matches is actionable. A rule tests one field: text (the line without its tags), section (its heading) or tag (each [tag] on the line). A wrong call is a data change here with a modelVersion bump, never a code change (steering 2.6).",
+  "evidence": "1.0 measured 2026-11-11 over 65 local roadmaps (2,087 open lines): 1,884 actionable, 147 deferred, 25 guidance, 27 fragment, 4 done-statement before calibration; 1,913 actionable, 147 deferred, 22 guidance, 5 fragment after it. Calibrated against observed misfires: 'Guardrails' as a guidance section excluded a feature phase (powershell-resilience-pack); a trailing colon excluded 23 real items with nested detail (incendiary-web, 2026-06-13_Orchestration, MusicLibrary_v2), and verb-led three-word lead-ins (Add availability export:, Persist signature status:) are work too, so only a label of two words or fewer ending in a colon is a fragment; a mid-line check mark marked a recurring check done (AdministatorTools), so only a leading or trailing mark counts; a long imperative ending in 'implemented' read as done (BensClaudeTokenKillerv2), so that rule is capped at 90 characters; 'Code is implemented' under a Definition of Done (incendiary-web) is guidance, so guidance is tested before done-statement.",
+  "classes": [
+    {
+      "class": "fragment",
+      "description": "Not a work item on its own: a single word, a short label introducing a nested list, or only a link or path.",
+      "minWords": 2,
+      "minWordsReason": "a single word does not say what to do",
+      "rules": [
+        { "id": "fragment-lead-in", "field": "text", "pattern": "^\\W*[^\\s:]+(\\s+[^\\s:]+)?\\s*:\\s*$", "reason": "a short label ending in a colon: it introduces the nested lines below it, which are the work" },
+        { "id": "fragment-link-only", "field": "text", "pattern": "^\\s*(\\[[^\\]]*\\]\\([^)]*\\)|<?https?://\\S+>?|`[^`]+`)\\s*[.,;]?\\s*$", "reason": "only a link, URL or code span: names a target but not the work" },
+        { "id": "fragment-no-letters", "field": "text", "pattern": "^[^A-Za-z]*$", "reason": "carries no words" }
+      ]
+    },
+    {
+      "class": "deferred",
+      "description": "Recorded on purpose as not-now work: a deferral tag, a deferral prefix, or a section reserved for later work.",
+      "rules": [
+        { "id": "deferred-tag", "field": "tag", "pattern": "^(non-blocker|deferred|later|someday|parked|backlog|icebox|wontfix|post-mvp)$", "reason": "tagged as deferred work" },
+        { "id": "deferred-prefix", "field": "text", "pattern": "(?i)^\\W*(deferred|parked|later|someday|nice[- ]to[- ]have|out of scope)\\s*(:|\\u2014|\\s-\\s|\\(|\\)|$)", "reason": "the line itself says it is deferred" },
+        { "id": "deferred-section", "field": "section", "pattern": "(?i)\\b(deferred|backlog|parking lot|parked|icebox|someday|later|future (ideas|work)|out of scope|non-blockers?|wishlist)\\b", "reason": "sits in a section reserved for later work" }
+      ]
+    },
+    {
+      "class": "guidance",
+      "description": "A standing rule, principle or recurring checklist entry: true every time, never finished once.",
+      "rules": [
+        { "id": "guidance-section", "field": "section", "pattern": "(?i)\\b(definition of done|operational review|principles|guidelines|working rules|ground rules)\\b", "reason": "sits in a section of standing rules" },
+        { "id": "guidance-recurring-section", "field": "section", "pattern": "(?i)^\\s*(weekly|monthly|daily|quarterly|recurring|on every .+)\\s*$", "reason": "sits in a recurring checklist" },
+        { "id": "guidance-imperative-rule", "field": "text", "pattern": "(?i)^\\W*(always|never|do not|don't|avoid|prefer|remember to)\\b", "reason": "states a standing rule rather than a task" }
+      ]
+    },
+    {
+      "class": "done-statement",
+      "description": "Reads as a statement that the work is finished, left unticked.",
+      "rules": [
+        { "id": "done-prefix", "field": "text", "pattern": "(?i)^\\W*(done|completed?|shipped|merged|verified|fixed|resolved|landed)(\\s*(:|\\u2014|\\s-\\s|\\(|$)|\\s+(in|on|via)\\s+(#\\d|pr\\b|commit\\b|[0-9a-f]{7}\\b|\\d{4}-\\d{2}-\\d{2}))", "reason": "opens by saying the work is done" },
+        { "id": "done-check-mark", "field": "text", "pattern": "^\\W*[\\u2705\\u2714\\u2611]|[\\u2705\\u2714\\u2611]\\W*$", "reason": "opens or closes with a completion mark" },
+        { "id": "done-strikethrough", "field": "text", "pattern": "^\\s*~~.+~~\\s*\\.?\\s*$", "reason": "is struck through" },
+        { "id": "done-state-verified", "field": "text", "pattern": "(?i)\\(\\s*state:\\s*verified\\b", "reason": "declares state: verified" },
+        { "id": "done-passive-past", "field": "text", "pattern": "(?i)^(?=.{0,90}$)(?!\\W*(ensure|make sure|verify|check|confirm|test|prove|assert)\\b).*\\b(is|was|are|were|has been|have been)\\s+(now\\s+)?(done|complete|completed|finished|shipped|merged|verified|implemented)\\s*[.!]?\\s*$", "reason": "a short line stating the work is complete" }
+      ]
+    }
+  ],
+  "cooldown": {
+    "hours": 24,
+    "description": "The same item hash cannot be dispatched again inside this window unless the operator overrides."
+  }
+}

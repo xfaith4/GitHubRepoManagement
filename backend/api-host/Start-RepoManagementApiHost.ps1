@@ -6038,7 +6038,13 @@ function Get-DispatchPlanningContext {
         if ($null -eq $topValueItem) {
             $topValueItem = Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'topValueItem' -Default $null
         }
-        $planning.selectedTaskText = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'text' -Default (Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'nextPendingItemText' -Default ''))
+        # Lane 0.22: the raw next line is the fallback only when the item-quality
+        # model did not exclude it; an excluded line is never offered for work.
+        $fallbackText = [string](Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'nextPendingItemText' -Default '')
+        foreach ($excludedItem in @(Get-ObjectPropertyValue -InputObject $AssessmentEntry -PropertyName 'excludedItems' -Default @())) {
+            if ([string](Get-ObjectPropertyValue -InputObject $excludedItem -PropertyName 'text' -Default '') -eq $fallbackText) { $fallbackText = ''; break }
+        }
+        $planning.selectedTaskText = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'text' -Default $fallbackText)
         $planning.selectedTaskSection = [string](Get-ObjectPropertyValue -InputObject $topValueItem -PropertyName 'section' -Default '')
     }
 
@@ -10978,6 +10984,10 @@ try {
                     if (-not [string]::IsNullOrWhiteSpace($customAgent)) { $scriptArgs += @('-CustomAgent', $customAgent) }
                     if (-not [string]::IsNullOrWhiteSpace($roadmapPath)) { $scriptArgs += @('-RoadmapPath', $roadmapPath) }
                     if ($follow) { $scriptArgs += '-Follow' }
+                    # Lane 0.22: the operator's override of the item cooldown,
+                    # named like acknowledgeNoRunner above. Absent, an item the
+                    # runner launched inside the window is passed over.
+                    if ($body.ContainsKey('overrideCooldown') -and [bool]$body.overrideCooldown) { $scriptArgs += '-OverrideCooldown' }
 
                     $runResult = Invoke-PowerShellScriptFile -ScriptPath $scriptPath -Arguments $scriptArgs
                     $historyItems = Get-RoadmapTaskHistory -Limit 1

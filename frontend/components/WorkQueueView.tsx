@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import DefinitionHint from './DefinitionHint';
+import ExcludedItemsDisclosure from './ExcludedItemsDisclosure';
 import {
   type DocAuditEntry,
   type DocAuditIndex,
@@ -745,6 +746,13 @@ const WorkQueueView: React.FC<WorkQueueViewProps> = ({
                         {entry.repoPath}
                       </div>
                     )}
+
+                    {/* Lane 0.22: the open lines kept out of ranking, each with its reason. */}
+                    <ExcludedItemsDisclosure
+                      items={assessment?.excludedItems}
+                      count={assessment?.excludedItemCount}
+                      modelVersion={assessment?.itemQualityModelVersion}
+                    />
                   </div>
 
                   {/* Rendered only when there IS a value. When topValueItem is

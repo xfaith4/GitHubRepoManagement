@@ -64,6 +64,7 @@ try {
         'GitHub token not found. Set either GitHub_Token'             = 'github-token'
         'No roadmap markdown file found in repository'                = 'missing-roadmap'
         'No unchecked roadmap tasks were found'                       = 'no-actionable-item'
+        'No actionable unchecked roadmap tasks were found; 4 excluded' = 'no-actionable-item'
         'runner pid 4242 is not this runner (8080); run abandoned'    = 'runner-pid-mismatch'
         'claude execution failed with exit code 3'                    = 'agent-exit'
         'something nobody anticipated'                                = 'other'

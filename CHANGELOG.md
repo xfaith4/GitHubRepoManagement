@@ -2,6 +2,46 @@
 
 All notable changes to this project are documented here.
 
+## 2026-11-11 — Only actionable roadmap lines become work (Lane 0.22, loop step 1)
+
+Every unchecked line was a candidate: "Done: …" statements, `[non-blocker]`
+notes, Definition-of-Done rules and bare lead-ins ("Remaining hardening:") were
+ranked and could be dispatched, and nothing stopped the same item from being
+launched twice in a row.
+
+- **One model classifies every open line.** `backend/config/roadmap-item-rules.json`
+  (model 1.0) sorts each line into actionable, done-statement, deferred,
+  guidance or fragment; `backend/modules/roadmap/Roadmap.ItemQuality.ps1` is the
+  only classifier. The rules were calibrated on 2,087 open lines across 65
+  roadmaps, and each misfire found is recorded with the repo it came from:
+  1,913 actionable, 147 deferred, 22 guidance, 5 fragment. A missing or broken
+  model throws; it never falls back to ranking everything.
+- **Only actionable lines are ranked, queued or dispatched.** The portfolio
+  assessment and the dispatch script's picker both use the model.
+  Each entry carries `excludedItems` (text, class, rule, reason, item hash)
+  and `excludedItemCount`, and the host's fallback text skips excluded lines.
+  The Work Queue shows "Excluded (n)" under each repository, with the reason
+  for each line.
+- **The same item is not launched twice inside 24 hours.** The runner refuses
+  a queued item that it launched for the same repository within the cooldown,
+  before claiming the entry (`refusalCategory = 'item-cooldown'`). The run
+  summary names the prior run and when the window ends. The picker passes over
+  cooling items and says how many it skipped. `-OverrideCooldown` (both
+  dispatch scripts) or `overrideCooldown: true` on the start route launches it
+  anyway, and the run records the override. Remediations are exempt; they run
+  under their own attempt cap.
+- **Completion write-back is reused,** not rebuilt: a finished run already
+  marks its item done through `Roadmap.WriteBack.ps1` (Release 3.1).
+- **Known limits.** A cooldown refusal is a `refused` run, so it counts
+  toward a tied ledger lane's three-failure cap and the runner's error rate.
+  The approve route (`Submit-PackagedItemToRunner`) and the lane-assign route
+  cannot pass the override yet; the runner still enforces the cooldown on
+  their entries.
+- **Verified:** `tests/Test-WorkItemQuality.ps1` 161 passed (first run red
+  against the previous picker and assessment); Test-DeliveryReport 107,
+  Test-DispatchEligibility 17, Test-DeliveryLoop 156; frontend typecheck, lint
+  (152 warnings, none new) and 564 unit tests.
+
 ## 2026-11-11 — A delivery baseline, then a weekly report (loop step 8)
 
 The 2026-10-16 evaluation counted PRs, merges and failed runs by hand, and
