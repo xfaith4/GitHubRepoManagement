@@ -13,7 +13,7 @@
 
 ## Current Status (Agent Context)
 
-**Last updated:** 2026-11-10
+**Last updated:** 2026-11-11
 
 **Where the product stands (evaluation of 2026-10-16, checked against live
 data).** About eight merged PRs on other repositories, ever, almost all of them
@@ -70,18 +70,6 @@ flight.
       `heldSummary` for "N held (why)". Slice 2 is the board and the controls,
       and the dispatch route refusing when `ok` is false. _(state: built)_
       `check: pwsh ./tests/Test-DispatchEligibility.ps1 -FailOnError`
-- [ ] **Record the outcome of every decision (loop step 7).** Each decision in
-      the ledger gains its outcome as it happens: PR opened (URL and head SHA),
-      the CI conclusion on that head, merged or closed unmerged, or rejected
-      before any PR existed. Outcomes are read from GitHub, never typed in. A
-      decision with no outcome yet says so; it does not count as a failure.
-      From the ledger alone, total operator minutes per merged improvement is
-      one computation over all decisions, rejected ones included. Built
-      2026-11-10 on `feat/delivery-outcomes`: the decision records the PR head
-      GitHub returned, outcomes name their head and source, the summary carries
-      one outcome per decision and when GitHub was last read; gate 45 passed.
-      _(state: built)_
-      `check: pwsh ./tests/Test-DeliveryOutcomes.ps1 -FailOnError`
 - [ ] **A baseline now, then a weekly delivery report (loop step 8).** One
       command writes the report from the ledgers and GitHub: PRs the product
       initiated on other repositories, how many passed CI on their head, how

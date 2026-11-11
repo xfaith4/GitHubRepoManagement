@@ -7836,3 +7836,21 @@ network` from `scripts/Invoke-TestSuite.ps1` (75 passed, 0 failed). That head
 also re-anchors the module-smoke trend fixture to the run date; its fixed
 2026-08-10 rows left the 90-day window on 2026-11-10 and failed module smoke
 on main. D-012 is closed.
+
+- [x] **Record the outcome of every decision (loop step 7).** Each decision in
+      the ledger gains its outcome as it happens: PR opened (URL and head SHA),
+      the CI conclusion on that head, merged or closed unmerged, or rejected
+      before any PR existed. Outcomes are read from GitHub, never typed in. A
+      decision with no outcome yet says so; it does not count as a failure.
+      From the ledger alone, total operator minutes per merged improvement is
+      one computation over all decisions, rejected ones included. Built
+      2026-11-10 on `feat/delivery-outcomes`: the decision records the PR head
+      GitHub returned, outcomes name their head and source, the summary carries
+      one outcome per decision and when GitHub was last read. *(state: verified)*
+      `check: pwsh ./tests/Test-DeliveryOutcomes.ps1 -FailOnError`
+
+Verified 2026-11-11 (moved from ROADMAP.md Current focus): `smoke` passed on the
+head of #361 (`ffefd44`, run 42956767234), whose suite runs `Delivery outcomes`
+from `scripts/Invoke-TestSuite.ps1` (45 passed, 0 failed). No smoke test calls
+the `/api/delivery` routes; source tripwires cover the three changed host
+lines.
