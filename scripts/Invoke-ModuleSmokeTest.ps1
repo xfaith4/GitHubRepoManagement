@@ -6716,21 +6716,28 @@ if (-not $sqliteCap.available) {
         # exceed the number of distinct repos. Verified red first: the old SQL
         # returns ready=3 over 2 repos against this exact fixture.
         . (Join-Path $WorkspaceRoot 'backend\modules\portfolio\Portfolio.Analytics.ps1')
+        # The fixture day is relative to today. Get-PortfolioTrendPayload reads
+        # only the last 90 days, so a fixed date (it was 2026-08-10) aged out of
+        # the window on 2026-11-10 and failed the history-backed check below.
+        # Ten days back is inside the window and outside improvedThisWeek's 7.
+        $trendFixtureDate = (Get-Date).ToUniversalTime().Date.AddDays(-10)
+        $trendFixtureDay = $trendFixtureDate.ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+        $trendWindowStart = $trendFixtureDate.AddDays(-9)
         foreach ($mh in @(
-            @{ repo = 'trend-repo-a'; at = '2026-08-10T00:00:00.0000000Z'; level = 'L1-Informal';            score = 40; pending = 2 }
-            @{ repo = 'trend-repo-a'; at = '2026-08-10T06:00:00.0000000Z'; level = 'L3-Contract-Ready';      score = 60; pending = 2 }
-            @{ repo = 'trend-repo-a'; at = '2026-08-10T12:00:00.0000000Z'; level = 'L3-Contract-Ready';      score = 80; pending = 1 }
-            @{ repo = 'trend-repo-b'; at = '2026-08-10T00:30:00.0000000Z'; level = 'L4-Orchestration-Ready'; score = 30; pending = 3 }
+            @{ repo = 'trend-repo-a'; at = "$($trendFixtureDay)T00:00:00.0000000Z"; level = 'L1-Informal';            score = 40; pending = 2 }
+            @{ repo = 'trend-repo-a'; at = "$($trendFixtureDay)T06:00:00.0000000Z"; level = 'L3-Contract-Ready';      score = 60; pending = 2 }
+            @{ repo = 'trend-repo-a'; at = "$($trendFixtureDay)T12:00:00.0000000Z"; level = 'L3-Contract-Ready';      score = 80; pending = 1 }
+            @{ repo = 'trend-repo-b'; at = "$($trendFixtureDay)T00:30:00.0000000Z"; level = 'L4-Orchestration-Ready'; score = 30; pending = 3 }
         )) {
             $null = Invoke-AppDbNonQuery -DatabasePath $appDbInit.databasePath `
                 -Sql 'INSERT INTO maturity_history (repo_name, maturity_level, maturity_score, pending_count, captured_at) VALUES (@r, @l, @s, @p, @t)' `
                 -Parameters @{ r = $mh.repo; l = $mh.level; s = $mh.score; p = $mh.pending; t = $mh.at }
         }
 
-        $trendRows = @(_GetPortfolioTrendHistoryRows -DatabasePath $appDbInit.databasePath -StartUtc ([datetime]'2026-08-01T00:00:00Z'))
-        $trendDay = @($trendRows | Where-Object { [string]$_.captured_day -eq '2026-08-10' })[0]
+        $trendRows = @(_GetPortfolioTrendHistoryRows -DatabasePath $appDbInit.databasePath -StartUtc $trendWindowStart)
+        $trendDay = @($trendRows | Where-Object { [string]$_.captured_day -eq $trendFixtureDay })[0]
         if ($null -eq $trendDay) { throw 'The fixture day did not appear in the trend history rows' }
-        $distinctRepoCount = [long](Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql "SELECT COUNT(DISTINCT repo_name) AS n FROM maturity_history WHERE substr(captured_at,1,10)='2026-08-10'")[0].n
+        $distinctRepoCount = [long](Invoke-AppDbQuery -DatabasePath $appDbInit.databasePath -Sql 'SELECT COUNT(DISTINCT repo_name) AS n FROM maturity_history WHERE substr(captured_at,1,10)=@d' -Parameters @{ d = $trendFixtureDay })[0].n
         # The milestone-2 invariant, asserted directly against the store.
         if ([long]$trendDay.ready_repo_count -gt $distinctRepoCount) {
             throw "ready_repo_count ($($trendDay.ready_repo_count)) exceeds the distinct repo count ($distinctRepoCount) — a day is counting captures, not repos"
@@ -6741,7 +6748,7 @@ if (-not $sqliteCap.available) {
 
         # The per-repo sparkline follows the same rule: a day's point is the
         # latest capture, not an average over however many captures ran.
-        $sparkPoints = @(_GetPortfolioTrendRepoHistoryPoints -DatabasePath $appDbInit.databasePath -RepoName 'trend-repo-a' -StartUtc ([datetime]'2026-08-01T00:00:00Z') -FallbackDay '2026-08-10' -FallbackScore 0)
+        $sparkPoints = @(_GetPortfolioTrendRepoHistoryPoints -DatabasePath $appDbInit.databasePath -RepoName 'trend-repo-a' -StartUtc $trendWindowStart -FallbackDay $trendFixtureDay -FallbackScore 0)
         if ([double]$sparkPoints[0].value -ne 80.0) { throw "Sparkline day value must be the latest capture (80), got $($sparkPoints[0].value)" }
 
         # Milestone 4c — "not computed" and "zero" may not share a value.
