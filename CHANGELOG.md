@@ -2,6 +2,40 @@
 
 All notable changes to this project are documented here.
 
+## 2026-11-10 — Every decision carries its outcome, read from GitHub (loop step 7)
+
+The delivery ledger recorded accept and reject, and an outcome refresh could
+read what became of a PR, but no decision said what became of it. A rejected
+proposal, an accept that never produced a PR and a PR nobody had read back all
+looked alike. The CI verdict named no head, and a new push with an unchanged
+verdict was never recorded.
+
+- **The head travels with the PR.** `Open-RepoBranchPullRequest` returns the
+  `headSha` GitHub reported, on both the created and the already-open path
+  (`Get-PullRequestHeadSha`, `backend/modules/roadmap/Roadmap.PrSubmitter.ps1`).
+  The repair submission passes it on as `prHeadSha`, and submit-pr records it
+  on the decision. `ConvertTo-DeliveryHeadSha` refuses anything that is not a
+  full SHA, and a reject, or a decision with no PR, cannot carry one.
+- **Outcomes name their head and source.** An outcome record carries `headSha`
+  (the head its CI verdict was read on) and `source: github`. The refresh
+  records a moved head even when the verdict did not change.
+- **One outcome per decision.** `Get-DeliveryDecisionOutcome`
+  (`backend/modules/delivery/Delivery.Ledger.ps1`) answers
+  `rejected-before-pr`, `no-pr-recorded`, `pr-opened` (nothing read back yet:
+  CI reads `not-read`), `pr-open`, `merged` or `closed-unmerged`. A decision
+  with no outcome yet is `awaiting`, with a reason, and never a failure.
+- **The summary says when GitHub was read.** `GET /api/delivery/summary` and
+  the refresh route carry `decisionOutcomes`, the `awaitingOutcome` and
+  `closedUnmerged` metrics, and `outcomeFreshness`. Freshness comes from
+  `output\delivery\outcome-refresh.json`, which the refresh writes (never under
+  `-WhatIf`); before any refresh it is null with a reason. Operator seconds per
+  merged improvement stays one computation over every decision, rejected ones
+  included.
+- **Gate.** `tests/Test-DeliveryOutcomes.ps1` (45 assertions), registered in
+  the suite. Its tripwires prove outcomes are never typed in: only
+  `Update-DeliveryOutcome` builds an outcome record, and the decision route
+  takes no head SHA from a request body.
+
 ## 2026-11-10 — Cloud pull requests meet the envelope; network needs an approved allowlist (D-012, the rest)
 
 The runner's envelope check (#352) binds local runs only. A Copilot cloud task

@@ -31,6 +31,7 @@ Set-StrictMode -Version Latest
 
 $script:DeliveryLedgerSchemaVersion = '1'
 $script:DeliveryLedgerRelativePath = 'output\delivery\delivery-ledger.jsonl'
+$script:DeliveryRefreshStateRelativePath = 'output\delivery\outcome-refresh.json'
 $script:DeliveryDecisions = @('accept', 'edit', 'reject')
 $script:DeliverySecondsBases = @('measured-in-console', 'operator-entered')
 $script:DeliveryPrStates = @('open', 'merged', 'closed-unmerged')
@@ -68,6 +69,23 @@ function ConvertTo-DeliveryOperatorSecond {
     return $parsed
 }
 
+function ConvertTo-DeliveryHeadSha {
+    <#
+    .SYNOPSIS
+        Validate one commit SHA read from GitHub; returns it lower-cased, or
+        $null when none was given. Throws on anything that is not a full SHA.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()][AllowEmptyString()][string]$Sha = '', [string]$Context = 'record')
+    if ([string]::IsNullOrWhiteSpace($Sha)) { return $null }
+    $normalized = $Sha.Trim().ToLowerInvariant()
+    if ($normalized -notmatch '^[0-9a-f]{40}$') {
+        throw ("{0}: head SHA '{1}' is not a full 40-character commit SHA." -f $Context, $Sha)
+    }
+    return $normalized
+}
+
 function New-DeliveryDecisionRecord {
     <#
     .SYNOPSIS
@@ -88,6 +106,7 @@ function New-DeliveryDecisionRecord {
         [Parameter()][AllowEmptyString()][string]$OperatorSecondsBasis = '',
         [Parameter()][AllowEmptyString()][string]$PrUrl = '',
         [Parameter()][AllowNull()][object]$PrNumber = $null,
+        [Parameter()][AllowEmptyString()][string]$PrHeadSha = '',
         [Parameter()][AllowNull()][object]$Proposal = $null,
         [Parameter()][AllowEmptyString()][string]$RecordedAtUtc = ''
     )
@@ -102,6 +121,11 @@ function New-DeliveryDecisionRecord {
     if ($Decision -eq 'reject' -and -not [string]::IsNullOrWhiteSpace($PrUrl)) {
         throw 'A rejected proposal cannot carry a PR it did not open.'
     }
+    if (-not [string]::IsNullOrWhiteSpace($PrHeadSha)) {
+        if ($Decision -eq 'reject') { throw 'A rejected proposal cannot carry the head of a PR it did not open.' }
+        if ([string]::IsNullOrWhiteSpace($PrUrl)) { throw 'A head SHA needs the PR it belongs to.' }
+    }
+    $headSha = ConvertTo-DeliveryHeadSha -Sha $PrHeadSha -Context ("decision on {0}" -f $RepoName)
     $seconds = ConvertTo-DeliveryOperatorSecond -Seconds $OperatorSeconds -Basis $OperatorSecondsBasis -Context ("decision on {0}" -f $RepoName)
 
     $at = if ([string]::IsNullOrWhiteSpace($RecordedAtUtc)) { [datetime]::UtcNow.ToString('o') } else { ([datetime]::Parse($RecordedAtUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)).ToString('o') }
@@ -119,6 +143,9 @@ function New-DeliveryDecisionRecord {
         operatorSecondsBasis = $(if ($null -ne $seconds) { $OperatorSecondsBasis } else { $null })
         prUrl                = $(if ($PrUrl) { $PrUrl } else { $null })
         prNumber             = $(if ($null -ne $PrNumber -and [string]$PrNumber -ne '') { [int]$PrNumber } else { $null })
+        # The head GitHub reported when the PR was opened. Always present;
+        # null when no PR exists.
+        prHeadSha            = $headSha
         proposal             = $Proposal
     }
     return $record
@@ -138,6 +165,7 @@ function New-DeliveryOutcomeRecord {
         [Parameter(Mandatory)][string]$PrState,
         [Parameter()][AllowEmptyString()][string]$DecisionId = '',
         [Parameter()][AllowEmptyString()][string]$MergedAt = '',
+        [Parameter()][AllowEmptyString()][string]$HeadSha = '',
         [Parameter()][AllowEmptyString()][string]$CiConclusion = 'unavailable',
         [Parameter()][AllowEmptyString()][string]$CiBasis = '',
         [Parameter()][AllowNull()][object]$OperatorSeconds = $null,
@@ -154,6 +182,7 @@ function New-DeliveryOutcomeRecord {
     if ($PrState -eq 'merged' -and [string]::IsNullOrWhiteSpace($MergedAt)) {
         throw 'A merged outcome must say when it merged.'
     }
+    $head = ConvertTo-DeliveryHeadSha -Sha $HeadSha -Context ("outcome for {0}" -f $PrUrl)
     $seconds = ConvertTo-DeliveryOperatorSecond -Seconds $OperatorSeconds -Basis $OperatorSecondsBasis -Context ("outcome for {0}" -f $PrUrl)
     $at = if ([string]::IsNullOrWhiteSpace($RecordedAtUtc)) { [datetime]::UtcNow.ToString('o') } else { ([datetime]::Parse($RecordedAtUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)).ToString('o') }
     return [ordered]@{
@@ -164,6 +193,10 @@ function New-DeliveryOutcomeRecord {
         prUrl                = $PrUrl
         prState              = $PrState
         mergedAt             = $(if ($MergedAt) { $MergedAt } else { $null })
+        # The head the CI verdict was read on, and where the reading came
+        # from: outcomes are read from GitHub, never typed in.
+        headSha              = $head
+        source               = 'github'
         ciConclusion         = $CiConclusion
         ciBasis              = $(if ($CiBasis) { $CiBasis } else { $null })
         operatorSeconds      = $seconds
@@ -224,6 +257,139 @@ function _DeliveryField {
     return $Default
 }
 
+function _DeliveryTimestamp {
+    # ConvertFrom-Json turns ISO strings into DateTime; give them back as
+    # invariant round-trip UTC strings so the wire never carries a
+    # culture-formatted date.
+    param([AllowNull()][object]$Value)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [datetime]) { return $Value.ToUniversalTime().ToString('o', [Globalization.CultureInfo]::InvariantCulture) }
+    if ($Value -is [datetimeoffset]) { return $Value.UtcDateTime.ToString('o', [Globalization.CultureInfo]::InvariantCulture) }
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    return $text
+}
+
+function Get-DeliveryDecisionOutcome {
+    <#
+    .SYNOPSIS
+        Exactly one outcome per decision, oldest decision first (loop step 7).
+    .DESCRIPTION
+        Pure over the ledger records. The outcome of a decision is one of:
+
+          rejected-before-pr  the operator rejected it; no PR ever existed.
+          no-pr-recorded      accepted, but the ledger names no PR for it.
+          pr-opened           a PR was opened; nothing has been read back
+                              from GitHub yet, so CI reads 'not-read' and
+                              the head is the one GitHub reported at opening.
+          pr-open             GitHub last reported the PR open.
+          merged              GitHub reported it merged.
+          closed-unmerged     GitHub reported it closed without merging.
+
+        The last three come only from outcome records, which only an outcome
+        refresh against GitHub writes. A decision with no outcome yet is
+        `awaiting` and carries a reason; it is never a failure.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter()][AllowEmptyCollection()][object[]]$Record = @())
+
+    $latestByPr = @{}
+    foreach ($r in @($Record)) {
+        if ([string](_DeliveryField -Obj $r -Name 'kind' -Default '') -ne 'outcome') { continue }
+        $url = [string](_DeliveryField -Obj $r -Name 'prUrl' -Default '')
+        if (-not [string]::IsNullOrWhiteSpace($url)) { $latestByPr[$url] = $r }
+    }
+
+    $list = [System.Collections.Generic.List[object]]::new()
+    foreach ($d in @($Record)) {
+        if ([string](_DeliveryField -Obj $d -Name 'kind' -Default '') -ne 'decision') { continue }
+        $decision = [string](_DeliveryField -Obj $d -Name 'decision' -Default '')
+        $url = [string](_DeliveryField -Obj $d -Name 'prUrl' -Default '')
+        $openingHead = _DeliveryField -Obj $d -Name 'prHeadSha' -Default $null
+        $latest = if ($url -and $latestByPr.ContainsKey($url)) { $latestByPr[$url] } else { $null }
+
+        $outcome = ''; $reason = $null; $prState = $null; $headSha = $null; $ci = $null; $mergedAt = $null; $readAt = $null
+        if ($decision -eq 'reject') {
+            $outcome = 'rejected-before-pr'
+        }
+        elseif ([string]::IsNullOrWhiteSpace($url)) {
+            $outcome = 'no-pr-recorded'
+            $reason = 'Accepted, but no pull request is recorded for this decision.'
+        }
+        elseif ($null -eq $latest) {
+            $outcome = 'pr-opened'
+            $headSha = $openingHead
+            $ci = 'not-read'
+            $reason = 'No outcome has been read from GitHub for this PR yet.'
+        }
+        else {
+            $prState = [string](_DeliveryField -Obj $latest -Name 'prState' -Default 'open')
+            $outcome = switch ($prState) { 'merged' { 'merged' } 'closed-unmerged' { 'closed-unmerged' } default { 'pr-open' } }
+            $headSha = _DeliveryField -Obj $latest -Name 'headSha' -Default $openingHead
+            $ci = [string](_DeliveryField -Obj $latest -Name 'ciConclusion' -Default 'unavailable')
+            $mergedAt = _DeliveryTimestamp (_DeliveryField -Obj $latest -Name 'mergedAt' -Default $null)
+            $readAt = _DeliveryTimestamp (_DeliveryField -Obj $latest -Name 'recordedAt' -Default $null)
+            if ($outcome -eq 'pr-open') { $reason = 'The PR is still open on GitHub.' }
+        }
+        $terminal = @('rejected-before-pr', 'merged', 'closed-unmerged') -contains $outcome
+        $prNumber = _DeliveryField -Obj $d -Name 'prNumber' -Default $null
+        $list.Add([pscustomobject]@{
+            decisionId        = _DeliveryField -Obj $d -Name 'decisionId' -Default $null
+            repoName          = [string](_DeliveryField -Obj $d -Name 'repoName' -Default '')
+            decision          = $decision
+            decidedAt         = _DeliveryTimestamp (_DeliveryField -Obj $d -Name 'recordedAt' -Default $null)
+            operatorSeconds   = _DeliveryField -Obj $d -Name 'operatorSeconds' -Default $null
+            prUrl             = $(if ($url) { $url } else { $null })
+            prNumber          = $(if ($null -ne $prNumber) { [int]$prNumber } else { $null })
+            outcome           = $outcome
+            terminal          = $terminal
+            awaiting          = (-not $terminal)
+            outcomeRead       = ($null -ne $latest)
+            prState           = $prState
+            headSha           = $headSha
+            ciConclusion      = $ci
+            mergedAt          = $mergedAt
+            outcomeRecordedAt = $readAt
+            reason            = $reason
+        })
+    }
+    # Unrolled: callers wrap the call in @() (an empty ledger yields @()).
+    return $list.ToArray()
+}
+
+function Get-DeliveryOutcomeRefreshState {
+    <#
+    .SYNOPSIS
+        When outcomes were last read from GitHub, or that they never were.
+    .DESCRIPTION
+        Update-DeliveryOutcome writes output\delivery\outcome-refresh.json
+        after every refresh it actually performs (never under -WhatIf), so
+        freshness is established from that record, never assumed.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][string]$WorkspaceRoot)
+    $path = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:DeliveryRefreshStateRelativePath
+    $never = 'Outcomes have never been read from GitHub; POST /api/delivery/outcomes/refresh reads them.'
+    if (-not (Test-Path -LiteralPath $path)) {
+        return [pscustomobject]@{ lastReadAt = $null; checked = $null; appended = $null; errorCount = $null; reason = $never }
+    }
+    try { $raw = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json }
+    catch {
+        return [pscustomobject]@{ lastReadAt = $null; checked = $null; appended = $null; errorCount = $null; reason = ('The outcome refresh record at {0} is unreadable: {1}' -f $path, $_.Exception.Message) }
+    }
+    $at = _DeliveryTimestamp (_DeliveryField -Obj $raw -Name 'refreshedAt' -Default $null)
+    $errorCount = [int](_DeliveryField -Obj $raw -Name 'errorCount' -Default 0)
+    return [pscustomobject]@{
+        lastReadAt = $at
+        checked    = [int](_DeliveryField -Obj $raw -Name 'checked' -Default 0)
+        appended   = [int](_DeliveryField -Obj $raw -Name 'appended' -Default 0)
+        errorCount = $errorCount
+        reason     = $(if ($null -eq $at) { $never } elseif ($errorCount -gt 0) { ('{0} PR(s) could not be read at the last refresh.' -f $errorCount) } else { $null })
+    }
+}
+
 function Get-DeliverySummary {
     <#
     .SYNOPSIS
@@ -238,7 +404,10 @@ function Get-DeliverySummary {
     [OutputType([pscustomobject])]
     param(
         [Parameter()][AllowEmptyCollection()][object[]]$Record = @(),
-        [Parameter(Mandatory)][string]$AsOfUtc
+        [Parameter(Mandatory)][string]$AsOfUtc,
+        # Get-DeliveryOutcomeRefreshState's reading; when omitted, freshness
+        # is null with a reason, never assumed.
+        [Parameter()][AllowNull()][object]$LastRefresh = $null
     )
     $source = 'delivery-ledger'
     $decisions = @($Record | Where-Object { [string](_DeliveryField -Obj $_ -Name 'kind' -Default '') -eq 'decision' })
@@ -270,6 +439,7 @@ function Get-DeliverySummary {
             stateKnown   = ($null -ne $latest)
             mergedAt     = $(if ($null -ne $latest) { _DeliveryField -Obj $latest -Name 'mergedAt' -Default $null } else { $null })
             ciConclusion = $(if ($null -ne $latest) { [string](_DeliveryField -Obj $latest -Name 'ciConclusion' -Default 'unavailable') } else { 'unavailable' })
+            headSha      = $(if ($null -ne $latest) { _DeliveryField -Obj $latest -Name 'headSha' -Default (_DeliveryField -Obj $d -Name 'prHeadSha' -Default $null) } else { _DeliveryField -Obj $d -Name 'prHeadSha' -Default $null })
         })
     }
     $prs = $prList.ToArray()
@@ -319,11 +489,38 @@ function Get-DeliverySummary {
             -Definition 'Total operator seconds (rejected proposals and outcome review included) divided by merged improvements.'
     }
 
+    # Loop step 7: one outcome per decision. Awaiting is not failure.
+    $decisionOutcomes = @(Get-DeliveryDecisionOutcome -Record $Record)
+    $awaiting = @($decisionOutcomes | Where-Object { $_.awaiting })
+    $closedUnmerged = @($decisionOutcomes | Where-Object { $_.outcome -eq 'closed-unmerged' })
+    if ($decidedCount -eq 0) {
+        $metrics.awaitingOutcome = New-PortfolioMetric -Id 'delivery.awaitingOutcome' -Value $null -AsOfUtc $AsOfUtc `
+            -Definition 'Decisions with no final outcome yet: an accept with no PR recorded, or a PR not yet merged or closed.' -Reason 'No decision has been recorded yet.'
+    }
+    else {
+        $metrics.awaitingOutcome = New-PortfolioMetric -Id 'delivery.awaitingOutcome' -Value $awaiting.Count -Numerator $awaiting.Count -Denominator $decidedCount -AsOfUtc $AsOfUtc -Source $source `
+            -Definition 'Decisions with no final outcome yet: an accept with no PR recorded, or a PR not yet merged or closed. Awaiting is not a failure.'
+    }
+    $metrics.closedUnmerged = New-PortfolioMetric -Id 'delivery.closedUnmerged' -Value $closedUnmerged.Count -Numerator $closedUnmerged.Count -Denominator $opened.Count -AsOfUtc $AsOfUtc -Source $source `
+        -Definition 'Opened pull requests GitHub reported closed without merging.'
+
+    $freshAt = if ($null -ne $LastRefresh) { _DeliveryField -Obj $LastRefresh -Name 'lastReadAt' -Default $null } else { $null }
+    $freshReason = if ($null -eq $LastRefresh) { 'No outcome refresh has been recorded.' } else { _DeliveryField -Obj $LastRefresh -Name 'reason' -Default $null }
+    if ($null -eq $freshAt -and [string]::IsNullOrWhiteSpace([string]$freshReason)) { $freshReason = 'No outcome refresh has been recorded.' }
+    $outcomeFreshness = [pscustomobject]@{
+        lastReadAt = $freshAt
+        source     = 'github'
+        errorCount = $(if ($null -ne $LastRefresh) { _DeliveryField -Obj $LastRefresh -Name 'errorCount' -Default $null } else { $null })
+        reason     = $freshReason
+    }
+
     return [pscustomobject]@{
-        asOf      = $AsOfUtc
-        decisions = $decidedCount
-        metrics   = [pscustomobject]$metrics
-        prs       = $prs
+        asOf             = $AsOfUtc
+        decisions        = $decidedCount
+        metrics          = [pscustomobject]$metrics
+        prs              = $prs
+        decisionOutcomes = $decisionOutcomes
+        outcomeFreshness = $outcomeFreshness
     }
 }
 
@@ -439,10 +636,13 @@ function Update-DeliveryOutcome {
             $ci = Resolve-DeliveryCiConclusion -CheckRun $runs -CombinedStatus $combined
             $priorState = if ($null -ne $prior) { [string](_DeliveryField -Obj $prior -Name 'prState' -Default '') } else { '' }
             $priorCi = if ($null -ne $prior) { [string](_DeliveryField -Obj $prior -Name 'ciConclusion' -Default '') } else { '' }
-            if ($state -eq $priorState -and $ci.conclusion -eq $priorCi) { continue }
-            $mergedAt = [string](_DeliveryField -Obj $pr -Name 'merged_at' -Default '')
+            $priorHead = if ($null -ne $prior) { [string](_DeliveryField -Obj $prior -Name 'headSha' -Default '') } else { '' }
+            # A new push is a new head: its verdict is a new reading even when
+            # it matches the old one.
+            if ($state -eq $priorState -and $ci.conclusion -eq $priorCi -and $headSha.ToLowerInvariant() -eq $priorHead) { continue }
+            $mergedAt = _DeliveryTimestamp (_DeliveryField -Obj $pr -Name 'merged_at' -Default $null)
             $record = New-DeliveryOutcomeRecord -PrUrl $url -PrState $state -DecisionId ([string](_DeliveryField -Obj $d -Name 'decisionId' -Default '')) `
-                -MergedAt $mergedAt -CiConclusion $ci.conclusion -CiBasis $ci.basis
+                -MergedAt ([string]$mergedAt) -HeadSha $headSha -CiConclusion $ci.conclusion -CiBasis $ci.basis
             if ($PSCmdlet.ShouldProcess($url, 'record PR outcome')) {
                 Add-DeliveryLedgerRecord -WorkspaceRoot $WorkspaceRoot -Record $record
                 $appended++
@@ -452,5 +652,16 @@ function Update-DeliveryOutcome {
             $errors.Add([pscustomobject]@{ prUrl = $url; error = $_.Exception.Message })
         }
     }
-    return [pscustomobject]@{ checked = $checked; appended = $appended; errors = $errors.ToArray() }
+
+    # Freshness is established, never assumed: record when GitHub was read.
+    $refreshedAt = $null
+    $statePath = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath $script:DeliveryRefreshStateRelativePath
+    if ($PSCmdlet.ShouldProcess($statePath, 'record when PR outcomes were read')) {
+        $refreshedAt = [datetime]::UtcNow.ToString('o', [Globalization.CultureInfo]::InvariantCulture)
+        $stateDir = Split-Path -Parent $statePath
+        if (-not (Test-Path -LiteralPath $stateDir)) { $null = New-Item -ItemType Directory -Path $stateDir -Force }
+        $stateJson = ConvertTo-Json -InputObject ([ordered]@{ refreshedAt = $refreshedAt; checked = $checked; appended = $appended; errorCount = $errors.Count }) -Depth 3
+        Set-Content -LiteralPath $statePath -Value $stateJson -Encoding UTF8
+    }
+    return [pscustomobject]@{ checked = $checked; appended = $appended; errors = $errors.ToArray(); refreshedAt = $refreshedAt }
 }

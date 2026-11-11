@@ -234,6 +234,31 @@ function Test-RepoBranchPrReadiness {
     return @{ ok = $true; category = ''; reason = '' }
 }
 
+function Get-PullRequestHeadSha {
+    <#
+    .SYNOPSIS
+        The head commit SHA from a GitHub pull request response, or ''.
+    .DESCRIPTION
+        Pure. Loop step 7 records the outcome of a decision against the head
+        GitHub reported when the PR was opened, so the SHA is read from the
+        API response, never from the local clone. A response without a head
+        (or no response) reads '' rather than throwing under StrictMode.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter()][AllowNull()][object]$PullRequest)
+    if ($null -eq $PullRequest) { return '' }
+    $head = $null
+    if ($PullRequest -is [System.Collections.IDictionary]) { if ($PullRequest.Contains('head')) { $head = $PullRequest['head'] } }
+    elseif ($PullRequest.PSObject.Properties.Name -contains 'head') { $head = $PullRequest.head }
+    if ($null -eq $head) { return '' }
+    $sha = $null
+    if ($head -is [System.Collections.IDictionary]) { if ($head.Contains('sha')) { $sha = $head['sha'] } }
+    elseif ($head.PSObject.Properties.Name -contains 'sha') { $sha = $head.sha }
+    if ($null -eq $sha) { return '' }
+    return [string]$sha
+}
+
 function Open-RepoBranchPullRequest {
     <#
         .SYNOPSIS
@@ -323,6 +348,7 @@ function Open-RepoBranchPullRequest {
             created = $true; refused = $false; reason = ''; category = ''
             branch = $Branch; baseBranch = $effectiveBase; slug = $slug.slug
             prUrl = [string]$pr.html_url; prNumber = [int]$pr.number; alreadyExisted = $false
+            headSha = (Get-PullRequestHeadSha -PullRequest $pr)
         }
     }
     catch {
@@ -340,6 +366,7 @@ function Open-RepoBranchPullRequest {
                     created = $false; refused = $false; reason = ("A pull request already exists for '{0}'." -f $Branch); category = ''
                     branch = $Branch; baseBranch = $effectiveBase; slug = $slug.slug
                     prUrl = [string]$found.html_url; prNumber = [int]$found.number; alreadyExisted = $true
+                    headSha = (Get-PullRequestHeadSha -PullRequest $found)
                 }
             }
         }
@@ -807,6 +834,9 @@ function Invoke-RoadmapRepairPrSubmission {
         created = $true; refused = $false; reason = ''; category = ''
         branch = $branch; baseBranch = $effectiveBase; slug = $slug.slug
         prUrl = [string]$prResult.prUrl; prNumber = [int]$prResult.prNumber
+        # The head GitHub reported for the PR: the decision's outcome is read
+        # against it (loop step 7).
+        prHeadSha = [string]$prResult.headSha
         commitMessage = $message
         commitSha = [string]$commitResult.commitSha
         commitAuthor = [string]$commitResult.authorEmail

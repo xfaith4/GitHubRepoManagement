@@ -356,6 +356,11 @@ Invoke-ScriptGate -Name 'One ranking' -ScriptPath (Join-Path $WorkspaceRoot 'tes
 # decisions, PR outcomes and operator time are recorded and summed honestly.
 Invoke-ScriptGate -Name 'Delivery loop' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryLoop.ps1') -ScriptArgs @('-FailOnError')
 
+# Loop step 7 - every decision carries its outcome, read from GitHub: the PR's
+# head SHA at opening, the CI verdict per head, merged or closed unmerged, and
+# when outcomes were last read. Only the refresh writes an outcome.
+Invoke-ScriptGate -Name 'Delivery outcomes' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryOutcomes.ps1') -ScriptArgs @('-FailOnError')
+
 # Lane 0.22 - one server-side dispatch-eligibility rule.
 Invoke-ScriptGate -Name 'Dispatch eligibility' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchEligibility.ps1') -ScriptArgs @('-FailOnError')
 

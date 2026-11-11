@@ -243,7 +243,7 @@ try {
     $script:prMerged = $false
     $fakeGitHub = {
         param([string]$ApiPath)
-        if ($ApiPath -match '/pulls/1$') { return [pscustomobject]@{ state = $(if ($script:prMerged) { 'closed' } else { 'open' }); merged = $script:prMerged; merged_at = $(if ($script:prMerged) { '2026-10-16T13:00:00Z' } else { $null }); head = [pscustomobject]@{ sha = 'abc' } } }
+        if ($ApiPath -match '/pulls/1$') { return [pscustomobject]@{ state = $(if ($script:prMerged) { 'closed' } else { 'open' }); merged = $script:prMerged; merged_at = $(if ($script:prMerged) { '2026-10-16T13:00:00Z' } else { $null }); head = [pscustomobject]@{ sha = ('abc' + ('0' * 37)) } } }
         if ($ApiPath -match '/check-runs$') { return [pscustomobject]@{ check_runs = @([pscustomobject]@{ status = 'completed'; conclusion = 'success' }) } }
         if ($ApiPath -match '/status$') { throw '403 Resource not accessible by personal access token' }
         throw "unexpected path $ApiPath"
