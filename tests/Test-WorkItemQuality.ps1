@@ -312,6 +312,30 @@ try {
         $threw = $null; try { Get-NextRoadmapTask -RoadmapContent $onlyCooling -RepoPath $repoA -DispatchRecords $records | Out-Null } catch { $threw = $_.Exception.Message }
         Assert-That ($null -ne $threw -and $threw -match '1 actionable item\(s\) were dispatched' -and $threw -match '-OverrideCooldown') 'when every actionable item is cooling, the picker says so and names the override'
     }
+    # 12. the dispatch script end to end, as POST /api/roadmap-agent/preview runs
+    # it: an empty run history selects the first item (it threw under strict
+    # mode while the call site wrapped the records in @()), and a run of that
+    # item inside the cooldown moves the pick to the next one.
+    $e2eRepo = Join-Path $runsRoot 'e2e-repo'
+    $e2eHistory = Join-Path $runsRoot 'e2e-history'
+    $null = New-Item -ItemType Directory -Path $e2eRepo -Force
+    $e2eRoadmap = Join-Path $e2eRepo 'ROADMAP.md'
+    "# Roadmap`n`n## Next`n`n- [ ] Add retry with backoff to the uploader`n- [ ] Wire the export route to the CSV writer`n" | Set-Content -LiteralPath $e2eRoadmap -Encoding UTF8
+    $previewPick = {
+        $text = (& pwsh -NoProfile -File $scriptPath -Repository 'fixture-owner/e2e-repo' -PreviewOnly -RoadmapPath $e2eRoadmap -HistoryRoot $e2eHistory *>&1) | Out-String
+        $exit = $LASTEXITCODE
+        $start = $text.IndexOf('{')
+        $json = if ($exit -eq 0 -and $start -ge 0) { try { $text.Substring($start) | ConvertFrom-Json } catch { $null } } else { $null }
+        [pscustomobject]@{ exit = $exit; task = $(if ($null -ne $json) { [string]$json.selectedTask.text } else { '' }); output = $text }
+    }
+    $emptyPick = & $previewPick
+    Assert-That ($emptyPick.exit -eq 0 -and $emptyPick.task -eq 'Add retry with backoff to the uploader') ("the dispatch script previews with no run history, got exit {0} task '{1}'" -f $emptyPick.exit, $emptyPick.task)
+    $null = New-Item -ItemType Directory -Path (Join-Path $e2eHistory 'runs') -Force
+    ([pscustomobject]@{ runId = 'e2e-prior'; runnerStartedAt = [datetime]::UtcNow.AddHours(-1).ToString('o'); selectedTask = 'Add retry with backoff to the uploader'; localRepoPath = $e2eRepo } | ConvertTo-Json) |
+        Set-Content -LiteralPath (Join-Path $e2eHistory 'runs/e2e-prior.summary.json') -Encoding UTF8
+    $coolPick = & $previewPick
+    Assert-That ($coolPick.exit -eq 0 -and $coolPick.task -eq 'Wire the export route to the CSV writer') ("the dispatch script passes over an item its run history shows cooling, got exit {0} task '{1}'" -f $coolPick.exit, $coolPick.task)
+
     $queueSrc = Get-Content -LiteralPath (Join-Path $WorkspaceRoot 'scripts/Add-RoadmapTaskToQueue.ps1') -Raw
     Assert-That ($queueSrc.Contains("if (`$OverrideCooldown) { `$entry['overrideCooldown'] = `$true }")) 'the queue entry carries overrideCooldown only when asked for'
     $startSrc = Get-Content -LiteralPath $scriptPath -Raw
