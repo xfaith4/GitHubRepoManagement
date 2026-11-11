@@ -22,9 +22,18 @@ permissions:
   contents: read
 
 jobs:
-  smoke:
+  # The suite runs as three parallel jobs, one per shard of
+  # Invoke-TestSuite.ps1, so the wall clock is the slowest shard rather than
+  # the sum of every gate. Every gate names its shard; the module-smoke
+  # tripwire fails if a shard the suite declares is missing from this matrix.
+  gates:
+    name: gates (${{ matrix.shard }})
     runs-on: windows-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [module, host, static]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -45,6 +54,18 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=optional
 
-      - name: Run canonical test suite
+      - name: Run canonical test suite (${{ matrix.shard }} shard)
         shell: pwsh
-        run: ./scripts/Invoke-TestSuite.ps1 -WorkspaceRoot "${{ github.workspace }}"
+        run: ./scripts/Invoke-TestSuite.ps1 -WorkspaceRoot "${{ github.workspace }}" -Shard ${{ matrix.shard }}
+
+  # The required status check on main. It passes only when every shard
+  # succeeded. `if: always()` matters: without it a failed shard SKIPS this
+  # job, and a skipped required check counts as passing.
+  smoke:
+    needs: gates
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        run: test "${{ needs.gates.result }}" = "success"
