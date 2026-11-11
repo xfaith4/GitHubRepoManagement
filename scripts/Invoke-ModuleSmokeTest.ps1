@@ -618,7 +618,32 @@ foreach ($requiredNpmGate in @('typecheck', 'test:unit', 'build')) {
         throw ("Invoke-TestSuite.ps1 no longer runs the frontend '{0}' gate. The frontend spent months ungated exactly this way; put it back." -f $requiredNpmGate)
     }
 }
-Write-Host ("  ci-smoke.yml runs the full suite ({0} script gates, {1} npm gates); no vacuous workflow, no path filter, no -SkipApiHost" -f @($suiteScriptGates).Count, @($suiteNpmGates).Count) -ForegroundColor DarkGray
+# CI runs the suite as parallel shard jobs. The union of the shards must be the
+# whole suite: every gate names a declared shard, every declared shard is in the
+# workflow matrix and passed to the suite, and the required `smoke` job fails
+# unless every shard job succeeded -- including when one failed, which would
+# otherwise skip it, and a skipped required check counts as passing.
+$suiteShardSet = [regex]::Match($suiteSource, "\[ValidateSet\('all',\s*([^\]]+)\)\]\s*\[string\]\`$Shard")
+if (-not $suiteShardSet.Success) { throw 'Invoke-TestSuite.ps1 no longer declares its -Shard set; the CI matrix cannot be checked against it.' }
+$suiteShards = @([regex]::Matches($suiteShardSet.Groups[1].Value, "'([\w-]+)'") | ForEach-Object { $_.Groups[1].Value })
+$suiteGateCalls = @([regex]::Matches($suiteSource, "(?m)^\s*Invoke-(Script|Npm|InProcess)Gate\s+-Name\s+'[^']+'.*$") | ForEach-Object { $_.Value })
+foreach ($gateCall in $suiteGateCalls) {
+    $gateShard = [regex]::Match($gateCall, '-In\s+([\w-]+)')
+    if (-not $gateShard.Success -or $suiteShards -notcontains $gateShard.Groups[1].Value) {
+        throw ("A suite gate names no declared shard, so no CI job runs it: {0}" -f $gateCall.Trim())
+    }
+}
+$ciMatrix = [regex]::Match($ciSmokeSource, '(?m)^\s*shard:\s*\[([^\]]+)\]')
+if (-not $ciMatrix.Success) { throw 'ci-smoke.yml has no shard matrix; the suite shards would not all run.' }
+$ciShards = @($ciMatrix.Groups[1].Value -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+foreach ($declaredShard in $suiteShards) {
+    if ($ciShards -notcontains $declaredShard) { throw ("ci-smoke.yml does not run the suite's '{0}' shard; its gates gate nothing." -f $declaredShard) }
+}
+if ($ciSmokeSource -notmatch '-Shard \$\{\{ matrix\.shard \}\}') { throw 'ci-smoke.yml does not pass -Shard from the matrix; every job would run the whole suite or the wrong part.' }
+if ($ciSmokeSource -notmatch '(?ms)^  smoke:\s*\n\s+needs:\s*gates\s*\n\s+if:\s*always\(\)' -or $ciSmokeSource -notmatch 'needs\.gates\.result \}\}" = "success"') {
+    throw 'The required smoke job no longer needs every shard with if: always() and a success check; a failed shard could leave the required check skipped, which counts as passing.'
+}
+Write-Host ("  ci-smoke.yml runs the full suite ({0} script gates, {1} npm gates) across shards {2}; no vacuous workflow, no path filter, no -SkipApiHost" -f @($suiteScriptGates).Count, @($suiteNpmGates).Count, ($suiteShards -join ', ')) -ForegroundColor DarkGray
 
 Write-Step 'GitHub rate-limit readout — headers observed, never fabricated (ROADMAP Lane 0.2)'
 $rateLimitModule = Join-Path $WorkspaceRoot 'backend\api-host\GitHubRateLimit.ps1'
@@ -11671,7 +11696,14 @@ Write-Step 'Live-service currency check - derived routes, and the SPA-fallback t
 
     # Derived scope: the route list must come from the source, not a literal
     # list that drifts the moment someone adds a route.
-    . $currencyScript -BaseUrl 'http://127.0.0.1:1' -WorkspaceRoot $WorkspaceRoot -TimeoutSeconds 1 -ErrorAction SilentlyContinue *> $null
+    # Load only the function, from the script's syntax tree. Dot-sourcing the
+    # script ran its body too, probing every route against a dead port at a
+    # 1-second timeout each: about a minute of each CI run, asserting nothing.
+    $currencyAst = [System.Management.Automation.Language.Parser]::ParseFile($currencyScript, [ref]$null, [ref]$null)
+    $currencyFn = $currencyAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-DeclaredGetRoute' }, $true)
+    # Defined through the function: drive, not a dot-source: the dot-source
+    # sweep refuses any site whose target is not a literal path.
+    if ($null -ne $currencyFn) { Set-Item -Path 'function:Get-DeclaredGetRoute' -Value $currencyFn.Body.GetScriptBlock() }
     if (-not (Get-Command Get-DeclaredGetRoute -ErrorAction SilentlyContinue)) {
         throw 'Get-DeclaredGetRoute did not load; the currency check cannot derive its scope.'
     }

@@ -34,7 +34,14 @@ param(
     # listening on $Port before the API-host gate binds it, so defaulting to the
     # live portal's port meant a bare `npm test` killed the operator's running
     # portal. Same convention as Invoke-DailyEvidence.ps1.
-    [int]$Port = 7171
+    [int]$Port = 7171,
+    # CI runs the suite as three parallel jobs, one per shard (ci-smoke.yml), so
+    # the wall clock is the slowest shard, not the sum of every gate. 'all', the
+    # default, runs every gate in order, as `npm test` always has. Every gate
+    # names its shard with -In; the frontend build sits in 'host' because the
+    # API-host smoke tests the built bundle in frontend/dist.
+    [ValidateSet('all', 'module', 'host', 'static')]
+    [string]$Shard = 'all'
 )
 
 Set-StrictMode -Version Latest
@@ -73,12 +80,24 @@ function Clear-ListenerPort {
     } catch { $null = $_ }
 }
 
+# A gate runs when the suite runs every shard or the gate's own one. A gate that
+# names no shard stops the suite: it would otherwise run in no CI job at all.
+function Test-GateInShard {
+    param([string]$Name, [string]$In)
+    if ($In -notin @('module', 'host', 'static')) {
+        throw "Gate '$Name' names no shard. Pass -In module, host or static so a CI job runs it."
+    }
+    return ($Shard -eq 'all' -or $Shard -eq $In)
+}
+
 function Invoke-ScriptGate {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string]$ScriptPath,
-        [string[]]$ScriptArgs = @()
+        [string[]]$ScriptArgs = @(),
+        [string]$In
     )
+    if (-not (Test-GateInShard -Name $Name -In $In)) { return }
     Write-Host ''
     Write-Host "===== $Name =====" -ForegroundColor Cyan
     if (-not (Test-Path -LiteralPath $ScriptPath)) {
@@ -99,8 +118,10 @@ function Invoke-ScriptGate {
 function Invoke-NpmGate {
     param(
         [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][string]$ScriptName
+        [Parameter(Mandatory)][string]$ScriptName,
+        [string]$In
     )
+    if (-not (Test-GateInShard -Name $Name -In $In)) { return }
     Write-Host ''
     Write-Host "===== $Name =====" -ForegroundColor Cyan
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -132,8 +153,10 @@ function Invoke-NpmGate {
 function Invoke-InProcessGate {
     param(
         [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][scriptblock]$Action
+        [Parameter(Mandatory)][scriptblock]$Action,
+        [string]$In
     )
+    if (-not (Test-GateInShard -Name $Name -In $In)) { return }
     Write-Host ''
     Write-Host "===== $Name =====" -ForegroundColor Cyan
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -152,10 +175,10 @@ $rootArgs = @('-WorkspaceRoot', $WorkspaceRoot)
 
 Write-Host "GitHub Repo Management — test suite" -ForegroundColor White
 Write-Host ("WorkspaceRoot: {0}" -f $WorkspaceRoot) -ForegroundColor DarkGray
-Write-Host ("SkipApiHost:   {0}" -f [bool]$SkipApiHost) -ForegroundColor DarkGray
+Write-Host ("SkipApiHost:   {0}`nShard:         {1}" -f [bool]$SkipApiHost, $Shard) -ForegroundColor DarkGray
 
-Invoke-ScriptGate -Name 'Module smoke'      -ScriptPath (Join-Path $scriptsDir 'Invoke-ModuleSmokeTest.ps1')         -ScriptArgs $rootArgs
-Invoke-ScriptGate -Name 'Adapter smoke'     -ScriptPath (Join-Path $scriptsDir 'Invoke-AdapterSmokeTest.ps1')        -ScriptArgs $rootArgs
+Invoke-ScriptGate -Name 'Module smoke'      -ScriptPath (Join-Path $scriptsDir 'Invoke-ModuleSmokeTest.ps1')         -ScriptArgs $rootArgs -In module
+Invoke-ScriptGate -Name 'Adapter smoke'     -ScriptPath (Join-Path $scriptsDir 'Invoke-AdapterSmokeTest.ps1')        -ScriptArgs $rootArgs -In module
 
 # Frontend gates before the slow API-host smoke: cheap failures fail fast.
 # These were dark until 2026-08-10 — 149 vitest assertions, the typecheck, and
@@ -163,29 +186,29 @@ Invoke-ScriptGate -Name 'Adapter smoke'     -ScriptPath (Join-Path $scriptsDir '
 # Ratchets against a committed baseline, so it fails only on NEW unrestored
 # `outline-none`. The old tiny-text rule is retired (see tools/Measure-UiRatchet.mjs)
 # because the product's density ladder is now intentional design, not debt.
-Invoke-NpmGate -Name 'UI debt ratchet'     -ScriptName 'ui:ratchet'
-Invoke-NpmGate -Name 'Frontend typecheck'  -ScriptName 'typecheck'
-Invoke-NpmGate -Name 'Frontend lint'       -ScriptName 'lint'
-Invoke-NpmGate -Name 'Frontend unit tests' -ScriptName 'test:unit'
-Invoke-NpmGate -Name 'Frontend build'      -ScriptName 'build'
+Invoke-NpmGate -Name 'UI debt ratchet'     -ScriptName 'ui:ratchet' -In static
+Invoke-NpmGate -Name 'Frontend typecheck'  -ScriptName 'typecheck' -In static
+Invoke-NpmGate -Name 'Frontend lint'       -ScriptName 'lint' -In static
+Invoke-NpmGate -Name 'Frontend unit tests' -ScriptName 'test:unit' -In static
+Invoke-NpmGate -Name 'Frontend build'      -ScriptName 'build' -In host
 
 # PowerShell lint: PSSA with a per-rule ratchet baseline — 0 Error-severity
 # findings ever; warning counts may only shrink (ROADMAP Lane 0.8).
-Invoke-ScriptGate -Name 'PowerShell lint'   -ScriptPath (Join-Path $scriptsDir 'Invoke-LintGate.ps1')             -ScriptArgs $rootArgs
+Invoke-ScriptGate -Name 'PowerShell lint'   -ScriptPath (Join-Path $scriptsDir 'Invoke-LintGate.ps1')             -ScriptArgs $rootArgs -In static
 
 if (-not $SkipApiHost) {
-    Clear-ListenerPort -PortNumber $Port
+    if ($Shard -in @('all', 'host')) { Clear-ListenerPort -PortNumber $Port }
     # Thread -Port/-BaseUrl into the smoke so a non-default port actually moves
     # the live host off 7071. Without this the suite freed $Port but the smoke
     # still bound its 7071 default — which, on a machine already running the
     # portal on 7071, made the host terminate the operator's running instance.
     $apiHostArgs = $rootArgs + @('-Port', $Port, '-BaseUrl', "http://127.0.0.1:$Port")
-    Invoke-ScriptGate -Name 'API host smoke' -ScriptPath (Join-Path $scriptsDir 'Invoke-ApiHostSmokeTest.ps1')        -ScriptArgs $apiHostArgs
+    Invoke-ScriptGate -Name 'API host smoke' -ScriptPath (Join-Path $scriptsDir 'Invoke-ApiHostSmokeTest.ps1')        -ScriptArgs $apiHostArgs -In host
 
     # Lane 0.21, 2026-09-15: the assessment route answers from the worker's
     # last result while the worker scans. Boots its own host on a free port with
     # every written root isolated, so it never touches $Port or the portal.
-    Invoke-ScriptGate -Name 'Request thread budget' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RequestThreadBudget.ps1') -ScriptArgs @('-Route', '/api/portfolio/assessment', '-MaxMs', '2000', '-FailOnError')
+    Invoke-ScriptGate -Name 'Request thread budget' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RequestThreadBudget.ps1') -ScriptArgs @('-Route', '/api/portfolio/assessment', '-MaxMs', '2000', '-FailOnError') -In host
 }
 else {
     Write-Host ''
@@ -194,11 +217,11 @@ else {
     Write-Host '[SKIP] Request thread budget (-SkipApiHost; it boots a host)' -ForegroundColor Yellow
 }
 
-Invoke-ScriptGate -Name 'API contract'      -ScriptPath (Join-Path $scriptsDir 'Invoke-ApiContractTest.ps1')          -ScriptArgs $rootArgs
-Invoke-ScriptGate -Name 'Auth smoke'        -ScriptPath (Join-Path $scriptsDir 'Invoke-AuthSmokeTest.ps1')            -ScriptArgs $rootArgs
-Invoke-ScriptGate -Name 'Repo structure'    -ScriptPath (Join-Path $scriptsDir 'Invoke-RepositoryStructureAudit.ps1') -ScriptArgs $rootArgs
+Invoke-ScriptGate -Name 'API contract'      -ScriptPath (Join-Path $scriptsDir 'Invoke-ApiContractTest.ps1')          -ScriptArgs $rootArgs -In host
+Invoke-ScriptGate -Name 'Auth smoke'        -ScriptPath (Join-Path $scriptsDir 'Invoke-AuthSmokeTest.ps1')            -ScriptArgs $rootArgs -In host
+Invoke-ScriptGate -Name 'Repo structure'    -ScriptPath (Join-Path $scriptsDir 'Invoke-RepositoryStructureAudit.ps1') -ScriptArgs $rootArgs -In static
 
-Invoke-InProcessGate -Name 'doc-standards.json integrity' -Action {
+Invoke-InProcessGate -Name 'doc-standards.json integrity' -In static -Action {
     $path = Join-Path $WorkspaceRoot 'backend/config/doc-standards.json'
     if (-not (Test-Path -LiteralPath $path)) { throw "doc-standards.json not found at $path" }
     $parsed = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $path -Raw -Encoding UTF8)
@@ -207,7 +230,7 @@ Invoke-InProcessGate -Name 'doc-standards.json integrity' -Action {
     Write-Host ("  doc-standards.json valid: {0} required file specs" -f @($parsed.requiredRootFiles).Count) -ForegroundColor DarkGray
 }
 
-Invoke-InProcessGate -Name 'roadmap standard assets integrity' -Action {
+Invoke-InProcessGate -Name 'roadmap standard assets integrity' -In static -Action {
     $stdDir = Join-Path $WorkspaceRoot 'standards/roadmap'
     $assets = @(
         (Join-Path $stdDir 'roadmap-audit-rules.json'),
@@ -230,7 +253,7 @@ Invoke-InProcessGate -Name 'roadmap standard assets integrity' -Action {
 # or a per-kind applicability rule is a JSON-only change, so this gate is what
 # keeps that JSON honest: versioned, complete, and never scoring what the
 # roadmap says is defined-only.
-Invoke-InProcessGate -Name 'foundation-domains.json integrity (Release 3.6)' -Action {
+Invoke-InProcessGate -Name 'foundation-domains.json integrity (Release 3.6)' -In static -Action {
     $path = Join-Path $WorkspaceRoot 'backend/config/foundation-domains.json'
     if (-not (Test-Path -LiteralPath $path)) { throw "foundation-domains.json not found at $path" }
     $parsed = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $path -Raw -Encoding UTF8)
@@ -284,7 +307,7 @@ Invoke-InProcessGate -Name 'foundation-domains.json integrity (Release 3.6)' -Ac
     Write-Host ("  foundation-domains.json valid: {0} domains ({1} scored), {2} kinds, {3} detection rule(s)" -f @($parsed.domains).Count, @($parsed.domains | Where-Object { $null -eq $_.PSObject.Properties['scored'] -or $_.scored }).Count, @($parsed.kinds).Count, @($parsed.kindDetection.rules).Count) -ForegroundColor DarkGray
 }
 
-Invoke-InProcessGate -Name 'Agent API OpenAPI spec (Release 2.4)' -Action {
+Invoke-InProcessGate -Name 'Agent API OpenAPI spec (Release 2.4)' -In static -Action {
     $specPath = Join-Path $WorkspaceRoot 'docs/reference/agent-api.yaml'
     if (-not (Test-Path -LiteralPath $specPath)) { throw "agent-api.yaml not found at $specPath" }
     $raw = Get-Content -LiteralPath $specPath -Raw
@@ -306,7 +329,7 @@ Invoke-InProcessGate -Name 'Agent API OpenAPI spec (Release 2.4)' -Action {
     }
 }
 
-Invoke-InProcessGate -Name 'Roadmap contract spec directory (Release 2.3 Phase 4)' -Action {
+Invoke-InProcessGate -Name 'Roadmap contract spec directory (Release 2.3 Phase 4)' -In static -Action {
     $specDir = Join-Path $WorkspaceRoot 'spec/roadmap-contract'
     if (-not (Test-Path -LiteralPath $specDir)) { throw "spec/roadmap-contract not found" }
     foreach ($f in @('README.md', 'ROADMAP_TEMPLATE.md', 'roadmap-contract.schema.json', 'roadmap-audit-rules.json', 'ROADMAP_MATURITY_MODEL.md')) {
@@ -318,7 +341,7 @@ Invoke-InProcessGate -Name 'Roadmap contract spec directory (Release 2.3 Phase 4
     Write-Host '  spec/roadmap-contract self-contained: template + schema + rules + maturity model present' -ForegroundColor DarkGray
 }
 
-Invoke-InProcessGate -Name 'roadmap-audit-action package (Release 2.3 Phase 3)' -Action {
+Invoke-InProcessGate -Name 'roadmap-audit-action package (Release 2.3 Phase 3)' -In static -Action {
     $actionDir = Join-Path $WorkspaceRoot '.github/actions/roadmap-audit-action'
     foreach ($f in @('action.yml', 'audit.ps1', 'README.md')) {
         if (-not (Test-Path -LiteralPath (Join-Path $actionDir $f))) { throw "roadmap-audit-action missing $f" }
@@ -332,68 +355,68 @@ Invoke-InProcessGate -Name 'roadmap-audit-action package (Release 2.3 Phase 3)' 
 
 # Release 3.7 M4a — the milestone's own check line, run where the roadmap says
 # it runs: kind resolves from manifests, entry points and the README purpose line.
-Invoke-ScriptGate -Name 'Kind detection' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-KindDetection.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Kind detection' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-KindDetection.ps1') -ScriptArgs @('-FailOnError') -In static
 # Steering extension 3 — lifecycleState and conclusion may not disagree
 # unexplained; the milestone's own check line, run where the roadmap says it runs.
-Invoke-ScriptGate -Name 'Lifecycle consistency' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'lifecycle-consistency', '-FailOnError')
+Invoke-ScriptGate -Name 'Lifecycle consistency' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'lifecycle-consistency', '-FailOnError') -In static
 # 3.7 M4b - the milestone's own check line, run where the roadmap says it runs.
-Invoke-ScriptGate -Name 'Applicability' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'applicability', '-FailOnError')
+Invoke-ScriptGate -Name 'Applicability' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'applicability', '-FailOnError') -In static
 # 3.7 M4c - the milestone's own check line.
-Invoke-ScriptGate -Name 'Action routing' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'action-routing', '-FailOnError')
+Invoke-ScriptGate -Name 'Action routing' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FoundationConclusions.ps1') -ScriptArgs @('-Cohort', 'evidence/trials/release-3.7/cohort.json', '-Assert', 'action-routing', '-FailOnError') -In static
 
 # Lane 0.22, 2026-09-16 - the milestone's own check line. Every output\ path goes
 # through the output root, every host-starting gate isolates it, and the smoke
 # fixtures already in the operator's ledgers stay out of the operational views.
-Invoke-ScriptGate -Name 'Fixture isolation' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FixtureIsolation.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Fixture isolation' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-FixtureIsolation.ps1') -ScriptArgs @('-FailOnError') -In static
 
 # Release 4.0 phase A - the milestone's own check line. Today and the Dispatch
 # Board read one server-side ranking, and the frontend they import sorts on none
 # of its inputs.
-Invoke-ScriptGate -Name 'One ranking' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-OneRanking.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'One ranking' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-OneRanking.ps1') -ScriptArgs @('-FailOnError') -In static
 
 # Proof of value, 2026-10-16 - the delivery loop's write path and its ledger.
 # The service can commit (identity), a failed commit leaves the clone clean, and
 # decisions, PR outcomes and operator time are recorded and summed honestly.
-Invoke-ScriptGate -Name 'Delivery loop' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryLoop.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Delivery loop' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryLoop.ps1') -ScriptArgs @('-FailOnError') -In module
 
 # Loop step 7 - every decision carries its outcome, read from GitHub: the PR's
 # head SHA at opening, the CI verdict per head, merged or closed unmerged, and
 # when outcomes were last read. Only the refresh writes an outcome.
-Invoke-ScriptGate -Name 'Delivery outcomes' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryOutcomes.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Delivery outcomes' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryOutcomes.ps1') -ScriptArgs @('-FailOnError') -In static
 
 # Lane 0.22 - one server-side dispatch-eligibility rule.
-Invoke-ScriptGate -Name 'Dispatch eligibility' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchEligibility.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Dispatch eligibility' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchEligibility.ps1') -ScriptArgs @('-FailOnError') -In static
 
 # Release 4.1, 2026-10-19 - the session briefing and the handoff issue. The
 # briefing's parsers read this repository's own ROADMAP.md and operator queue,
 # so a format change that would blind a fresh session fails here instead.
-Invoke-ScriptGate -Name 'Session briefing' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-SessionBriefing.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Session briefing' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-SessionBriefing.ps1') -ScriptArgs @('-FailOnError') -In module
 
 # Issues #339, #340, #342 (2026-10-19) - runner outcomes close agent runs and
 # reach the metrics, and the trend seed carries every indexed repository.
-Invoke-ScriptGate -Name 'Insights truth' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-InsightsTruth.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Insights truth' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-InsightsTruth.ps1') -ScriptArgs @('-FailOnError') -In static
 
 # D-012 - a run whose branch touches a forbidden path (.github/workflows/** at
 # least) fails by name in the runner and is never pushed.
-Invoke-ScriptGate -Name 'Permission envelope' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-PermissionEnvelope.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Permission envelope' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-PermissionEnvelope.ps1') -ScriptArgs @('-FailOnError') -In static
 
 # D-012, the rest - a cloud agent's pull request is held to the same envelope
 # before the host records it as delivered, a proposed workflow is reported as
 # waiting for the owner, and network access needs an owner-approved allowlist.
-Invoke-ScriptGate -Name 'Envelope cloud and network' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-EnvelopeCloudAndNetwork.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Envelope cloud and network' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-EnvelopeCloudAndNetwork.ps1') -ScriptArgs @('-FailOnError') -In static
 
 # Validator R024 - a built or verified milestone's check is a step CI runs; the
 # milestone's own check line. The rule itself also runs inside the lint below.
-Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Check runs in CI' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-RoadmapCheckRunsInCi.ps1') -ScriptArgs @('-FailOnError') -In static
 
-Invoke-ScriptGate -Name 'Roadmap structure lint' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapStructure.ps1') -ScriptArgs @('-Path', (Join-Path $WorkspaceRoot 'ROADMAP.md'), '-FailOnError')
+Invoke-ScriptGate -Name 'Roadmap structure lint' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapStructure.ps1') -ScriptArgs @('-Path', (Join-Path $WorkspaceRoot 'ROADMAP.md'), '-FailOnError') -In static
 
 # Release 3.4, recorded 2026-08-15. PR #134 shipped a tested 306-line module and
 # left all six of its release's milestones reading `planned`; the next agent to
 # read the roadmap was one step from rebuilding it. This gate refuses a commit
 # that claims a release, ships capability code, and does not advance a milestone.
 # Verified non-vacuous by running it against 17dc1db, which it fails.
-Invoke-ScriptGate -Name 'Roadmap capability record' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapCapabilityRecord.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Roadmap capability record' -ScriptPath (Join-Path $toolsDir 'Test-RoadmapCapabilityRecord.ps1') -ScriptArgs @('-FailOnError') -In static
 
 # ── Summary ────────────────────────────────────────────────────────────────
 Write-Host ''
@@ -402,9 +425,10 @@ foreach ($g in $gateResults) {
     Write-Host ("  {0} {1} ({2}s)" -f $(if ($g.Ok) { '[PASS]' } else { '[FAIL]' }), $g.Name, $g.Seconds) -ForegroundColor $(if ($g.Ok) { 'Green' } else { 'Red' })
 }
 $failed = @($gateResults | Where-Object { -not $_.Ok })
-if ($failed.Count -gt 0) {
-    Write-Host ("`nTEST SUITE FAILED — {0} gate(s) failed." -f $failed.Count) -ForegroundColor Red
+# A shard that ran no gates fails too: a CI job that runs nothing must not pass.
+if ($failed.Count -gt 0 -or $gateResults.Count -eq 0) {
+    Write-Host ("`nTEST SUITE FAILED — {0} gate(s) failed, {1} ran (shard: {2})." -f $failed.Count, $gateResults.Count, $Shard) -ForegroundColor Red
     exit 1
 }
-Write-Host "`nTEST SUITE PASSED — all $($gateResults.Count) gate(s) green." -ForegroundColor Green
+Write-Host "`nTEST SUITE PASSED — all $($gateResults.Count) gate(s) green (shard: $Shard)." -ForegroundColor Green
 exit 0
