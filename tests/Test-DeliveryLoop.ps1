@@ -295,7 +295,10 @@ try {
     Assert-That ($denyList -contains 'Edit(.github/workflows/**)') 'envelope: a forbidden path denies edits on it (D-012)'
     Assert-That (@($denyList | Where-Object { $_ -like 'Write(*' }).Count -eq 0) 'envelope: no Write(path) rules; the CLI ignores them and Edit(path) covers every editing tool'
     Assert-That ($denyList -contains 'Bash(git reset --hard:*)') 'envelope: destructive local git is denied'
-    $noShell = ConvertTo-ClaudePermissionSetting -Packet (New-WorkPacket -TaskId 'dl-3' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions @{ filesystemWrite = $false; shell = $false; network = $true; githubWrite = $true })
+    # D-012: network is granted only with an allowlist the owner approved.
+    $grantedNetwork = @{ filesystemWrite = $false; shell = $false; network = $true; githubWrite = $true; networkAllowlist = @('api.nuget.org')
+        networkApproval = (New-NetworkAllowlistApproval -Allowlist @('api.nuget.org') -ApprovedBy 'owner') }
+    $noShell = ConvertTo-ClaudePermissionSetting -Packet (New-WorkPacket -TaskId 'dl-3' -Repository '' -BaseBranch 'main' -BaseSha '' -Objective 'o' -Permissions $grantedNetwork)
     Assert-That (@($noShell.permissions.deny) -contains 'Bash' -and @($noShell.permissions.allow) -notcontains 'Bash') 'envelope: shell false denies Bash'
     Assert-That (@($noShell.permissions.deny) -contains 'PowerShell' -and @($noShell.permissions.allow) -notcontains 'PowerShell') 'envelope: shell false denies PowerShell'
     Assert-That (@($noShell.permissions.deny) -contains 'Edit') 'envelope: filesystemWrite false denies editing'

@@ -5816,7 +5816,10 @@ try {
     if ('task-fingerprint' -notin @($candidate.evidence.matchedBy)) { throw 'Association evidence is missing task-fingerprint' }
 
     # Refresh 1: draft PR + in-progress Actions -> active, no validation event.
-    $refresh1 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId `
+    # D-012: a refresh decides the envelope from the PR's changed paths; clean
+    # paths here, so the transitions below are the ones being exercised.
+    $refreshFiles = @{ 42 = @('src/feature.ps1', 'README.md') }
+    $refresh1 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequestFiles $refreshFiles `
         -PullRequests @($unrelatedPr, $agentPr) `
         -ActionsRun ([pscustomobject]@{ status = 'in_progress'; conclusion = ''; name = 'CI Smoke'; runUrl = 'https://github.com/owner/smoke-refresh-repo/actions/runs/1' })
     if ([string]$refresh1.run.status -ne 'active') { throw "Expected status=active after draft-PR refresh, got '$($refresh1.run.status)'" }
@@ -5825,7 +5828,7 @@ try {
 
     # Refresh 2: PR ready for review + successful Actions -> completed + validation.passed.
     $agentPr.draft = $false
-    $refresh2 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId `
+    $refresh2 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequestFiles $refreshFiles `
         -PullRequests @($unrelatedPr, $agentPr) `
         -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI Smoke'; runUrl = 'https://github.com/owner/smoke-refresh-repo/actions/runs/2' })
     if ([string]$refresh2.run.status -ne 'completed') { throw "Expected status=completed after ready-PR refresh, got '$($refresh2.run.status)'" }
@@ -5835,14 +5838,14 @@ try {
     if ($null -eq $refresh2.run.metrics.timeToDeliverSeconds) { throw 'Refresh did not derive timeToDeliverSeconds from observed PR timing' }
 
     # Refresh 3: unchanged Actions conclusion must not emit a duplicate validation event.
-    $refresh3 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId `
+    $refresh3 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequestFiles $refreshFiles `
         -PullRequests @($unrelatedPr, $agentPr) `
         -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI Smoke'; runUrl = 'https://github.com/owner/smoke-refresh-repo/actions/runs/2' })
     if ($null -ne $refresh3.validationEvent) { throw 'Unchanged Actions conclusion emitted a duplicate validation event' }
 
     # Refresh 4: merged PR -> outcome merged.
     $agentPr.merged_at = $nowUtc.AddMinutes(30).ToString('o')
-    $refresh4 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequests @($agentPr)
+    $refresh4 = Invoke-AgentRunRefresh -WorkspaceRoot $refreshWorkspace -RunId $refreshRun.runId -PullRequests @($agentPr) -PullRequestFiles $refreshFiles
     if ([string]$refresh4.run.status -ne 'completed') { throw "Expected status=completed after merge, got '$($refresh4.run.status)'" }
     if ([string]$refresh4.run.outcome -ne 'merged') { throw "Expected outcome=merged, got '$($refresh4.run.outcome)'" }
 
@@ -7676,7 +7679,10 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
         }
 
         # CI passed on the head the PR actually carries -> verified.
-        $vhOk = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId -PullRequests @($vhPr) `
+        # D-012: clean changed paths, so the envelope passes and only the head
+        # binding decides verification.
+        $vhFiles = @{ 77 = @('src/a.ps1'); 78 = @('src/a.ps1'); 79 = @('src/a.ps1'); 80 = @('src/a.ps1') }
+        $vhOk = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId -PullRequests @($vhPr) -PullRequestFiles $vhFiles `
             -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/1'; headSha = 'aaa' })
         if ([string]$vhOk.run.prHeadSha -ne 'aaa') { throw "The PR's head must be recorded, got '$($vhOk.run.prHeadSha)'" }
         if ([string]$vhOk.run.verifiedHeadSha -ne 'aaa') { throw "CI passing on the PR's head must verify it, got '$($vhOk.run.verifiedHeadSha)'" }
@@ -7699,7 +7705,7 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
             merged_at = $null; closed_at = $null
             head = [pscustomobject]@{ ref = 'copilot/mismatch'; sha = 'aaa' }
         }
-        $vhMismatch = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhMismatchRun.runId -PullRequests @($vhPr2) `
+        $vhMismatch = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhMismatchRun.runId -PullRequests @($vhPr2) -PullRequestFiles $vhFiles `
             -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/2'; headSha = 'bbb' })
         if ($null -ne $vhMismatch.run.verifiedHeadSha) {
             throw "A success on a different head must not verify this one, got '$($vhMismatch.run.verifiedHeadSha)'"
@@ -7716,7 +7722,7 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
             merged_at = $null; closed_at = $null
             head = [pscustomobject]@{ ref = 'copilot/headless'; sha = 'aaa' }
         }
-        $vhNoHead = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhNoHeadRun.runId -PullRequests @($vhPr3) `
+        $vhNoHead = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhNoHeadRun.runId -PullRequests @($vhPr3) -PullRequestFiles $vhFiles `
             -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/3' })
         if ($null -ne $vhNoHead.run.verifiedHeadSha) {
             throw 'A rollup carrying no head must never verify a head'
@@ -7726,7 +7732,7 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
         # and the event says so -- a cleared field with no event would look
         # like the verification never happened.
         $vhPr.head = [pscustomobject]@{ ref = 'copilot/verified-head'; sha = 'ccc' }
-        $vhMoved = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId -PullRequests @($vhPr) `
+        $vhMoved = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhRun.runId -PullRequests @($vhPr) -PullRequestFiles $vhFiles `
             -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/1'; headSha = 'aaa' })
         if ([string]$vhMoved.run.prHeadSha -ne 'ccc') { throw "The moved head must be recorded, got '$($vhMoved.run.prHeadSha)'" }
         if ($null -ne $vhMoved.run.verifiedHeadSha) { throw 'A moved head must invalidate the verified head' }
@@ -7753,7 +7759,7 @@ Write-Step 'Verified head SHA — smoke: CI success binds to a head, and a moved
             merged_at = $null; closed_at = $null
             head = [pscustomobject]@{ ref = 'copilot/golden' }
         }
-        $vhGolden = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhGoldenRun.runId -PullRequests @($vhGoldenPr) `
+        $vhGolden = Invoke-AgentRunRefresh -WorkspaceRoot $vhWorkspace -RunId $vhGoldenRun.runId -PullRequests @($vhGoldenPr) -PullRequestFiles $vhFiles `
             -ActionsRun ([pscustomobject]@{ status = 'completed'; conclusion = 'success'; name = 'CI'; runUrl = 'https://x/4' })
         if ([string]$vhGolden.run.status -ne 'completed' -or [string]$vhGolden.run.outcome -ne 'awaiting-merge') {
             throw 'A headless PR must still refresh exactly as it did before this packet'

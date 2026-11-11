@@ -2,6 +2,53 @@
 
 All notable changes to this project are documented here.
 
+## 2026-11-10 — Cloud pull requests meet the envelope; network needs an approved allowlist (D-012, the rest)
+
+The runner's envelope check (#352) binds local runs only. A Copilot cloud task
+pushes from GitHub, so the host recorded its pull request as the run's product,
+green CI included, without ever looking at what it changed: on `main` a cloud
+PR editing `.github/workflows/ci.yml` refreshed to `completed / awaiting-merge`
+with its head verified.
+
+- **One verdict for both roads.** `Test-ChangedPathEnvelope`
+  (`backend/modules/execution/Execution.WorkPacket.ps1`) holds a list of
+  changed paths to `Get-EffectiveForbiddenPath` and answers `passed`, `failed`
+  or `unproven`. Unproven (the paths could not be read) is never a pass.
+- **The host checks a cloud PR before recording it.** Both refresh roads (the
+  autoclose sweep and the manual refresh route) fetch the PR's files
+  (`Get-PullRequestChangedPathViaApi`, renames count their old path; a failed
+  or capped fetch is `$null`, so unproven) and read the run's WorkPacket.
+  `Invoke-AgentRunRefresh` records `permissionEnvelope` on the run. A failed
+  verdict sets `failed / envelope-violation` in every PR state, merged
+  included, writes one `run.envelope-violation` event per head, and clears
+  `verifiedHeadSha`. An unproven verdict on a ready or merged PR is not
+  recorded as delivered; the next refresh that reads the files decides it. A
+  decided verdict is reused for the same head, so the files are not
+  re-fetched every poll.
+- **Proposed workflows are named as waiting.** `Find-ProposedWorkflowChange`
+  lists `.github/workflows-proposed/**` changes as `waiting-for-owner`. The
+  runner's summary (`proposedWorkflows`, both the failed and finished shapes)
+  and the agent-run record carry them, and the summaries say so. The
+  ExecutionResult schema is unchanged.
+- **`network true` grants nothing on its own.** A packet that asks for the
+  network must name bare hosts in `permissions.networkAllowlist`
+  (`Test-WorkPacket` rejects a missing list, a list with network false, and a
+  scheme, port, path or wildcard) and carry an owner approval whose SHA-256
+  fingerprint matches those hosts today (`Resolve-PacketNetworkAccess`: denied,
+  awaiting-owner-approval, approval-stale, approved). A host added after
+  approval makes it stale. The Claude adapter allows `WebFetch(domain:<host>)`
+  per approved host and denies WebSearch; otherwise it denies both. curl, wget
+  and `Invoke-WebRequest`/`Invoke-RestMethod` stay denied either way, since no
+  allowlist can scope them. Codex never enables network. A Copilot cloud
+  task's network is GitHub's firewall, outside the packet.
+- **The owner approves with a command.**
+  `pwsh -NoProfile -File ./tools/Approve-WorkPacketNetwork.ps1 -TaskId <id> -ApprovedBy <name>`
+  shows the hosts and asks first; `-WhatIf` writes nothing. A portal button is
+  a follow-up.
+- **Gate:** `tests/Test-EnvelopeCloudAndNetwork.ps1` (75 assertions),
+  registered in `scripts/Invoke-TestSuite.ps1`. Module smoke's refresh
+  fixtures now pass clean changed paths.
+
 ## 2026-10-20 — A run that touches a forbidden path fails by name and is never pushed (D-012)
 
 `AGENTS.md` already said a post-run diff touching `forbiddenPaths` fails the

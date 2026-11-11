@@ -740,7 +740,7 @@ function Test-RunPermissionEnvelope {
         cannot be shown to stay inside its envelope, so it is not ok and the
         reason says why.
     .OUTPUTS
-        [pscustomobject] ok, violations, forbidden, changedCount, error, summary
+        [pscustomobject] ok, violations, proposedWorkflows, forbidden, changedCount, error, summary
     #>
     param(
         [Parameter(Mandatory)][string]$RepoPath,
@@ -749,7 +749,7 @@ function Test-RunPermissionEnvelope {
     )
 
     $forbidden = Get-EffectiveForbiddenPath -Packet $Packet
-    $result = [ordered]@{ ok = $false; violations = @(); forbidden = $forbidden; changedCount = 0; error = ''; summary = '' }
+    $result = [ordered]@{ ok = $false; violations = @(); proposedWorkflows = @(); forbidden = $forbidden; changedCount = 0; error = ''; summary = '' }
 
     if ([string]::IsNullOrWhiteSpace($BaseCommit)) {
         $result.error = 'permission envelope unprovable: the run''s base commit was not recorded, so its changes cannot be read; not pushed.'
@@ -787,15 +787,22 @@ function Test-RunPermissionEnvelope {
 
     $result.changedCount = $changed.Count
     $result.violations = Find-ForbiddenPathChange -ChangedPath $changed.ToArray() -ForbiddenPath $forbidden
+    # A CI change the agent needs is named as waiting in the run's result,
+    # not left for the owner to find in the diff.
+    $result.proposedWorkflows = Find-ProposedWorkflowChange -ChangedPath $changed.ToArray()
+    $proposalNote = ''
+    if (@($result.proposedWorkflows).Count -gt 0) {
+        $proposalNote = ('; {0} workflow proposal(s) waiting for the owner: {1}' -f @($result.proposedWorkflows).Count, (@($result.proposedWorkflows | ForEach-Object { $_.path }) -join ', '))
+    }
     if (@($result.violations).Count -eq 0) {
         $result.ok = $true
-        $result.summary = ('passed: {0} changed path(s), none under {1}' -f $changed.Count, ($forbidden -join ', '))
+        $result.summary = ('passed: {0} changed path(s), none under {1}{2}' -f $changed.Count, ($forbidden -join ', '), $proposalNote)
         return [pscustomobject]$result
     }
 
     $named = @($result.violations | ForEach-Object { '{0} ({1})' -f $_.path, $_.pattern }) -join ', '
     $result.error = ('permission envelope: the run changed forbidden path(s): {0}. Not pushed. A workflow change is proposed under .github/workflows-proposed/ instead.' -f $named)
-    $result.summary = ('failed: {0} forbidden path(s)' -f @($result.violations).Count)
+    $result.summary = ('failed: {0} forbidden path(s){1}' -f @($result.violations).Count, $proposalNote)
     return [pscustomobject]$result
 }
 
@@ -2308,6 +2315,7 @@ function Invoke-QueuedTask {
                 verifyResult       = $verifyResult
                 permissionEnvelope = $envelope.summary
                 envelopeViolations = @($envelope.violations)
+                proposedWorkflows  = @($envelope.proposedWorkflows)
                 resultPath         = (Get-ExecutionResultPath -WorkspaceRoot $WorkspaceRoot -TaskId $runId)
                 runnerCompletedAt  = (Get-Date).ToString('o')
             }
@@ -2364,6 +2372,7 @@ function Invoke-QueuedTask {
             resultSource      = $resultSource
             providerSessionId = $resultSessionId
             permissionEnvelope = $envelope.summary
+            proposedWorkflows = @($envelope.proposedWorkflows)
             runnerCompletedAt = (Get-Date).ToString('o')
         }
         foreach ($pushKey in $pushFields.Keys) { $summarySet[$pushKey] = $pushFields[$pushKey] }

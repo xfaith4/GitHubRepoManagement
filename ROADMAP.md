@@ -457,8 +457,14 @@ lanes are in [the archive](docs/history/completed-releases.md).
       that needs the network declares an allowlist the owner approves;
       `network false` is never loosened silently. Why next: the first
       dispatched runs that push to other repositories make this real, and
-      until it binds for cloud runs the PR review is their only guard.
-      _(state: planned)_
+      until it binds for cloud runs the PR review is their only guard. Built
+      2026-11-10: `Invoke-AgentRunRefresh` fails a cloud PR that touches a
+      forbidden path (`envelope-violation`, merged or not) and records none as
+      delivered until its files were read; `proposedWorkflows` rides the runner
+      summary and the run record; network needs an allowlist approved with
+      `tools/Approve-WorkPacketNetwork.ps1`. [non-blocker] an Approve button
+      in the portal.
+      _(state: built)_
       `check: pwsh ./tests/Test-EnvelopeCloudAndNetwork.ps1 -FailOnError`
 - [ ] **The L0 road: a repository with no roadmap gets a first plan.** About
       49 scanned repositories sit at L0 with no roadmap file, "missing roadmap
