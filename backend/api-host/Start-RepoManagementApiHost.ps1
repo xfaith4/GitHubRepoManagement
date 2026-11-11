@@ -13848,6 +13848,8 @@ try {
                                 try {
                                     $submitDecision['prUrl'] = [string]$submitResult.prUrl
                                     $submitDecision['prNumber'] = [int]$submitResult.prNumber
+                                    # The head GitHub reported for the new PR (loop step 7).
+                                    $submitDecision['prHeadSha'] = ConvertTo-DeliveryHeadSha -Sha ([string](Get-ObjectPropertyValue -InputObject $submitResult -PropertyName 'prHeadSha' -Default '')) -Context ("decision on {0}" -f $repoName)
                                     Add-DeliveryLedgerRecord -WorkspaceRoot $WorkspaceRoot -Record $submitDecision
                                 }
                                 catch {
@@ -13911,7 +13913,8 @@ try {
                 'GET /api/delivery/summary' {
                     Add-MetricCounter -Name 'api_requests_total'
                     $ledgerRead = Get-DeliveryLedgerRecord -WorkspaceRoot $WorkspaceRoot
-                    $deliverySummary = Get-DeliverySummary -Record @($ledgerRead.records) -AsOfUtc ([datetime]::UtcNow.ToString('o'))
+                    $deliverySummary = Get-DeliverySummary -Record @($ledgerRead.records) -AsOfUtc ([datetime]::UtcNow.ToString('o')) `
+                        -LastRefresh (Get-DeliveryOutcomeRefreshState -WorkspaceRoot $WorkspaceRoot)
                     Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
                         success = $true
                         data    = @{
@@ -13937,7 +13940,8 @@ try {
                             success = $true
                             data    = @{
                                 refresh = $refresh
-                                summary = (Get-DeliverySummary -Record @($ledgerRead.records) -AsOfUtc ([datetime]::UtcNow.ToString('o')))
+                                summary = (Get-DeliverySummary -Record @($ledgerRead.records) -AsOfUtc ([datetime]::UtcNow.ToString('o')) `
+                                        -LastRefresh (Get-DeliveryOutcomeRefreshState -WorkspaceRoot $WorkspaceRoot))
                             }
                         }
                     }

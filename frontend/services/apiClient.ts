@@ -1364,10 +1364,43 @@ export interface DeliverySummary {
   asOf: string;
   decisions: number;
   metrics: Record<
-    'proposalsDecided' | 'accepted' | 'rejected' | 'prsOpened' | 'prsMerged' | 'operatorSeconds' | 'operatorSecondsPerMergedImprovement',
+    | 'proposalsDecided'
+    | 'accepted'
+    | 'rejected'
+    | 'prsOpened'
+    | 'prsMerged'
+    | 'operatorSeconds'
+    | 'operatorSecondsPerMergedImprovement'
+    | 'awaitingOutcome'
+    | 'closedUnmerged',
     DeliveryMetric
   >;
-  prs: Array<{ repoName: string; prUrl: string; decision: string; decidedAt: string; prState: string; stateKnown: boolean; mergedAt: string | null; ciConclusion: string }>;
+  prs: Array<{ repoName: string; prUrl: string; decision: string; decidedAt: string; prState: string; stateKnown: boolean; mergedAt: string | null; ciConclusion: string; headSha: string | null }>;
+  /** Loop step 7: exactly one outcome per decision, read from GitHub. */
+  decisionOutcomes: DeliveryDecisionOutcome[];
+  /** When outcomes were last read from GitHub; lastReadAt null (with a reason) if never. */
+  outcomeFreshness: { lastReadAt: string | null; source: 'github'; errorCount: number | null; reason: string | null };
+}
+
+export interface DeliveryDecisionOutcome {
+  decisionId: string | null;
+  repoName: string;
+  decision: 'accept' | 'edit' | 'reject';
+  decidedAt: string | null;
+  operatorSeconds: number | null;
+  prUrl: string | null;
+  prNumber: number | null;
+  outcome: 'rejected-before-pr' | 'no-pr-recorded' | 'pr-opened' | 'pr-open' | 'merged' | 'closed-unmerged';
+  terminal: boolean;
+  /** No final outcome yet. Awaiting is never a failure. */
+  awaiting: boolean;
+  outcomeRead: boolean;
+  prState: 'open' | 'merged' | 'closed-unmerged' | null;
+  headSha: string | null;
+  ciConclusion: 'success' | 'failure' | 'pending' | 'none' | 'unavailable' | 'not-read' | null;
+  mergedAt: string | null;
+  outcomeRecordedAt: string | null;
+  reason: string | null;
 }
 
 interface DeliverySummaryEnvelope {
