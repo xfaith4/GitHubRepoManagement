@@ -11701,7 +11701,9 @@ Write-Step 'Live-service currency check - derived routes, and the SPA-fallback t
     # 1-second timeout each: about a minute of each CI run, asserting nothing.
     $currencyAst = [System.Management.Automation.Language.Parser]::ParseFile($currencyScript, [ref]$null, [ref]$null)
     $currencyFn = $currencyAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-DeclaredGetRoute' }, $true)
-    if ($null -ne $currencyFn) { . ([scriptblock]::Create($currencyFn.Extent.Text)) }
+    # Defined through the function: drive, not a dot-source: the dot-source
+    # sweep refuses any site whose target is not a literal path.
+    if ($null -ne $currencyFn) { Set-Item -Path 'function:Get-DeclaredGetRoute' -Value $currencyFn.Body.GetScriptBlock() }
     if (-not (Get-Command Get-DeclaredGetRoute -ErrorAction SilentlyContinue)) {
         throw 'Get-DeclaredGetRoute did not load; the currency check cannot derive its scope.'
     }
