@@ -448,7 +448,11 @@ try {
     $selectionRecords = @()
     if (-not $OverrideCooldown -and $roadmapIsLocal) {
         $selectionRepoPath = Split-Path -Parent $resolvedRoadmap.Path
-        $selectionRecords = @(Get-RoadmapItemDispatchRecord -RunsDir $historyStore.RunsPath)
+        # The function returns `, $records.ToArray()`; wrapping the call in @()
+        # nests that array, so every record would read as one array (and an
+        # empty history as one empty array that strict mode throws on).
+        $fetchedRecords = Get-RoadmapItemDispatchRecord -RunsDir $historyStore.RunsPath
+        if ($null -ne $fetchedRecords) { $selectionRecords = $fetchedRecords }
     }
     $taskSelection = Get-NextRoadmapTask -RoadmapContent $resolvedRoadmap.Content -RepoPath $selectionRepoPath -DispatchRecords $selectionRecords
 
