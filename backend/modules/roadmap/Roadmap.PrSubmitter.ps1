@@ -506,6 +506,140 @@ function Get-GitTokenPushArgs {
     return @('-c', ("http.extraheader=AUTHORIZATION: basic {0}" -f $basic))
 }
 
+function Invoke-RunApprovePush {
+    <#
+        .SYNOPSIS
+            Push an awaiting-review run branch, open its pull request, and
+            record the PR on the run summary.
+        .DESCRIPTION
+            Loop steps 3 to 5 (2026-11-11). This is the body of
+            POST /api/roadmap-agent/approve-push, moved out of the route so
+            tests/Test-DispatchToPr.ps1 can drive the real path: a real push
+            to a local bare remote, with only the GitHub API injected. Local
+            providers run with autoPush off (owner decision 2026-10-17:
+            approval stays on publication), so this route is the step that
+            turns a finished run into a pull request.
+
+            Only awaiting-review -> pushed is legal. Push success is proven by
+            the git exit code, and a failed push throws, as the route always
+            did. A PR refusal after a proven push is a partial success: the run
+            reads `pushed` with `prState = 'open-refused'` and the named
+            refusal, the same record Invoke-DeliveryReconciliation writes,
+            so the run itself says why no PR exists.
+        .OUTPUTS
+            [pscustomobject] ok, statusCode, error, category, data
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter(Mandatory)][string]$RunsDir,
+        [Parameter()][AllowEmptyString()][string]$RunId = '',
+        [Parameter()][AllowEmptyString()][string]$Token = '',
+        [Parameter()][bool]$OpenPr = $true
+    )
+
+    $refuse = {
+        param([int]$Code, [string]$Message, [string]$Category)
+        [pscustomobject]@{ ok = $false; statusCode = $Code; error = $Message; category = $Category; data = $null }
+    }
+    $field = {
+        param([object]$Obj, [string]$Name)
+        if ($null -ne $Obj -and $Obj.PSObject.Properties.Name -contains $Name -and $null -ne $Obj.$Name) { [string]$Obj.$Name } else { '' }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RunId) -or $RunId -notmatch '^[A-Za-z0-9._-]+$') {
+        return (& $refuse 400 'A valid runId is required for /api/roadmap-agent/approve-push' 'validation')
+    }
+    $summaryPath = Join-Path $RunsDir ("{0}.summary.json" -f $RunId)
+    if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) {
+        return (& $refuse 404 ("No run summary found for runId '{0}'." -f $RunId) '')
+    }
+
+    $summary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $status = & $field $summary 'status'
+    $branch = & $field $summary 'branch'
+    $repoPath = & $field $summary 'localRepoPath'
+    if ($status -ne 'awaiting-review') {
+        return (& $refuse 409 ("Cannot approve & push run '{0}' in status '{1}' — only 'awaiting-review' runs can be pushed." -f $RunId, $status) '')
+    }
+    if ([string]::IsNullOrWhiteSpace($branch) -or [string]::IsNullOrWhiteSpace($repoPath) -or -not (Test-Path -LiteralPath (Join-Path $repoPath '.git'))) {
+        return (& $refuse 400 ("Run '{0}' summary is missing a usable branch/localRepoPath (branch='{1}', localRepoPath='{2}')." -f $RunId, $branch, $repoPath) 'validation')
+    }
+
+    # The service account has no git credential manager: push with the
+    # configured GitHub token when present. A tokenless push still works for
+    # SSH remotes or an operator-run host.
+    $authArgs = @(Get-GitTokenPushArgs -Token $Token)
+    $pushOutput = (& git -C $repoPath @authArgs push -u origin $branch 2>&1) | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        throw ("git push failed for branch '{0}' in '{1}': {2}" -f $branch, $repoPath, $pushOutput.Trim())
+    }
+
+    $task = & $field $summary 'selectedTask'
+    $repoName = Split-Path -Leaf $repoPath
+    $pr = $null
+    if ($OpenPr) {
+        $title = if (-not [string]::IsNullOrWhiteSpace($task)) { $task } else { ("Roadmap task {0}" -f $RunId) }
+        # Base from the repository's explicit policy or its remote default
+        # branch, validated against origin; unresolvable refuses by name
+        # instead of guessing 'main' (2026-10-17).
+        $base = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName $repoName -RepoPath $repoPath -RequestedBase (& $field $summary 'baseBranch')
+        if (-not $base.ok) {
+            $pr = [pscustomobject]@{
+                created = $false; refused = $true; reason = [string]$base.reason; category = 'pr-base-policy'
+                branch = $branch; baseBranch = $null; prUrl = $null; prNumber = $null; alreadyExisted = $false
+            }
+        }
+        else {
+            $pr = Open-RepoBranchPullRequest -RepoName $repoName -RepoPath $repoPath -Branch $branch -BaseBranch ([string]$base.base) -Token $Token `
+                -Title $title `
+                -Body ("Automated roadmap task run ``{0}``.`n`n{1}`n`nBase ``{2}`` chosen from {3}. Generated by GitHubRepoManagement (Release 3.4). Review the diff before merging." -f $RunId, $task, [string]$base.base, [string]$base.source)
+        }
+    }
+
+    $updated = [ordered]@{}
+    foreach ($prop in $summary.PSObject.Properties) { $updated[$prop.Name] = $prop.Value }
+    $updated['status'] = 'pushed'
+    $updated['pushedAt'] = (Get-Date).ToString('o')
+    if ($null -ne $pr -and -not $pr.refused -and $pr.prUrl) {
+        $updated['prState'] = 'open'
+        $updated['prUrl'] = [string]$pr.prUrl
+        $updated['prNumber'] = [int]$pr.prNumber
+        $updated['prOpenedAt'] = (Get-Date).ToUniversalTime().ToString('o')
+    }
+    elseif ($null -ne $pr -and $pr.refused) {
+        $updated['prState'] = 'open-refused'
+        $updated['prRefusal'] = [ordered]@{ category = [string]$pr.category; reason = [string]$pr.reason }
+    }
+    ([pscustomobject]$updated | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+
+    $message = if ($null -eq $pr) {
+        ("Branch '{0}' pushed to origin. PR opening was disabled for this approval." -f $branch)
+    } elseif ($pr.refused) {
+        ("Branch '{0}' pushed to origin, but the PR could not be opened ({1}): {2}" -f $branch, $pr.category, $pr.reason)
+    } elseif ($pr.alreadyExisted) {
+        ("Branch '{0}' pushed to origin. A pull request already exists: {1}" -f $branch, $pr.prUrl)
+    } else {
+        ("Branch '{0}' pushed to origin and PR #{1} opened: {2}" -f $branch, $pr.prNumber, $pr.prUrl)
+    }
+
+    return [pscustomobject]@{
+        ok = $true; statusCode = 200; error = ''; category = ''
+        data = [ordered]@{
+            runId            = $RunId
+            branch           = $branch
+            pushed           = $true
+            prUrl            = $(if ($null -ne $pr -and $pr.prUrl) { [string]$pr.prUrl } else { $null })
+            prNumber         = $(if ($null -ne $pr -and $pr.prNumber) { [int]$pr.prNumber } else { $null })
+            prRefusal        = $(if ($null -ne $pr -and $pr.refused) { @{ category = [string]$pr.category; reason = [string]$pr.reason } } else { $null })
+            prAlreadyExisted = [bool]($null -ne $pr -and $pr.alreadyExisted)
+            message          = $message
+            output           = $pushOutput.Trim()
+        }
+    }
+}
+
 function Resolve-GitCommitIdentity {
     <#
         .SYNOPSIS

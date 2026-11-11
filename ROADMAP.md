@@ -121,7 +121,13 @@ flight.
       starts at the freshly fetched PR base, not the clone's checkout, so its
       PR carries only the agent's change; the same gate covers it. These
       bounded repairs do not establish dispatch-to-PR or live recovery proof.
-      _(state: planned)_
+      Built 2026-11-11: with autoPush off (approval stays on publication) the
+      PR path is the approve-push route, whose body is now
+      `Invoke-RunApprovePush` in `Roadmap.PrSubmitter.ps1`; a base that cannot
+      resolve still pushes and records `open-refused` with its reason. The host
+      closes abandoned runs on every history read with
+      `Repair-OrphanedRunSummary -HeartbeatPath`, not only at runner startup.
+      Not yet shown on a live repository. _(state: built)_
       `check: pwsh ./tests/Test-DispatchToPr.ps1 -FailOnError`
 - [ ] **At least ten repositories legitimately ready for automated work.** One
       of 62 is ready today, and an investigation into why is under way. The

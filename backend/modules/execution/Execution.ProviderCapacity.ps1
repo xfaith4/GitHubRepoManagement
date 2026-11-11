@@ -767,6 +767,39 @@ function _PCR_SummaryProvider {
 
 <#
 .SYNOPSIS
+    The pid of the runner whose heartbeat is fresh, or $null when none is.
+
+.DESCRIPTION
+    One reading of runner liveness, shared by the slot count and the abandoned
+    run sweep so the two can never disagree about which runner is alive. A
+    missing, unreadable, stale or future-dated heartbeat names no live runner.
+#>
+function Get-LiveRunnerPid {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$HeartbeatPath,
+        [datetime]$NowUtc = [datetime]::UtcNow,
+        [int]$StaleAfterMinutes = 10
+    )
+
+    if ([string]::IsNullOrWhiteSpace($HeartbeatPath)) { return $null }
+    $heartbeat = _PCR_ReadSummary -Path $HeartbeatPath
+    if ($null -eq $heartbeat) { return $null }
+    $beatRaw = _PCR_Stamp (_PCR_Field -Obj $heartbeat -Name 'lastHeartbeatAt' -Default '')
+    $beatAt = [datetime]::MinValue
+    $beatParsed = [datetime]::TryParse(
+        $beatRaw,
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal,
+        [ref]$beatAt)
+    if ($beatParsed -and ($NowUtc - $beatAt).TotalMinutes -le $StaleAfterMinutes -and $beatAt -le $NowUtc.AddMinutes($StaleAfterMinutes)) {
+        return (_PCR_Field -Obj $heartbeat -Name 'pid' -Default $null)
+    }
+    return $null
+}
+
+<#
+.SYNOPSIS
     How many executions this provider has actually running right now.
 
 .DESCRIPTION
@@ -779,7 +812,7 @@ function _PCR_SummaryProvider {
     refuse every future claim. So a run counts only while it is LIVE (A19): the
     heartbeat file exists, its beat is recent, and its pid matches the pid the
     summary recorded. One runner means one pid, and the heartbeat is the
-    liveness evidence the portal already trusts.
+    liveness evidence the portal already trusts (Get-LiveRunnerPid).
 
     A summary with no `runnerPid` was written before H38-11 and is never live.
     That is deliberate: an old running summary is exactly the stuck slot this
@@ -800,21 +833,7 @@ function Get-ProviderActiveExecutionCount {
 
     # Resolve liveness once: if no runner is alive, nothing is running, and
     # every summary on disk is a leftover.
-    $livePid = $null
-    $heartbeat = $null
-    if (-not [string]::IsNullOrWhiteSpace($HeartbeatPath)) { $heartbeat = _PCR_ReadSummary -Path $HeartbeatPath }
-    if ($null -ne $heartbeat) {
-        $beatRaw = _PCR_Stamp (_PCR_Field -Obj $heartbeat -Name 'lastHeartbeatAt' -Default '')
-        $beatAt = [datetime]::MinValue
-        $beatParsed = [datetime]::TryParse(
-            $beatRaw,
-            [System.Globalization.CultureInfo]::InvariantCulture,
-            [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal,
-            [ref]$beatAt)
-        if ($beatParsed -and ($NowUtc - $beatAt).TotalMinutes -le $StaleAfterMinutes -and $beatAt -le $NowUtc.AddMinutes($StaleAfterMinutes)) {
-            $livePid = _PCR_Field -Obj $heartbeat -Name 'pid' -Default $null
-        }
-    }
+    $livePid = Get-LiveRunnerPid -HeartbeatPath $HeartbeatPath -NowUtc $NowUtc -StaleAfterMinutes $StaleAfterMinutes
     if ($null -eq $livePid) { return 0 }
 
     $count = 0
@@ -847,13 +866,23 @@ function Get-ProviderActiveExecutionCount {
 
     branch, attempt, providerSessionId and workPacketPath are left untouched --
     the run failed, but everything needed to retry or resume it is still true.
+
+    Two callers, two readings of "this runner" (loop steps 3 to 5, 2026-11-11):
+      - The runner, at startup, passes -CurrentPid $PID.
+      - The host passes -HeartbeatPath instead, because a runner that died and
+        was never restarted would otherwise leave its run `running` forever.
+        The heartbeat's pid, when the beat is fresh, is the live runner; a run
+        whose pid no longer matches it, and whose process is gone, was
+        abandoned. With no fresh heartbeat there is no live runner, so only
+        process liveness protects a run.
 #>
 function Repair-OrphanedRunSummary {
-    [CmdletBinding(SupportsShouldProcess)]
+    [CmdletBinding(SupportsShouldProcess, DefaultParameterSetName = 'ByPid')]
     [OutputType([string[]])]
     param(
         [Parameter(Mandatory)][string]$RunsDir,
-        [Parameter(Mandatory)][int]$CurrentPid,
+        [Parameter(Mandatory, ParameterSetName = 'ByPid')][int]$CurrentPid,
+        [Parameter(Mandatory, ParameterSetName = 'ByHeartbeat')][string]$HeartbeatPath,
         [datetime]$NowUtc = [datetime]::UtcNow,
         [Parameter(Mandatory)][object]$Config,
         # Liveness of a recorded runner pid. Injected so a gate can decide it;
@@ -866,6 +895,17 @@ function Repair-OrphanedRunSummary {
 
     $providers = _PCR_Field -Obj $Config -Name 'providers' -Default $null
     $stamp = $NowUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $byHeartbeat = ($PSCmdlet.ParameterSetName -eq 'ByHeartbeat')
+    $livePidText = 'none'
+    if ($byHeartbeat) {
+        $heartbeatPid = Get-LiveRunnerPid -HeartbeatPath $HeartbeatPath -NowUtc $NowUtc
+        $CurrentPid = 0
+        if ($null -ne $heartbeatPid) {
+            $livePidText = [string]$heartbeatPid
+            $parsedLive = 0
+            if ([int]::TryParse([string]$heartbeatPid, [ref]$parsedLive)) { $CurrentPid = $parsedLive }
+        }
+    }
 
     foreach ($file in @(Get-ChildItem -LiteralPath $RunsDir -Filter '*.summary.json' -File -ErrorAction SilentlyContinue)) {
         $summary = _PCR_ReadSummary -Path $file.FullName
@@ -877,7 +917,7 @@ function Repair-OrphanedRunSummary {
         if ($mode -ne 'local') { continue }
 
         $summaryPid = _PCR_Field -Obj $summary -Name 'runnerPid' -Default $null
-        if ($null -ne $summaryPid -and [string]$summaryPid -eq [string]$CurrentPid) { continue }
+        if ($null -ne $summaryPid -and $CurrentPid -gt 0 -and [string]$summaryPid -eq [string]$CurrentPid) { continue }
         # 2026-10-17: a run whose runner is still alive is owned, not orphaned.
         # Two runners (a repeat trigger racing a manual start, or a second
         # instance) must not declare each other's work abandoned; only a run
@@ -896,7 +936,13 @@ function Repair-OrphanedRunSummary {
         }
         $rebuilt['status'] = 'failed'
         $rebuilt['failureCategory'] = 'orphaned'
-        $rebuilt['error'] = ('runner pid {0} is not this runner ({1}); run abandoned at {2}' -f $(if ($null -eq $summaryPid) { 'none' } else { [string]$summaryPid }), $CurrentPid, $stamp)
+        $summaryPidText = if ($null -eq $summaryPid) { 'none' } else { [string]$summaryPid }
+        $rebuilt['error'] = if ($byHeartbeat) {
+            ('runner pid {0} no longer matches the heartbeat (live runner pid: {1}) and its process is gone; run abandoned at {2}' -f $summaryPidText, $livePidText, $stamp)
+        }
+        else {
+            ('runner pid {0} is not this runner ({1}); run abandoned at {2}' -f $summaryPidText, $CurrentPid, $stamp)
+        }
         $rebuilt['orphanedAt'] = $stamp
 
         Set-Content -LiteralPath $file.FullName -Value ([pscustomobject]$rebuilt | ConvertTo-Json -Depth 10) -Encoding UTF8

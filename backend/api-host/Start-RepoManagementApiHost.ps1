@@ -11006,6 +11006,24 @@ try {
                 'GET /api/roadmap-agent/history' {
                     $q = Parse-QueryString -Query $req.Query
                     $limit = if ($q.ContainsKey('limit') -and $q.limit) { [int]$q.limit } else { 25 }
+                    # Loop steps 3 to 5 (2026-11-11): a run whose runner died is
+                    # closed as abandoned before the list is read, so it never
+                    # reads `running`. The runner sweeps only when it starts; a
+                    # runner that is never restarted would leave its run running
+                    # forever. Never the reason the list fails.
+                    try {
+                        $sweepConfig = Get-AgentProviderConfig -ConfigPath (Get-AgentProviderConfigPath -WorkspaceRoot $WorkspaceRoot)
+                        if ($null -ne $sweepConfig) {
+                            $sweepRunsDir = Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs'
+                            $abandonedRuns = @(Repair-OrphanedRunSummary -RunsDir $sweepRunsDir -HeartbeatPath (Get-RunnerHeartbeatFilePath -WorkspaceRoot $WorkspaceRoot) -Config $sweepConfig)
+                            if ($abandonedRuns.Count -gt 0) {
+                                Write-HostLog ("[INFO ] roadmap-agent.history correlationId={0} closed abandoned runs: {1}" -f $correlationId, ($abandonedRuns -join ', '))
+                            }
+                        }
+                    }
+                    catch {
+                        Write-HostLog ("[WARN ] roadmap-agent.history correlationId={0} abandoned-run sweep failed: {1}" -f $correlationId, $_.Exception.Message)
+                    }
                     $items = Get-RoadmapTaskHistory -Limit $limit
 
                     Add-MetricCounter -Name 'api_requests_total'
@@ -11019,127 +11037,28 @@ try {
                 }
                 'POST /api/roadmap-agent/approve-push' {
                     # Release 2.8: operator approves an 'awaiting-review' runner branch
-                    # and the portal pushes it to origin. Only awaiting-review -> pushed
-                    # is a legal transition (409 otherwise); push success is proven by
-                    # the git exit code, never assumed.
+                    # and the portal pushes it to origin, then opens the PR and records
+                    # it on the run. The body lives in Invoke-RunApprovePush
+                    # (Roadmap.PrSubmitter.ps1) so tests/Test-DispatchToPr.ps1 drives
+                    # the same code; this route only maps its answer to HTTP.
                     $body = Parse-JsonBody -Body $req.Body
-                    $approveRunId = if ($body.ContainsKey('runId') -and $body.runId) { [string]$body.runId } else { '' }
                     Add-MetricCounter -Name 'api_requests_total'
-                    if ([string]::IsNullOrWhiteSpace($approveRunId) -or $approveRunId -notmatch '^[A-Za-z0-9._-]+$') {
-                        Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
-                            success = $false
-                            error = 'A valid runId is required for /api/roadmap-agent/approve-push'
-                            category = 'validation'
-                        }
+                    $approveRunId = if ($body.ContainsKey('runId') -and $body.runId) { [string]$body.runId } else { '' }
+                    $approveOpenPr = if ($body.ContainsKey('openPr')) { Parse-Bool -Value $body.openPr -Default $true } else { $true }
+                    $approve = Invoke-RunApprovePush -WorkspaceRoot $WorkspaceRoot `
+                        -RunsDir (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs') `
+                        -RunId $approveRunId -Token (Get-ConfiguredGitHubToken -Settings (Get-HostSettings)) -OpenPr $approveOpenPr
+                    if (-not $approve.ok) {
+                        $approveStatusText = switch ($approve.statusCode) { 400 { 'Bad Request' } 404 { 'Not Found' } 409 { 'Conflict' } default { 'Error' } }
+                        $approvePayload = @{ success = $false; error = [string]$approve.error }
+                        if (-not [string]::IsNullOrWhiteSpace([string]$approve.category)) { $approvePayload['category'] = [string]$approve.category }
+                        Send-HttpJson -Stream $req.Stream -StatusCode ([int]$approve.statusCode) -StatusText $approveStatusText -CorrelationId $correlationId -Payload $approvePayload
                     }
                     else {
-                        $approveSummaryPath = Join-Path (Resolve-OutputPath -WorkspaceRoot $WorkspaceRoot -RelativePath 'output\roadmap-task-history\runs') ("{0}.summary.json" -f $approveRunId)
-                        if (-not (Test-Path -LiteralPath $approveSummaryPath -PathType Leaf)) {
-                            Send-HttpJson -Stream $req.Stream -StatusCode 404 -StatusText 'Not Found' -CorrelationId $correlationId -Payload @{
-                                success = $false
-                                error = ("No run summary found for runId '{0}'." -f $approveRunId)
-                            }
-                        }
-                        else {
-                            $approveSummary = Get-Content -LiteralPath $approveSummaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
-                            $approveStatus = if ($approveSummary.PSObject.Properties.Name -contains 'status') { [string]$approveSummary.status } else { '' }
-                            $approveBranch = if ($approveSummary.PSObject.Properties.Name -contains 'branch') { [string]$approveSummary.branch } else { '' }
-                            $approveRepoPath = if ($approveSummary.PSObject.Properties.Name -contains 'localRepoPath') { [string]$approveSummary.localRepoPath } else { '' }
-                            if ($approveStatus -ne 'awaiting-review') {
-                                Send-HttpJson -Stream $req.Stream -StatusCode 409 -StatusText 'Conflict' -CorrelationId $correlationId -Payload @{
-                                    success = $false
-                                    error = ("Cannot approve & push run '{0}' in status '{1}' — only 'awaiting-review' runs can be pushed." -f $approveRunId, $approveStatus)
-                                }
-                            }
-                            elseif ([string]::IsNullOrWhiteSpace($approveBranch) -or [string]::IsNullOrWhiteSpace($approveRepoPath) -or -not (Test-Path -LiteralPath (Join-Path $approveRepoPath '.git'))) {
-                                Send-HttpJson -Stream $req.Stream -StatusCode 400 -StatusText 'Bad Request' -CorrelationId $correlationId -Payload @{
-                                    success = $false
-                                    error = ("Run '{0}' summary is missing a usable branch/localRepoPath (branch='{1}', localRepoPath='{2}')." -f $approveRunId, $approveBranch, $approveRepoPath)
-                                    category = 'validation'
-                                }
-                            }
-                            else {
-                                # The service account has no git credential manager: push with
-                                # the configured GitHub token when present. A tokenless push
-                                # still works for SSH remotes or an operator-run host.
-                                $ghToken = Get-ConfiguredGitHubToken -Settings (Get-HostSettings)
-                                $gitPushArgs = @('-C', $approveRepoPath)
-                                if (-not [string]::IsNullOrWhiteSpace($ghToken)) {
-                                    $basicToken = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("x-access-token:{0}" -f $ghToken)))
-                                    $gitPushArgs += @('-c', ("http.extraheader=AUTHORIZATION: basic {0}" -f $basicToken))
-                                }
-                                $pushOutput = (& git @gitPushArgs push -u origin $approveBranch 2>&1) | Out-String
-                                if ($LASTEXITCODE -ne 0) {
-                                    throw ("git push failed for branch '{0}' in '{1}': {2}" -f $approveBranch, $approveRepoPath, $pushOutput.Trim())
-                                }
-
-                                # Release 3.4 milestone 3 — a pushed branch no longer ends at
-                                # "open the PR from GitHub when ready". The PR opens here,
-                                # through the same refusal matrix the roadmap-repair submit
-                                # uses. A PR refusal after a proven push is a PARTIAL success:
-                                # the push is reported as done and the refusal by name, never
-                                # thrown away — an operator without a token still gets their
-                                # branch pushed, plus the reason no PR appeared.
-                                $approveOpenPr = if ($body.ContainsKey('openPr')) { Parse-Bool -Value $body.openPr -Default $true } else { $true }
-                                $approveTask = if ($approveSummary.PSObject.Properties.Name -contains 'selectedTask') { [string]$approveSummary.selectedTask } else { '' }
-                                $approvePr = $null
-                                if ($approveOpenPr -and (Get-Command -Name 'Open-RepoBranchPullRequest' -ErrorAction SilentlyContinue)) {
-                                    $approvePrTitle = if (-not [string]::IsNullOrWhiteSpace($approveTask)) { $approveTask } else { ("Roadmap task {0}" -f $approveRunId) }
-                                    # Base from the repository's explicit policy or its remote
-                                    # default branch, validated against origin; unresolvable
-                                    # refuses by name instead of guessing 'main' (2026-10-17).
-                                    $approveBase = Resolve-RepoPullRequestBase -WorkspaceRoot $WorkspaceRoot -RepoName (Split-Path -Leaf $approveRepoPath) -RepoPath $approveRepoPath `
-                                        -RequestedBase ([string](Get-ObjectPropertyValue -InputObject $approveSummary -PropertyName 'baseBranch' -Default ''))
-                                    if (-not $approveBase.ok) {
-                                        $approvePr = [pscustomobject]@{
-                                            created = $false; refused = $true; reason = [string]$approveBase.reason; category = 'pr-base-policy'
-                                            branch = $approveBranch; baseBranch = $null; prUrl = $null; prNumber = $null; alreadyExisted = $false
-                                        }
-                                    }
-                                    else {
-                                        $approvePr = Open-RepoBranchPullRequest -RepoName (Split-Path -Leaf $approveRepoPath) `
-                                            -RepoPath $approveRepoPath -Branch $approveBranch -BaseBranch ([string]$approveBase.base) -Token $ghToken `
-                                            -Title $approvePrTitle `
-                                            -Body ("Automated roadmap task run ``{0}``.`n`n{1}`n`nBase ``{2}`` chosen from {3}. Generated by GitHubRepoManagement (Release 3.4). Review the diff before merging." -f $approveRunId, $approveTask, [string]$approveBase.base, [string]$approveBase.source)
-                                    }
-                                }
-
-                                $updatedSummary = @{}
-                                foreach ($prop in $approveSummary.PSObject.Properties) { $updatedSummary[$prop.Name] = $prop.Value }
-                                $updatedSummary['status'] = 'pushed'
-                                $updatedSummary['pushedAt'] = (Get-Date).ToString('o')
-                                if ($null -ne $approvePr -and -not $approvePr.refused -and $approvePr.prUrl) {
-                                    $updatedSummary['prUrl'] = [string]$approvePr.prUrl
-                                    $updatedSummary['prNumber'] = [int]$approvePr.prNumber
-                                    $updatedSummary['prOpenedAt'] = (Get-Date).ToUniversalTime().ToString('o')
-                                }
-                                ($updatedSummary | ConvertTo-Json -Depth 10) | Set-Content -LiteralPath $approveSummaryPath -Encoding UTF8
-
-                                $approveMessage = if ($null -eq $approvePr) {
-                                    ("Branch '{0}' pushed to origin. PR opening was disabled for this approval." -f $approveBranch)
-                                } elseif ($approvePr.refused) {
-                                    ("Branch '{0}' pushed to origin, but the PR could not be opened ({1}): {2}" -f $approveBranch, $approvePr.category, $approvePr.reason)
-                                } elseif ($approvePr.alreadyExisted) {
-                                    ("Branch '{0}' pushed to origin. A pull request already exists: {1}" -f $approveBranch, $approvePr.prUrl)
-                                } else {
-                                    ("Branch '{0}' pushed to origin and PR #{1} opened: {2}" -f $approveBranch, $approvePr.prNumber, $approvePr.prUrl)
-                                }
-                                Write-HostLog ("[TRACE] roadmap-agent.approve-push correlationId={0} runId={1} branch={2} pushed=true prUrl={3}" -f $correlationId, $approveRunId, $approveBranch, $(if ($null -ne $approvePr -and $approvePr.prUrl) { $approvePr.prUrl } else { '(none)' }))
-                                Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
-                                    success = $true
-                                    data = @{
-                                        runId = $approveRunId
-                                        branch = $approveBranch
-                                        pushed = $true
-                                        prUrl = $(if ($null -ne $approvePr -and $approvePr.prUrl) { [string]$approvePr.prUrl } else { $null })
-                                        prNumber = $(if ($null -ne $approvePr -and $approvePr.prNumber) { [int]$approvePr.prNumber } else { $null })
-                                        prRefusal = $(if ($null -ne $approvePr -and $approvePr.refused) { @{ category = [string]$approvePr.category; reason = [string]$approvePr.reason } } else { $null })
-                                        prAlreadyExisted = [bool]($null -ne $approvePr -and $approvePr.alreadyExisted)
-                                        message = $approveMessage
-                                        output = $pushOutput.Trim()
-                                    }
-                                }
-                            }
+                        Write-HostLog ("[TRACE] roadmap-agent.approve-push correlationId={0} runId={1} branch={2} pushed=true prUrl={3}" -f $correlationId, $approveRunId, $approve.data.branch, $(if ($approve.data.prUrl) { $approve.data.prUrl } else { '(none)' }))
+                        Send-HttpJson -Stream $req.Stream -StatusCode 200 -CorrelationId $correlationId -Payload @{
+                            success = $true
+                            data    = $approve.data
                         }
                     }
                 }

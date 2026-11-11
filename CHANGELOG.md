@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented here.
 
+## 2026-11-11 — A dispatched run ends in a pull request; a dead runner's run is closed (loop steps 3 to 5)
+
+The push and PR-opening code existed, but the approve-push route's body sat
+inline in the API host where no test could drive it, and a run whose runner
+died stayed `running` until a runner restarted and swept it.
+
+- **Approve-push is a module function.** `Invoke-RunApprovePush`
+  (`backend/modules/roadmap/Roadmap.PrSubmitter.ps1`) validates the run, pushes
+  its branch, resolves the PR base, opens the PR and records it on the run.
+  `POST /api/roadmap-agent/approve-push` now only maps its answer to HTTP
+  (400, 404, 409 and 200, same response shape as before).
+- **A base that cannot resolve is recorded, not silent.** The branch is still
+  pushed; the run reads `prState = 'open-refused'` with `prRefusal` (category
+  and reason), the same shape the delivery reconcile tick writes. Before, such
+  a run read `pushed` with nothing to say why no PR existed.
+- **The host closes abandoned runs.** `GET /api/roadmap-agent/history` first
+  calls `Repair-OrphanedRunSummary -HeartbeatPath`. A local run is closed
+  (failed, category `orphaned`, with its reason) when its runner pid does not
+  match a fresh heartbeat and its process is gone. A run whose process is
+  alive, and every github-hosted run, are left alone. The sweep never fails
+  the list. `Get-LiveRunnerPid` (`Execution.ProviderCapacity.ps1`) is the one
+  heartbeat reading shared with the capacity count.
+- **Known limits.** autoPush stays off for local providers, so the runner
+  itself never pushes; approval is the PR path. Pid reuse could make a dead
+  runner's pid look alive and keep its run open. Not yet shown on a live
+  repository.
+- **Verified:** `tests/Test-DispatchToPr.ps1` 44 passed (real `git push` to a
+  local bare remote, only the GitHub API stubbed); Test-DeliveryLoop 156 (its
+  base-wiring text gate now reads the approve path from the module),
+  Test-DeliveryOutcomes 45, Test-DeliveryReport 107, Test-WorkItemQuality 161,
+  Test-RoadmapStructure clean; PSScriptAnalyzer adds no finding on any touched
+  file.
+
 ## 2026-11-11 — Only actionable roadmap lines become work (Lane 0.22, loop step 1)
 
 Every unchecked line was a candidate: "Done: …" statements, `[non-blocker]`
