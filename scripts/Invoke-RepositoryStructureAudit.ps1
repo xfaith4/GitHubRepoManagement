@@ -77,10 +77,18 @@ foreach ($file in $trackedFiles) {
     # The carve-out stays two directories wide and no wider. Run spill under
     # evidence/baseline/ is still a violation, and that is the line this rule
     # actually defends: regenerable output must not enter source control.
+    #
+    # One named file pair under evidence/baseline/ is tracked, mirroring the
+    # .gitignore exception: the delivery report baseline (loop step 8). It
+    # reads machine-local run summaries and GitHub state that drifts, so a
+    # clone cannot regenerate it, and every weekly report measures against it.
     $curatedEvidencePrefixes = @('evidence/verified/', 'evidence/trials/')
     $isCuratedEvidence = @($curatedEvidencePrefixes | Where-Object {
             $normalized.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase)
         }).Count -gt 0
+    if ($normalized -match '^evidence/baseline/[^/]+/delivery-report\.(json|md)$') {
+        $isCuratedEvidence = $true
+    }
     if ($normalized.StartsWith('evidence/', [System.StringComparison]::OrdinalIgnoreCase) -and
         -not $isCuratedEvidence -and
         -not $normalized.EndsWith('/.gitkeep', [System.StringComparison]::OrdinalIgnoreCase)) {

@@ -37,6 +37,7 @@ and mirrored in `.gitignore`; changing one without the other silently disables i
 | `evidence/verified/` | yes | Curated proof a person wrote and reviewed. The roadmap requires a durable evidence entry per operator-verified milestone, so a blanket ban made its own acceptance criteria impossible to satisfy in a PR. |
 | `evidence/trials/` | yes | Curated trial records: selection reasons written by hand, and results recorded against a named index SHA. Release 3.7's acceptance criteria require results "recorded per repository in `evidence/`", and its body links these files directly. |
 | `evidence/baseline/` | no | Run spill — regenerable, large, and produced by a command rather than a judgement. |
+| `evidence/baseline/<date>/delivery-report.json` and `.md` | yes | The delivery report baseline (loop step 8) reads machine-local run summaries and GitHub state that drifts, so a clone cannot regenerate it, and every weekly report measures against it. Only this file pair; other baseline spill stays untracked. |
 | anything else under `evidence/` | no | Defaults to untracked; add a carve-out deliberately or not at all. |
 
 The line the rule defends is **regenerable output must not enter source
