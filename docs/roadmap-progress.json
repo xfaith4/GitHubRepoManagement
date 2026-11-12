@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 2,
+  "repository": "GitHubRepoManagement-report",
+  "snapshots": [
+    {
+      "recordedAt": "2026-11-11T01:12:57-05:00",
+      "commit": "67b2e74",
+      "dirty": false,
+      "roadmap": "ROADMAP.md",
+      "parseState": "pending",
+      "status": "available",
+      "reason": null,
+      "basis": "checklist",
+      "marks": null,
+      "items": {
+        "completed": 0,
+        "open": 14,
+        "total": 14,
+        "percentComplete": 0.0
+      },
+      "releases": {
+        "total": 1,
+        "complete": 0
+      },
+      "phases": {
+        "total": 0,
+        "complete": 0,
+        "open": 0
+      },
+      "weight": {
+        "basis": "open-items",
+        "remaining": 14.0,
+        "unestimatedOpenPhases": 0
+      },
+      "nextItem": "**Open a real roadmap-repair PR from the repair preview (loop steps 2"
+    }
+  ]
+}
