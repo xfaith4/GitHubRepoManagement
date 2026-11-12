@@ -70,15 +70,26 @@ flight.
       `heldSummary` for "N held (why)". Slice 2 is the board and the controls,
       and the dispatch route refusing when `ok` is false. _(state: built)_
       `check: pwsh ./tests/Test-DispatchEligibility.ps1 -FailOnError`
-- [ ] **At least ten repositories legitimately ready for automated work.** One
-      of 62 is ready today, and an investigation into why is under way. The
-      rule changes it leads to come from that evidence: each names the
-      repositories it was observed on and bumps `modelVersion`. None loosens a
-      threshold until the count looks better (steering §6). Ready means the
-      dispatch-eligibility rule passes and the repository carries an actionable
-      item with acceptance criteria and a runnable check. The check named here
-      is a placeholder until the investigation names the gate.
-      _(state: planned)_
+- [ ] **At least ten repositories legitimately ready for automated work.** Ready
+      means the lifecycle resolver reads ready-for-work, the dispatch-eligibility
+      rule passes, the repository carries an actionable agent item, and it has a
+      GitHub remote, so a run can end in a pull request. Rule changes come from
+      evidence: each names the repositories it was observed on and bumps
+      `modelVersion`. None loosens a threshold to move the count (steering §6).
+      Slice 1, the measurement, is on this branch. `Get-RepositoryReadiness`
+      (Portfolio.Readiness.ps1, model 1.0) lists every hold, not only the
+      first. An input it cannot read is held as unmeasured, never read as
+      ready. `tools/Get-ReadinessCensus.ps1` counts holds across the index.
+      Census of the 2026-11-01 index: **0 of 63 ready**, and none is one hold
+      away. Holds: structure 56, doc-readiness 36, actionable items unmeasured
+      36, uncommitted changes 35, execution contract incomplete 30, no GitHub
+      remote 17, no roadmap 15. The earlier "one ready" was PhotoToolboxv2,
+      which has uncommitted changes and unmeasured items. Making LICENSE
+      advisory (owner-authorized 2026-10-17) moves zero: every repository it
+      would clear also lacks CI. Slice 2 needs an index rebuilt by the current
+      service (after the elevated restart), so actionable items are measured.
+      After that, real release blocks are authored through the product in the
+      GitHub-backed repositories that have CI and tests. _(state: planned)_
       `check: pwsh ./tests/Test-ReadinessEvidence.ps1 -FailOnError`
 
 ---
