@@ -245,7 +245,11 @@ Assert-That ($second.Count -eq 0) 'no second copy of the classifier exists'
 $runsRoot = Join-Path ([IO.Path]::GetTempPath()) ('wiq-runs-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $runsRoot -Force | Out-Null
 try {
-    $now = [datetime]::new(2026, 11, 11, 12, 0, 0, [DateTimeKind]::Utc)
+    # Anchored to the real clock in whole seconds: section 11 calls the picker,
+    # which reads the clock itself. A fixed date made 'r-recent' stop cooling
+    # the day after the fixture was written.
+    $u = [datetime]::UtcNow
+    $now = [datetime]::new($u.Year, $u.Month, $u.Day, $u.Hour, $u.Minute, $u.Second, [DateTimeKind]::Utc)
     $repoA = 'C:\Repos\Alpha'
     function Write-RunSummary { param([string]$Id, [hashtable]$Body) $Body['runId'] = $Id; ($Body | ConvertTo-Json) | Set-Content -LiteralPath (Join-Path $runsRoot "$Id.summary.json") -Encoding UTF8 }
     Write-RunSummary -Id 'r-recent' -Body @{ localRepoPath = $repoA; selectedTask = 'Add retry with backoff to the uploader'; runnerStartedAt = $now.AddHours(-2).ToString('o'); status = 'completed' }
