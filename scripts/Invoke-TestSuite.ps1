@@ -387,21 +387,26 @@ Invoke-ScriptGate -Name 'Delivery outcomes' -ScriptPath (Join-Path $WorkspaceRoo
 # Loop step 8: the delivery report. Every figure carries unit, basis, window
 # and source; not measured is null with a reason, never 0; each report says
 # what moved since the last, and the baseline sits beside the evaluation.
-Invoke-ScriptGate -Name 'Delivery report' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryReport.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Delivery report' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DeliveryReport.ps1') -ScriptArgs @('-FailOnError') -In static
 
 # Loop steps 3 to 5: a finished run, once approved, pushes its branch and
 # records the PR it opened (or the named reason it could not); a run whose
 # runner pid no longer matches the heartbeat and whose process is gone is
 # closed as abandoned with its reason instead of staying `running`.
-Invoke-ScriptGate -Name 'Dispatch to PR' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchToPr.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Dispatch to PR' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchToPr.ps1') -ScriptArgs @('-FailOnError') -In module
 
 # Lane 0.22 - one server-side dispatch-eligibility rule.
 Invoke-ScriptGate -Name 'Dispatch eligibility' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-DispatchEligibility.ps1') -ScriptArgs @('-FailOnError') -In static
 
+# Current focus - "ready for automated work" is one rule: lifecycle ready,
+# dispatch-eligible, an actionable agent item, a GitHub remote. Every hold is
+# named; an unmeasured actionable-item input is held as unmeasured.
+Invoke-ScriptGate -Name 'Readiness evidence' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-ReadinessEvidence.ps1') -ScriptArgs @('-FailOnError') -In static
+
 # Lane 0.22, loop step 1 - only actionable roadmap lines are ranked, queued or
 # dispatched; each exclusion carries its reason; an item is not launched twice
 # inside the cooldown unless the operator overrides.
-Invoke-ScriptGate -Name 'Work item quality' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-WorkItemQuality.ps1') -ScriptArgs @('-FailOnError')
+Invoke-ScriptGate -Name 'Work item quality' -ScriptPath (Join-Path $WorkspaceRoot 'tests\Test-WorkItemQuality.ps1') -ScriptArgs @('-FailOnError') -In static
 
 # Release 4.1, 2026-10-19 - the session briefing and the handoff issue. The
 # briefing's parsers read this repository's own ROADMAP.md and operator queue,
